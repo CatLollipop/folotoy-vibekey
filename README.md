@@ -1,6 +1,6 @@
 # AI 助理 · FoloVibe Key Fork
 
-当前开发版本为 **0.8.0 / build36**：Passport 使用逐条消息气泡流，按本次接入后实际收到和确认发出的顺序显示；上下按屏阅读，查看旧内容时新消息只提示、不抢位置。录音松开保留草稿，流尾草稿可见后再独立短按 OK 确认发送。只接原应用已有会话，缺少官方发送通道时仅提醒；不创建助理专属会话，不前置 Mac。Mac 设置结构保持原样。详见[会话路由](docs/conversation-routing.md)、[消息与阅读模型](docs/conversation-timeline.md)和[当前验收](docs/assistant-acceptance.md)。
+[下载0.8.0开发预览](https://github.com/CatLollipop/folotoy-vibekey/releases/tag/v0.8.0)，Mac **build36**：Passport 使用逐条消息气泡流，按本次接入后实际收到和确认发出的顺序显示；上下按屏阅读，查看旧内容时新消息只提示、不抢位置。录音松开保留草稿，流尾草稿可见后再独立短按 OK 确认发送。只接原应用已有会话，缺少官方发送通道时仅提醒；不创建助理专属会话，不前置 Mac。Mac 设置结构保持原样。详见[会话路由](docs/conversation-routing.md)、[消息与阅读模型](docs/conversation-timeline.md)和[当前验收](docs/assistant-acceptance.md)。
 
 [已发布的0.7.0开发预览](https://github.com/CatLollipop/folotoy-vibekey/releases/tag/v0.7.0)保留其原始安装包与验收边界；该历史版本采用固定双栏，不代表0.8的聊天界面。0.8发布及真机通过情况以当前验收记录为准。
 

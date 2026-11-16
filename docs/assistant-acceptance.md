@@ -4,12 +4,14 @@
 
 ## 0.8当前证据
 
-- 正式会话模型265项通过：有序消息、实例隔离、稳定消息身份、Unicode分块、读旧消息锚点/未读提示、草稿tail确认、有界缓存、queued/accepted/admitted/failed/unknown与旧回执隔离。
-- AgentHub、Node9桥接和通知专项通过。仅已加载且返回新鲜能力的官方原实例可发送；ChatGPT.App / Codex Desktop消费与关联回执尚未证实，继续仅提醒。没有界面控制发送fallback，不创建新会话。
-- Mac完整CLT/SwiftPM构建和深层严格ad-hoc签名通过。固件生产模型/手势ASan与UBSan、生产LVGL菜单/聊天恢复通过；最终真机刷写与回读待完成后补充。
-- PET短OK先展开完整聊天，回看旧内容短OK先回最新；另一次独立短按才允许确认实际可见草稿。长按录音、松开仅形成草稿保持不变。
-- 阅读旧内容不随新消息跳动；右侧滚动页点与省略点保留，标题提示新消息。设备仅保留有界active/staging显示窗口，不复制整份Mac聊天历史。
-- 物理按键、真实ASR到官方原会话、真实完成通知定位与长期负载尚未完成本版本人工验收；不将合成测试写为实测真实Agent任务。
+- 构建源码`392056738d8d897cf5c9a2127a5b838b6bf6bb82`；Mac0.8.0/build36完整CLT/SwiftPM编译、1024条提取文案缺失英文0、ad-hoc深层严格签名通过。已安装App、交付App和ZIP解压结果的224普通文件hash/19符号链接全部一致，旧0.7.0保留。最终原生启动界面因Mac锁屏暂未核对，需用户解锁；安装文件校验不冒充界面实测。
+- 正式会话模型265项通过：有序消息、实例隔离、稳定消息身份、Unicode分块、读旧锚点/未读提示、草稿tail确认、有界缓存、queued/accepted/admitted/failed/unknown与旧回执隔离。AgentHub、Node9桥接、通知及Assistant核心专项通过。只对设备幂等显示/反馈有限重试，不重发Agent未知消息。
+- 固件生产模型/手势ASan与UBSan、生产LVGL菜单/聊天恢复、166条中文标签/238字形通过。PET首短仅展开完整聊天，回看旧内容首短仅回最新；下一次独立短按才允许确认可见草稿。迟到view ACK不能把同一次松开升级为确认。长录音stop不依赖已淘汰旧画面。
+- 最终IDF5.5.3 build/layout通过；固件2736768B，SHA256 `677a66dac5d7f9e1bb52537e073a869c9ff050902ce1ed0c8c9cf5523cd87257`，仍适配原3MiB，余408960B。已有整片8MiB备份校验通过，本轮先回读保护/资源区，再使用受保护脚本刷写。bootloader/分区表/应用三份镜像逐字节回读一致。
+- cardid16384B与原始备份一致。profile5/659B、当前pet1794826363/15484B保留，头/profile/pet CRC有效；一有效资源bank/一全FF，未增Flash分区。设备只保存当前显示窗口，正式编译断言active+stage小于3KiB，不复制Mac历史。
+- 实际hello0.8.0，app/buttons/display/Wi-Fi就绪。电脑模式空闲heap44044B/largest32768B/min39628B、LVGL峰24156B，合成聊天LVGL峰25192B；不是采音或公网TLS峰值。实际USB schema2/chat1、begin/item/commit、重复commit、新stage替换、view/clear通过；不完整、129B、旧wid/rev/result明确拒绝，随后完整窗继续成功。全为合成内容，0真实Agent发送/0云调用，测试后已clear。
+- 七宿主原实例没有逐一真实端到端验收。ChatGPT.App/Codex Desktop消费与关联回执未证实，继续只提醒；无已验证官方原会话发送能力者不授予录音/提交。没有AX/剪贴板/按键fallback、不创建助理专属会话。真实ASR到官方原会话、物理气泡阅读/草稿确认/通知双击与长期负载待单独验收。
+- [v0.8.0](https://github.com/CatLollipop/folotoy-vibekey/releases/tag/v0.8.0)已作为Pre-release公开发布，tag精确指向上述构建源码。Mac ZIP/固件ZIP/各自.sha256/Guide/Acceptance共六附件的远端digest、体积和uploaded状态与本地逐一匹配。未标记latest，不覆盖0.7已发布资产。Mac未Developer ID公证，完整Xcode宿主XCTest未执行。
 
 ## 历史0.7.0验收
 
