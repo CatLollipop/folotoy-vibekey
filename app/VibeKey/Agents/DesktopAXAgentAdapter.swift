@@ -82,8 +82,10 @@ import CryptoKit
         let (app, window) = try target(session)
         let controls = inspectControls(window)
         guard controls.stop == nil, let input = controls.composer else { throw AgentAdapterError.blocked("未找到空闲的聊天输入框") }
-        let before = AgentAX.string(input, kAXValueAttribute)
-        guard before.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard let before = AXComposerReader.text(input, in: window) else {
+            throw AgentAdapterError.blocked("无法确认原会话输入框内容，请在原应用检查")
+        }
+        guard before.isEmpty else {
             throw AgentAdapterError.blocked("原输入框已有草稿，请先处理后再发送")
         }
         guard AXUIElementSetAttributeValue(input, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success else {
@@ -100,7 +102,8 @@ import CryptoKit
         try await Task.sleep(for: .milliseconds(180))
         let (_, refreshed) = try target(session)
         guard let current = inspectControls(refreshed).composer,
-              AgentAX.string(current, kAXValueAttribute).trimmingCharacters(in: .whitespacesAndNewlines) == text.trimmingCharacters(in: .whitespacesAndNewlines) else {
+              let effective = AXComposerReader.text(current, in: refreshed),
+              effective.trimmingCharacters(in: .whitespacesAndNewlines) == text.trimmingCharacters(in: .whitespacesAndNewlines) else {
             throw AgentAdapterError.deliveryUnknown
         }
         drafts[session.id] = text
@@ -111,7 +114,8 @@ import CryptoKit
         let (_, window) = try target(session)
         let controls = inspectControls(window)
         guard let draft = drafts[session.id], let input = controls.composer,
-              AgentAX.string(input, kAXValueAttribute).trimmingCharacters(in: .whitespacesAndNewlines) == draft.trimmingCharacters(in: .whitespacesAndNewlines),
+              let effective = AXComposerReader.text(input, in: window),
+              effective.trimmingCharacters(in: .whitespacesAndNewlines) == draft.trimmingCharacters(in: .whitespacesAndNewlines),
               let send = controls.send, controls.approval == nil else {
             throw AgentAdapterError.blocked("无法核对原会话草稿和发送控件")
         }
@@ -124,7 +128,7 @@ import CryptoKit
             try await Task.sleep(for: .milliseconds(80))
             let (_, after) = try target(session)
             let snapshot = inspectControls(after)
-            if let composer = snapshot.composer, AgentAX.string(composer, kAXValueAttribute).isEmpty {
+            if let composer = snapshot.composer, AXComposerReader.text(composer, in: after) == "" {
                 emit(.receiving, session: session)
                 return
             }

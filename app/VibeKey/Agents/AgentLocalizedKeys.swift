@@ -53,6 +53,7 @@ nonisolated enum AgentLocalizedKeys {
         case "无法前置原应用窗口": String(localized: "无法前置原应用窗口", bundle: .l10n)
         case "无法向已选 Terminal 会话输入": String(localized: "无法向已选 Terminal 会话输入", bundle: .l10n)
         case "无法核对原会话草稿和发送控件": String(localized: "无法核对原会话草稿和发送控件", bundle: .l10n)
+        case "无法确认原会话输入框内容，请在原应用检查": String(localized: "无法确认原会话输入框内容，请在原应用检查", bundle: .l10n)
         case "无法聚焦原会话输入框": String(localized: "无法聚焦原会话输入框", bundle: .l10n)
         case "未找到本会话的停止生成按钮": String(localized: "未找到本会话的停止生成按钮", bundle: .l10n)
         case "未找到空闲的聊天输入框": String(localized: "未找到空闲的聊天输入框", bundle: .l10n)

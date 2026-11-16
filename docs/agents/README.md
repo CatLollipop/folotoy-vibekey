@@ -52,6 +52,12 @@
 
 Claude Hook安装保留用户现有条目，先写一次 `.vibekey-assistant.bak`；原Codex Hook不更改。加载扩展/Hook通常需要在原应用执行原生重新加载，不重启或打断用户任务。所有测试输入应在专用测试会话执行。
 
+### 0.6.2桌面输入框提示与草稿
+
+ChatGPT/Codex统一使用共享输入快照，写入前、写入后、提交前、提交后的内容判断一致。仅当绑定窗口/进程及完整输入证据可验证时，把生成的占位提示作为空内容；真实已有草稿（包括正文恰与提示相同）、textarea内附件及矛盾/未知快照均不会被覆盖。证据不足显示“无法确认原会话输入框内容，请在原应用检查”，不自动清空、不重试提交，也不改投云对话。
+
+运行 `bash app/scripts/test-composer-snapshot.sh` 可用35个固定内存夹具检查正式解析与读取模型，不访问任何真实App/AX/设备/网络。该测试不证明特定ChatGPT版本已实际发送；仍需用户在专用会话核对投递与回复。textarea以外的附件区域和缺少原生聊天身份的AX能力边界维持原有验收限制。
+
 ## 文件邮箱协议
 
 `~/Library/Application Support/FoloButtonDev/AgentBridge/` 下目录权限0700，JSON文件0600。协议为1，注册位于 `instances/<instanceID>/registration.json`，包含application、process实例、会话、真实能力和心跳；命令仅允许 `activate / insertDraft / submit / sendPrompt / stop`。

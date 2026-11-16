@@ -772,7 +772,7 @@ AppSettings(didSet 写 UserDefaults;API Key 写 CredentialStore)
 
 ### Codex 当前聊天控制
 
-`AccessibilityCodexDesktopAdapter` 优先从应用的 `AXFocusedUIElement` 读取当前 Codex 输入框。新版 Codex 的 `AXTextArea` 可能不出现在窗口子节点树中，因此不再只依赖遍历 `AXTextArea`；应用级焦点缺失时才回退到唯一 text area。若 `AXValue` 与 `AXPlaceholderValue` 相同，则按空输入框处理。输入框全文只保存在内存用于发送前核对，不写日志或磁盘。聊天身份优先使用 AX 文档、URL 或 Identifier 中的完整线程 UUID；当前版本未暴露这些字段时退回窗口标题。运行、审批与点击判断只采用 enabled 且未 hidden 的按钮，避免树中保留的后台控件污染状态。发送前同一份 AX 快照核对窗口、输入框、全文和唯一可用发送按钮，再重新聚焦并核对目标，向指定进程发送一次 Cmd-Enter；停止仍使用核对后的 AXPress。发送不会在 AX 失败后盲发按键，也不会 AXPress 后再补键。辅助功能未授权时只向设备返回 `ALLOW AX`；只读预检不弹系统授权框，权限申请由设置页的明确操作发起；Codex 未运行返回 `OPEN CODEX`，不再与输入框状态混用。
+`AccessibilityCodexDesktopAdapter` 优先使用属于当前绑定窗口的 `AXFocusedUIElement`。新版 Codex 的 `AXTextArea` 可能不出现在窗口子节点树中，因此不再只依赖遍历 `AXTextArea`；焦点不能证明窗口归属时拒绝使用，随后仅考虑绑定窗口内的唯一 text area。输入框有效文本由下文0.6.2共享快照规则解析，仅AXValue等于提示文案不再证明为空。输入框全文只保存在内存用于发送前核对，不写日志或磁盘。聊天身份优先使用 AX 文档、URL 或 Identifier 中的完整线程 UUID；当前版本未暴露这些字段时退回窗口标题。运行、审批与点击判断只采用 enabled 且未 hidden 的按钮，避免树中保留的后台控件污染状态。发送前同一份 AX 快照核对窗口、输入框、全文和唯一可用发送按钮，再重新聚焦并核对目标，向指定进程发送一次 Cmd-Enter；停止仍使用核对后的 AXPress。发送不会在 AX 失败后盲发按键，也不会 AXPress 后再补键。辅助功能未授权时只向设备返回 `ALLOW AX`；只读预检不弹系统授权框，权限申请由设置页的明确操作发起；Codex 未运行返回 `OPEN CODEX`，不再与输入框状态混用。
 
 调用链：
 
@@ -976,3 +976,11 @@ codec实际reader flag→app→ib_ui_set_capture_active→hints绿色Mic循环�
 ### 长按下键菜单owner与LIST原子边界
 
 `ib_app.wifi_menu_key/update → ib_ui_local_menu_show(独立344B有界缓存) → LIST直切`；`show_screen`同时guard模式与网络owner，背景助手prepare/idle/error和远端list仅缓存。`wifi_menu_end → UI hide保留pending快照 → app show最新screen → 解除通知/Agent遮蔽`覆盖普通关闭、超时、无网络项及选网离开；不恢复进入前过期screen。Mac AssistantCoordinator/旧DeviceBridge的state+list经apply_state/apply_list进入同一LIST直切，返回也直切，无协议改动。导航期间隐藏底层阅读页点，通知/云reply各自页偏移保留；先应用最后Agent show/hide再解除遮蔽，避免旧generic闪现。真实调用链、生产回归及未验证硬件边界见[device-menu-transitions.md](device-menu-transitions.md)。
+
+### 0.6.2共享输入框快照
+
+`DesktopAXAgentAdapter / CodexAccessibilityInspector → AXComposerReader → CodexComposerSnapshot(有界只读Source) → CodexInputText + CodexInputContent`。同一读取器用于写入前空草稿保护、写入后核对、提交前草稿匹配及提交后清空确认，避免发送后placeholder重现又被误报未知。输入框必须与绑定窗口同PID，AXWindow或64层内父链需证明归属；没有全局焦点补捞入口，旧Codex焦点也先过归属门禁才补读祖先。
+
+只有完整结构和文字证据才能排除提示：placeholder-only子树的实际静态提示文本需与raw值/正式提示一致，允许AX段落多带一个行末，不折叠用户空格。真实正文恰等提示时，非placeholder正文节点或缺乏完整一致提示结构的正数count/range仍按正文保留；count0与非空range矛盾时保留range，零长range不能抹掉非空raw冲突。无法读取、未知/截断/循环树、textarea子树内附件或嵌套编辑器返回nil，不覆盖、不提交；真实非空旧草稿继续拒绝覆盖。快照上限24层/512节点，临时内容不写日志/磁盘；不扩大到textarea外的附件区域或复合聊天身份能力。
+
+`app/scripts/test-composer-snapshot.sh`编译正式共享解析器和原生读取实现，仅以注入内存Source运行35个夹具，覆盖提示/正文/矛盾元数据/附件/未知树/窗口PID和四阶段读取。该检查未查询任何真实AX、应用、设备或云API；真实ChatGPT版本投递验收仍需用户在专用会话确认，不能由夹具成功替代。

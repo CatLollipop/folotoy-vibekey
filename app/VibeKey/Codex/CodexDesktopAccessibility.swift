@@ -40,43 +40,6 @@ nonisolated enum CodexConversationIdentityResolver {
     }
 }
 
-/// Web AX 输入框的 value 有时等于占位提示，需要在业务判断前归一化。
-nonisolated enum CodexInputText {
-    static func effective(_ value: String, placeholder: String, characterCount: Int? = nil, rangeText: String? = nil,
-                          placeholderOnly: Bool = false) -> String {
-        if placeholderOnly { return "" }
-        // 范围文本与字符数描述编辑内容本身，优先于可能包含提示文案的 AXValue。
-        if let rangeText { return rangeText }
-        if let characterCount, characterCount >= 0 { return characterCount == 0 ? "" : value }
-        return !placeholder.isEmpty && value == placeholder ? "" : value
-    }
-}
-
-/// 编辑器内容的结构证据，只保存“是否含文字”，不复制用户输入。
-/// ProseMirror 的 CSS 提示文字会进入 AXValue 和 AX 字符数，必须按 placeholder 祖先区分。
-nonisolated struct CodexInputContent {
-    var placeholder = false
-    var text = false
-    var children: [CodexInputContent] = []
-
-    var isPlaceholderOnly: Bool {
-        let evidence = evidence(insidePlaceholder: false)
-        return evidence.placeholder && !evidence.content
-    }
-
-    private func evidence(insidePlaceholder: Bool) -> (placeholder: Bool, content: Bool) {
-        let inside = insidePlaceholder || placeholder
-        var foundPlaceholder = placeholder
-        var content = text && !inside
-        for child in children {
-            let next = child.evidence(insidePlaceholder: inside)
-            foundPlaceholder = foundPlaceholder || next.placeholder
-            content = content || next.content
-        }
-        return (foundPlaceholder, content)
-    }
-}
-
 /// 只读 AX 树中的控件角色、文案和输入框全文。输入框全文仅用于核对发送目标，
 /// 不写日志、不保存到文件；每次检查结束后由调用栈释放。
 @MainActor
@@ -278,7 +241,8 @@ private final class CodexAccessibilityInspector {
         // 新版 Codex 的网页输入框由 AXFocusedUIElement 返回，但不是窗口遍历的子节点。
         // 优先使用这个权威焦点；只有它不符合文本输入角色时才回退到树内唯一 text area。
         if let focused = element(app, kAXFocusedUIElementAttribute),
-           string(focused, kAXRoleAttribute) == (kAXTextAreaRole as String) {
+           string(focused, kAXRoleAttribute) == (kAXTextAreaRole as String),
+           AXComposerReader.isInWindow(focused, window: window) {
             focusedInput = focused
         }
         var seen = Set<AXUIElement>()
@@ -286,6 +250,7 @@ private final class CodexAccessibilityInspector {
         let collect: (AXUIElement) -> Void = { [self] element in
             let role = string(element, kAXRoleAttribute)
             if role == (kAXTextAreaRole as String) {
+                guard AXComposerReader.isInWindow(element, window: window) else { return }
                 textAreas.append(element)
                 if focusedInput == nil, boolean(element, kAXFocusedAttribute) == true { focusedInput = element }
             } else if role == (kAXButtonRole as String) {
@@ -316,13 +281,10 @@ private final class CodexAccessibilityInspector {
                 focusedInput = candidate
             }
         }
-        guard let input = focusedInput,
-              let rawInputText = value(input) as? String else { throw Failure.noFocusedInput }
-        // 网页输入框可能把占位提示作为 AXValue 返回；只有与 AXPlaceholderValue 完全相同才视为空。
-        let count = (value(input, "AXNumberOfCharacters") as? NSNumber)?.intValue
-        let inputText = CodexInputText.effective(rawInputText,
-            placeholder: stringValue(input, "AXPlaceholderValue"), characterCount: count,
-            rangeText: rangeText(input, count: count), placeholderOnly: inputContent(input).isPlaceholderOnly)
+        // 与统一Agent路径共用读取与占位符证据；全局焦点也必须属于本次绑定窗口。
+        guard let input = focusedInput, let inputText = AXComposerReader.text(input, in: window) else {
+            throw Failure.noFocusedInput
+        }
         return CodexAccessibilitySnapshot(window: window, input: input, inputText: inputText, buttons: buttons)
     }
 
@@ -518,29 +480,6 @@ private final class CodexAccessibilityInspector {
     private func label(_ button: AXUIElement) -> String {
         let title = string(button, kAXTitleAttribute)
         return title.isEmpty ? string(button, kAXDescriptionAttribute) : title
-    }
-
-    /// 读取编辑内容的完整范围，避免把 Web 输入框的提示文案当作用户草稿。
-    private func rangeText(_ input: AXUIElement, count: Int?) -> String? {
-        guard let count, count >= 0, count <= 1_000_000 else { return nil }
-        var range = CFRange(location: 0, length: count)
-        guard let parameter = AXValueCreate(.cfRange, &range) else { return nil }
-        var result: CFTypeRef?
-        guard AXUIElementCopyParameterizedAttributeValue(input, kAXStringForRangeParameterizedAttribute as CFString,
-            parameter, &result) == .success else { return nil }
-        return result as? String
-    }
-
-    /// 只排除能证明完全来自提示节点的文字；混有真实文本、提及或未知深层内容时保留草稿。
-    private func inputContent(_ node: AXUIElement, depth: Int = 0) -> CodexInputContent {
-        guard depth < 24 else { return .init(text: true) }
-        let role = string(node, kAXRoleAttribute)
-        let classes = value(node, "AXDOMClassList") as? [String] ?? []
-        let text = role == (kAXStaticTextRole as String)
-            && !(value(node) as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let embedded = [kAXButtonRole as String, "AXLink", kAXImageRole as String].contains(role)
-        return .init(placeholder: classes.contains("placeholder"), text: text || embedded,
-                     children: elements(node, kAXChildrenAttribute).map { inputContent($0, depth: depth + 1) })
     }
 
     private func value(_ element: AXUIElement) -> CFTypeRef? {

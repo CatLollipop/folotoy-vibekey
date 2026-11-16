@@ -256,7 +256,8 @@ import Foundation
         if store.usePassportForAssistant, sync.mode != "standalone" {
             link.sendPetState(state.rawValue, presentation: .init(
                 target: target ?? (assistant.destination == .cloud ? .cloud : .application), phase: phase,
-                error: phase == .failed && hardwareError != nil ? .checkMac : nil))
+                // Controller的识别/投递失败不一定填hardwareError，仍须引导查看Mac详细原因。
+                error: phase == .failed ? .checkMac : nil))
         }
     }
 

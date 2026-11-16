@@ -1267,5 +1267,6 @@
   "云端待机": "Cloud assistant ready",
   "正在切换模式\n请稍候": "Switching modes\nPlease wait",
   "正文已截断": "Message truncated",
-  "如果已在系统中开启，请确认授权的是“应用程序”内的 AI 助理，并重新开启该开关后重启应用。": "If it is already enabled in System Settings, make sure you authorized AI Assistant in Applications, then turn the switch off and on again and restart the app."
+  "如果已在系统中开启，请确认授权的是“应用程序”内的 AI 助理，并重新开启该开关后重启应用。": "If it is already enabled in System Settings, make sure you authorized AI Assistant in Applications, then turn the switch off and on again and restart the app.",
+  "无法确认原会话输入框内容，请在原应用检查": "Could not verify the original conversation’s input. Check it in the original app."
 }

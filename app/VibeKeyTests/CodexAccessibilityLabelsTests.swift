@@ -27,14 +27,15 @@ nonisolated final class CodexAccessibilityLabelsTests: XCTestCase {
         XCTAssertFalse(CodexConversationIdentityResolver.containsThreadUUID("composer-send-button"))
     }
 
-    func testWebPlaceholderIsTreatedAsEmptyOnlyWhenItMatches() {
-        XCTAssertEqual(CodexInputText.effective("Ask anything", placeholder: "Ask anything"), "")
+    func testMatchingPlaceholderWithoutOtherEvidenceIsNotProvenEmpty() {
+        XCTAssertNil(CodexInputText.effective("Ask anything", placeholder: "Ask anything"))
         XCTAssertEqual(CodexInputText.effective("real draft", placeholder: "Ask anything"), "real draft")
         XCTAssertEqual(CodexInputText.effective("real draft", placeholder: ""), "real draft")
     }
 
     func testActualEditorContentOverridesSyntheticAXValue() {
-        XCTAssertEqual(CodexInputText.effective("Ask anything…", placeholder: "", characterCount: 0), "")
+        XCTAssertNil(CodexInputText.effective("Ask anything…", placeholder: "", characterCount: 0))
+        XCTAssertEqual(CodexInputText.effective("Ask anything…", placeholder: "Ask anything…", characterCount: 0), "")
         XCTAssertEqual(CodexInputText.effective("Ask anything…", placeholder: "Ask anything…", characterCount: 13), "Ask anything…")
         XCTAssertEqual(CodexInputText.effective("synthetic label", placeholder: "", characterCount: 5, rangeText: "hello"), "hello")
     }
@@ -44,10 +45,12 @@ nonisolated final class CodexAccessibilityLabelsTests: XCTestCase {
         let empty = CodexInputContent(children: [.init(placeholder: true, children: [.init(children: [.init(text: true)])])])
         XCTAssertTrue(empty.isPlaceholderOnly)
         XCTAssertEqual(CodexInputText.effective("message hint\n", placeholder: "", characterCount: 13,
-            rangeText: "message hint\n", placeholderOnly: empty.isPlaceholderOnly), "")
+            rangeText: "message hint\n", placeholderOnly: empty.isPlaceholderOnly, placeholderText: "message hint"), "")
 
         let mixed = CodexInputContent(children: [empty, .init(text: true)])
         XCTAssertFalse(mixed.isPlaceholderOnly)
         XCTAssertFalse(CodexInputContent(text: true).isPlaceholderOnly)
+        XCTAssertFalse(CodexInputContent(placeholder: true, incomplete: true).isPlaceholderOnly)
+        XCTAssertFalse(CodexInputContent(placeholder: true, nonText: true).isPlaceholderOnly)
     }
 }

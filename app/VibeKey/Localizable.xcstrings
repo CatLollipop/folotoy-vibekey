@@ -5085,6 +5085,16 @@
         }
       }
     },
+    "无法确认原会话输入框内容，请在原应用检查": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not verify the original conversation’s input. Check it in the original app."
+          }
+        }
+      }
+    },
     "无法翻译：%@": {
       "localizations": {
         "en": {
