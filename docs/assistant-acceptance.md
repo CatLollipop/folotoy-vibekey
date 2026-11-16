@@ -41,3 +41,9 @@
 - 冷启动保存宠物首帧有生产夹具/屏障证据，但用户单独冷开机无默认球球闪现仍未明确回报。设备有界原生特效不宣称与Mac主题逐帧相同；罕见字/缺失emoji用□占位。
 
 正式0.6.0交付App已在本机打开，观察到其Aora宠物窗口加载outputs交付包内离线资源；不代表七类宿主均已加载新版Hook。
+
+## 本机安装与GitHub发布
+
+0.6.0/build32已安装到系统应用程序目录并从该目录运行，About窗口实际显示0.6.0 (32)；主可执行文件与交付包相同、codesign深层严格验证通过。旧0.2.13/build24应用移出应用程序并备份，配置和凭据未清除。
+
+[GitHub Release v0.6.0](https://github.com/CatLollipop/folotoy-vibekey/releases/tag/v0.6.0)已公开发布为Pre-release。Tag指向构建源码9e0003815f4855e961be2d64178a0e473a0df631；Mac ZIP、固件ZIP、两个同名.sha256、Guide和Acceptance共六个附件均为uploaded，GitHub远端SHA-256与本地逐一匹配。未登记上游更新后台，未执行额外设备刷写。

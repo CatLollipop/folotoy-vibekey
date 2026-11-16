@@ -1,5 +1,7 @@
 # AI 助理 · FoloVibe Key Fork
 
+[下载 0.6.0 开发预览版](https://github.com/CatLollipop/folotoy-vibekey/releases/tag/v0.6.0)：Apple Silicon / macOS26+，包含Mac安装ZIP、Passport受保护固件包、SHA-256、使用说明和验收记录。Mac为ad-hoc签名、尚未公证；解压后将“AI 助理.app”放入应用程序，退出并移走同Bundle ID的旧应用，原配置沿用。
+
 0.6新增设备无重启模式切换、两种模式下的独立应用通知和短完成音。状态词改为紧凑动画图标，长正文分页使用右侧滚动圆点与省略点。通知协议及宿主实际能力边界见[通知说明](docs/agent-notifications.md)。
 
 本个人 Fork 增加 Mac 云端语音助手、Passport 独立云对话、应用会话双向桥接与 Aora Bot 球球。
