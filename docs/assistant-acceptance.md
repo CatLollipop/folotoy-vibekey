@@ -28,7 +28,7 @@
 
 0.5.1生产store/真实LVGL回归通过：没有新revision或重新发布的情况下，final→DONE→PREPARING→IDLE正文ROI像素不变，可翻页、模式菜单返回及legacy更新仍保页。背景左右一致、文字中心x120；实际capture true时Mic绿色像素79/103，false及仅LISTENING phase均为0，停止/睡眠/菜单后循环动画归0。143文案、1221字形使用、222独立字符检查通过；主机LVGL峰35712B仅供参考，不当C3实测。
 
-最终固件2701392B，SHA256 `e95e1764d4f46cd3a97f20dda2e827afde015de5e80bbbb96532dedf3a669642`，IDF5.5.3 build/size/layout通过且无warning/error，仍适配3MiB app分区。真实受保护刷写成功，cardid0x4000字节与原始备份一致；合并回读验证一活动bank与一全FF bank，profile5/pet1794817063及CRC保留。设备独立模式、Wi-Fi、app_ready/buttons/display_ready均正常，空闲heap56928B、largest45056B、min_free52396B、LVGL峰22708B。此后停止所有刷写、同步与重启，只读metadata等待用户实际检查正文保留、物理翻页及绿色动画。
+最终固件2701392B，SHA256 `e95e1764d4f46cd3a97f20dda2e827afde015de5e80bbbb96532dedf3a669642`，IDF5.5.3 build/size/layout通过且无warning/error，仍适配3MiB app分区。真实受保护刷写成功，cardid0x4000字节与原始备份一致；合并回读验证一活动bank与一全FF bank，profile5/pet1794817063及CRC保留。设备独立模式、Wi-Fi、app_ready/buttons/display_ready均正常，空闲heap56928B、largest45056B、min_free52396B、LVGL峰22708B。此后停止所有刷写、同步与重启，只读metadata监控实际轮次。用户最终确认“绿色采音、回复保留和翻页都正常，布局也正常”。读取到回复length147B、active1/final1，后台准备回到idle后revision38不变，连续多次仍保留，capture_active0；录音309760B、record_error0、DMA0、ring峰1920B、Flash写峰2855µs、空闲heap55988B、largest24576B、全局min_free7072B、LVGL峰23080B。这证明本轮实际会话结束正文保留与用户可见翻页通过，不代表完整长时/弱网/掉电矩阵通过。冷启动首帧已由生产夹具与显示屏障验证，用户单独的冷开机无默认Dot观察仍未明确回报。
 
 ## 仍未完成的完整验收
 
