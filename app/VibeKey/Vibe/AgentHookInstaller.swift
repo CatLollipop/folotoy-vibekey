@@ -47,20 +47,16 @@ nonisolated enum AgentHookInstaller {
     }
 
     private static let marker = "folobutton-dev://agent"
+    private static var codexHelperURL: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("FoloButtonDev/AgentBridge/installed/codex-hook.py")
+    }
 
     static func command(_ event: AgentNotifier.Event, agent: Agent) -> String {
-        if agent == .codex, event == .done {
-            // 只传会话、轮次和经过裁剪的项目名，Hook 原始 JSON 留在进程内。
-            return #"""
-            payload=$(/bin/cat)
-            thread=$(printf '%s' "$payload" | /usr/bin/plutil -extract session_id raw -o - - 2>/dev/null) || exit 0
-            case "$thread" in ''|*[!0-9A-Fa-f-]*) exit 0 ;; esac
-            turn=$(printf '%s' "$payload" | /usr/bin/plutil -extract turn_id raw -o - - 2>/dev/null) || turn=
-            case "$turn" in *[!0-9A-Za-z_-]*) turn= ;; esac
-            cwd=$(printf '%s' "$payload" | /usr/bin/plutil -extract cwd raw -o - - 2>/dev/null) || cwd=
-            project=$(printf '%s' "${cwd##*/}" | LC_ALL=C /usr/bin/tr -cd 'A-Za-z0-9._-' | /usr/bin/cut -c 1-15)
-            /usr/bin/open -g -b local.folobutton.dev "folobutton-dev://agent?event=done&source=Codex&thread=$thread&turn=$turn&project=$project"
-            """#
+        if agent == .codex {
+            let quoted = "'" + codexHelperURL.path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+            // 正文仅经0600邮箱，不经过URL/进程参数；注释标记供精确升级/卸载拥有的命令。
+            return "/usr/bin/python3 \(quoted) --event \(event.rawValue) # \(marker)?source=Codex"
         }
         let source = agent.name.replacingOccurrences(of: " ", with: "%20")
         return "open -g '\(marker)?event=\(event.rawValue)&source=\(source)'"
@@ -68,11 +64,12 @@ nonisolated enum AgentHookInstaller {
 
     static func isInstalled(_ agent: Agent, at url: URL? = nil) -> Bool {
         guard let text = try? String(contentsOf: url ?? agent.configURL, encoding: .utf8) else { return false }
-        return text.contains(agent == .codex ? "&thread=$thread&turn=$turn" : marker)
+        return agent == .codex ? text.contains("AgentBridge/installed/codex-hook.py") : text.contains(marker)
     }
 
     /// 合并写入 hook;重复执行不会产生重复条目。`url` 仅供测试指定文件。
     static func install(_ agent: Agent, at url: URL? = nil) throws {
+        if agent == .codex, url == nil { try installCodexHelper() }
         let file = url ?? agent.configURL
         let fm = FileManager.default
         var root: [String: Any] = [:]
@@ -89,19 +86,22 @@ nonisolated enum AgentHookInstaller {
         var hooks = root["hooks"] as? [String: Any] ?? [:]
         for (hook, event) in agent.events {
             var groups = hooks[hook] as? [[String: Any]] ?? []
-            if agent == .codex, event == .done {
+            if agent == .codex {
                 // 原位升级旧命令，保留同组用户 Hook 和运行选项。
-                let old = "open -g '\(marker)?event=done&source=Codex'"
                 for index in groups.indices {
                     guard var entries = groups[index]["hooks"] as? [[String: Any]] else { continue }
-                    for entry in entries.indices where entries[entry]["command"] as? String == old {
-                        entries[entry]["command"] = command(event, agent: agent)
+                    for entry in entries.indices {
+                        if let value = entries[entry]["command"] as? String,
+                           value.contains(marker), value.contains("source=Codex") { entries[entry]["command"] = command(event, agent: agent) }
                     }
                     groups[index]["hooks"] = entries
                 }
             }
             let exists = groups.contains { group in
-                (group["hooks"] as? [[String: Any]])?.contains { ($0["command"] as? String)?.contains(marker) == true } == true
+                (group["hooks"] as? [[String: Any]])?.contains { entry in
+                    guard let value = entry["command"] as? String, value.contains(marker) else { return false }
+                    return agent != .codex || value.contains("source=Codex")
+                } == true
             }
             if !exists {
                 groups.append(["hooks": [["type": "command", "command": command(event, agent: agent)]]])
@@ -111,6 +111,24 @@ nonisolated enum AgentHookInstaller {
         root["hooks"] = hooks
         let data = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         try data.write(to: file, options: .atomic)
+    }
+
+    /// 已配置的旧通知只升级本应用自己的条目；不会启用从未安装的Hook或覆盖其他notify。
+    static func upgradeCodexIfInstalled() throws {
+        guard let text = try? String(contentsOf: Agent.codex.configURL, encoding: .utf8),
+              text.contains(marker), text.contains("source=Codex") else { return }
+        try install(.codex)
+    }
+    private static func installCodexHelper() throws {
+        guard let source = Bundle.main.url(forResource: "codex-hook.py", withExtension: nil, subdirectory: "AgentBridges") else {
+            throw NSError(domain: "VibeKey", code: 4, userInfo: [NSLocalizedDescriptionKey:
+                String(localized: "安装包缺少应用桥接资源，请重新构建应用", bundle: .l10n)])
+        }
+        let target = codexHelperURL
+        try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true,
+                                               attributes: [.posixPermissions: 0o700])
+        try Data(contentsOf: source).write(to: target, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target.path)
     }
 
     /// 仅卸载本应用为此Agent注册的通知命令，不恢复旧备份覆盖用户新配置。

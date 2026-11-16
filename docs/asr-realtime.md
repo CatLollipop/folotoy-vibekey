@@ -1,6 +1,6 @@
-# Passport 豆包实时识别与文字对话（固件 0.5.1）
+# Passport 豆包实时识别与文字对话（固件 0.6.0）
 
-0.4引入豆包实时语音识别，0.5按用户新决定改为纯文字对话。按住确认键时持续发送16kHz、16bit、单声道PCM，服务的真实中间结果立即显示字幕；松开后送完音频并等待完整终包，再调用DeepSeek deepseek-flash。思考时保留识别字幕，模型增量使用独立reply视图，完成后可短按▲/▼阅读全文。设备不调用TTS、不创建播放队列，不要求MiniMax Key；本机旧凭据保留。旧MiniMax文件ASR已删除，不自动切换其他ASR供应商。
+0.4引入豆包实时语音识别，0.5按用户新决定改为纯文字对话。按住确认键时持续发送16kHz、16bit、单声道PCM，服务的真实中间结果立即显示字幕；松开后送完音频并等待完整终包，再调用DeepSeek deepseek-flash。思考时保留识别字幕，模型增量使用独立reply视图，完成后可短按▲/▼阅读全文。设备不调用TTS、不创建TTS播放队列，不要求MiniMax Key；本机旧凭据保留。0.6仅增加本地合成短完成音和独立电脑通知，热模式与资源策略见[device-runtime.md](device-runtime.md)。旧MiniMax文件ASR已删除，不自动切换其他ASR供应商。
 
 官方依据：[双向流式接口](https://docs.volcengine.com/docs/doubao-voice/bidirectional-streaming-automatic-speech-recognition-websocket?lang=zh)、[v3协议说明](https://www.volcengine.com/docs/6561/1354869)、[新版协议页](https://docs.volcengine.com/docs/doubao-voice/large-model-streaming-automatic-speech-recognition-api-1?lang=en)。设备使用固定`espressif/esp_websocket_client 1.8.0`与ESP-IDF5.5.3的TLS/WS transport。
 

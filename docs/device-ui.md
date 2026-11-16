@@ -2,7 +2,7 @@
 
 本分支 AI 助理接管优先于下文旧 Codex 操作：伴随模式按住 OK 说话；短按上键仅提交所选 Hub 会话中由助手写入且未被修改的草稿，下键停止所选任务；长按下键打开云对话 / 原会话 / BACK 列表，上下移动、OK确认，30秒无操作关闭。菜单显示 `.list` 优先，按键不会落回原 Codex。关闭设置中的「Passport 按住说话用于 AI 助理」后恢复旧流程。设备独立模式的本地按键规则见 [assistant-device-protocol.md](assistant-device-protocol.md)。
 
-当前C3启动先保留核心任务/按键/USB资源；BLE仅在free heap≥96KiB且largest≥32KiB门限下可选启动，低预算使用USB/Wi-Fi，下面BLE回退交互仅在预算允许时可用。独立模式切换会安全重启到单Wi-Fi，离线页面始终显示当前宠物。
+当前C3启动先保留核心任务/按键/USB资源；BLE仅在free heap≥96KiB且largest≥32KiB门限下可选启动，低预算使用USB/Wi-Fi，下面BLE回退交互仅在预算允许时可用。0.6模式切换使用能力门禁下的热事务，离线页面始终显示当前宠物。
 
 本地分支无线交互：首次在 Mac 设置 › Passport 配置 2.4 GHz Wi-Fi；设备和 Mac 处于同一局域网后，状态栏显示 `WIFI`，USB 在位时仍优先显示 `USB`。Mac 显示“Wi-Fi 已就绪，拔线后自动切换”才表示完成无线应用层握手。设备最多保存 4 个网络，换网不需要 Mac。离线继续显示原 OFFLINE/WAITING FOR MAC 页面。配网后本轮启动使用 Wi-Fi，未配网使用 BLE；Wi-Fi 已配置但 25 秒拿不到 IP 时自动重启到 BLE 单栈并显示 `BLUETOOTH MODE / HOLD DOWN`。长按 ▲ 约 1 秒切换听写、翻译、字幕模式，继续按住到约 2.5 秒打开网络菜单；蓝牙模式或完全离线时也可长按 ▼ 直接打开。最后一项 `USE BLUETOOTH` 会保留配网记录并立即切到蓝牙。Wi-Fi 正常在线时长按 ▼ 仍用于 Agent 应用 / 项目 / 会话导航。蓝牙在线时选择已保存的 Wi-Fi（包括当前标记项）会清除蓝牙模式并重启尝试 Wi-Fi，Wi-Fi 离线时选择当前网络也会重试。手动蓝牙在插回 USB 后不会被强制切回；自动回退到蓝牙时，插回 USB 会自动恢复 Wi-Fi。
 
@@ -132,6 +132,12 @@ Codex、DeepSeek Honeycomb、ZCode、Claude、WorkBuddy 以及其他带聊天输
 - 不按 Bundle ID 白名单：任何 App 在长按时都会先探测「聊天输入框 + 左侧项目/会话」。Codex / DSH 用专用适配器，其余走通用 AX 启发式；探测失败就回退普通应用列表，不会阻塞听写。
 - 折叠的项目选中后自动展开（Claude 的 `Toggle sessions for`、ZCode 的项目标题按钮）。读不到会话显示 `NO SESSIONS`。
 
+## 0.6助手surface、读层与按钮提示
+
+助手页面使用全宽240px暖中性背景，宠物和198px正文都以x120居中；无TIME footer或空回复框。16px状态图标紧贴宠物下缘，阶段文本与数字页码移除，保留来源、真实ASR/回复与具体错误。关闭宠物显示仍保留助手surface，不露出旧READY/PROC；下文Matrix页面说明仅适用于未由助手接管的旧听写功能。
+
+右侧每实体键只画一个当前动作。阅读时可前后翻才显示对应箭头，边界短按仍消费但不显示假动作；可用长按模式/应用作为回退。页进度在右UP/DOWN之间使用至多7空心圆点/当前实心，前后溢出各有省略点并随页滚动。通知读层优先于云reply提供按钮和页点；关闭恢复原reply页。长上菜单采用同锁直接切屏/return-pending直返，禁止旧READY淡出闪帧。独立通知支持source-only和完整commit后的正文，见[device-task-notifications.md](device-task-notifications.md)。
+
 ## 右侧按键提示列
 
 机身实体布局:电源键在左侧靠上;三个功能键在右侧,自上而下为 UP、DOWN、OK。提示贴着屏幕右边缘,与各自的实体键水平对齐(y ≈ 70 / 170 / 270):
@@ -151,11 +157,11 @@ Codex、DeepSeek Honeycomb、ZCode、Claude、WorkBuddy 以及其他带聊天输
 - 提示列宽22px，右主图标中心x=228、y=70/170/270。常用动作采用统一10–12px、1px线宽路径，暖中性短按色`#B8B4A8`、长按/左被动电源色`#888478`，不再画装饰三点。少见的既有keys图标回退12px Material；空/未知id隐藏。
 - 默认 UP 使用发送图标、DOWN 使用停止图标;二者执行前都核对当前 Codex 目标,不是单纯发送 Enter/Esc。发送成功显示 `SENT`,停止成功显示 `STOPPED`;当前输入框为空时显示 `INPUT EMPTY`，没有运行任务时返回待机页,无法核对显示 `CHECK MAC`,回执不明显示 `UNSURE`。
 - 图标字体由 `firmware/tools/gen-icon-font.sh` 从固定提交的上游字体生成(lv_font_conv,4 bpp):12 px 字体含 21 个按键提示字形(其中 ⌦ `del` 是把 backspace 水平镜像派生的字形;派生用临时 venv 里锁定版本的 fontTools,结果逐字节可复现),56 px 字体保留页面主图标字形表;两种字号来自同一张表,协议 id、固件枚举与字形一一对应。
-- 按下只在240ms内提亮同一图标，不增加点或位移；长按功能用同键的次图标和小圆环表示。
+- 按下只在240ms内提亮同一图标，不增加点或位移；每实体键只画一个glyph，有效翻页优先；没有可用短按时才回退唯一长按动作并附微型圆环。
 - 禁用时使用低亮中性色；按下短暂变错误色提示，不抖动，不移动物理键锚点。
 - 三个纵坐标(70 / 170 / 270)是固件 `ib_ui_hints.h` 里的常量 `IB_HINT_Y_UP/DOWN/OK`,实测偏差时只改这里。
 
-## AGENT 通知层(vibe coding)
+## 旧版AGENT通知层（legacy兼容）
 
 Mac 下发 `agent` 时,在任何页面上方弹出全屏通知层(录音中不打断录音,只在顶部显示 28 px 横幅,且不拦截按键;离开录音页后再转为全屏通知层)。横幅只占左侧内容区,内容为图标 + 来源名(如 `! Claude Code`),来源名过长时末尾显示省略号:
 - 全屏通知的主体是大号点阵(节距 12、点 7 px):每颗点从屏幕外一圈沿自己的方向飞入拼成字形(按列错峰 8 ms,单颗 360 ms ease-out)。
@@ -178,9 +184,9 @@ Mac 下发 `agent` 时,在任何页面上方弹出全屏通知层(录音中不�
 
 ## 独立 AI 助手与 Aora Dot
 
-独立模式下，屏幕以Aora Dot宠物显示录音、上传、思考、朗读、完成与错误，配两行简体中文语义状态与已知机器错误提示；设备为内置像素点阵，Mac为高清vector/solid。宠物支持44个canonical状态，名单/来源/许可见 [pet-runtime.md](pet-runtime.md)。LIST/USAGE/SUB始终优先于宠物显示，导航信息不被覆盖。
+独立模式下，屏幕以所选Aora宠物点阵表现真实状态，宠物下缘小型阶段图标代替阶段文字，保留真实转写、回复和可操作机器错误提示；不请求朗读。Mac使用用户选定高清画风。宠物支持44个canonical状态，名单/来源/许可见 [pet-runtime.md](pet-runtime.md)。LIST/USAGE/SUB始终优先于宠物显示，导航信息不被覆盖。
 
-独立按键：按住OK录音、松开发送（最长30秒）；处理中/朗读中再次按住OK会打断旧轮并在仍按住时自动开录；▼短按取消，空闲长按▼退出独立模式；空闲短按▲清历史。Flash预擦除显示preparing，准备完成才显示可录音。纯静音、短录音、网络/云端错误均显示错误并保留恢复路径。退出独立后恢复原有Mac相伴交互。完整状态机与真实硬件验收项见 [assistant-device-protocol.md](assistant-device-protocol.md)。
+独立按键：按住OK录音、松开发送（最长30秒）；处理中再次按住OK会打断旧轮并在仍按住时自动开录；▼短按取消，长按▲运行模式、空闲长按▼无线列表；空闲短按▲清历史。阅读正文时▲▼优先翻页并消费边界，不能落入清历史/停止。Flash预擦除显示preparing，准备完成才显示可录音。纯静音、短录音、网络/云端错误均显示错误并保留恢复路径。退出独立后恢复原有Mac相伴交互。完整状态机与真实硬件验收项见 [assistant-device-protocol.md](assistant-device-protocol.md)。
 
 完整刷新结束后才安排下一帧，耗时较大时自然降低实际帧率；fps设置是目标上限。点阵自绘先按DMA clip裁可见行/列，每次callback复用descriptor，避免小DMA缓冲重复扫描整屏。frame timer在REFR_READY后恢复，保证LVGL handler可返回并由port实际delay，让核心任务/IDLE调度；看门狗保持启用。
 

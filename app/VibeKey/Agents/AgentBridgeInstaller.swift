@@ -35,7 +35,11 @@ import AppKit
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
     }
     static func installClaudeCode(configURL: URL? = nil) throws {
-        try installHookConfig(adapter: "claudeCode", configURL: configURL ?? claudeCodeConfigURL)
+        let file = configURL ?? claudeCodeConfigURL
+        try installHookConfig(adapter: "claudeCode", configURL: file)
+        let legacy = Set(AgentHookInstaller.Agent.claudeCode.events.map { AgentHookInstaller.command($0.event, agent: .claudeCode) })
+        // 只迁移本应用旧精确命令；通用scheme、用户自写Hook和Codex通知都不删除。
+        try AgentComponentConfiguration.uninstall(at: file) { legacy.contains($0) }
     }
     /// WorkBuddy配置位置依实际版本选择；未观察到原应用回调之前，安装不代表接入成功。
     static func installWorkBuddy(configURL: URL) throws { try installHookConfig(adapter: "workBuddy", configURL: configURL) }

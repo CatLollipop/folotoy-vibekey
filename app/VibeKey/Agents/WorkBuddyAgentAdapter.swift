@@ -32,21 +32,24 @@ import Foundation
     func submit(in session: AssistantAgentSession) async throws { try await desktop.submit(in: session) }
     func stop(in session: AssistantAgentSession) async throws { try await desktop.stop(in: session) }
     func poll(_ session: AssistantAgentSession?) async {
-        guard let session, session.applicationID == id else { return }
-        let matches = mailbox.registrations(for: id).flatMap(\.sessions).filter { Self.matches($0.name, session.name) && desktop.matchesNativeSession($0.sessionID, in: session) }
+        let current = session?.applicationID == id ? session : nil
+        let matches = mailbox.registrations(for: id).flatMap(\.sessions).filter { hook in
+            current.map { Self.matches(hook.name, $0.name) && desktop.matchesNativeSession(hook.sessionID, in: $0) } == true
+        }
         for envelope in mailbox.events(for: id) {
-            guard matches.count == 1, let native = matches.first,
-                  native.instanceID == envelope.event.instanceID, native.sessionID == envelope.event.sessionID else { continue }
             let event = envelope.event
-            onEvent?(ConversationEvent(applicationID: id, instanceID: session.instanceID, sessionID: session.sessionID,
-                                       turnID: event.instanceID + ":" + event.turnID, eventID: event.eventID,
+            let matched = matches.count == 1 && matches.first?.instanceID == event.instanceID && matches.first?.sessionID == event.sessionID
+            let binding = matched ? current! : AssistantAgentSession(applicationID: id, instanceID: event.instanceID, sessionID: event.sessionID, name: name)
+            let turn = matched && AgentNotificationReducer.hasBoundTurn(event.turnID) ? event.instanceID + ":" + event.turnID : event.turnID
+            onEvent?(ConversationEvent(applicationID: id, instanceID: binding.instanceID, sessionID: binding.sessionID,
+                                       turnID: turn, eventID: event.eventID,
                                        sequence: event.sequence, state: event.state, timestamp: event.timestamp))
             if let reply = envelope.reply {
-                onReply?(AgentReply(session: session, turnID: event.instanceID + ":" + event.turnID,
+                onReply?(AgentReply(session: binding, turnID: turn,
                                    messageID: reply.messageID, text: reply.text, isFinal: reply.isFinal))
             }
         }
-        if matches.count != 1 { await desktop.poll(session) }
+        if matches.count != 1 { await desktop.poll(current) }
     }
     nonisolated private static func matches(_ a: String, _ b: String) -> Bool {
         AgentSessionNameMatcher.normalizedWindowTitle(a) == AgentSessionNameMatcher.normalizedWindowTitle(b)

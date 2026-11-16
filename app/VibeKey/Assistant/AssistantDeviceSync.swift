@@ -83,24 +83,15 @@ import Observation
 
     func setMode(_ value: String) { perform { [self] in
         guard value == "standalone" || value == "companion" else { throw AssistantError.invalidProfile }
+        // 两个方向都先门禁；旧固件会用reboot切模式，不能发送后才发现不支持。
+        let capability = try await request([], op: "capabilities")
+        guard DeviceAssistantProtocol.supportsHotMode(capability) else { throw AssistantError.upgradeRequired }
         if value == "standalone" {
-            let capability=try await request([],op:"capabilities")
             guard DeviceAssistantProtocol.supportsTextAssistant(capability) else { throw AssistantError.upgradeRequired }
         }
-        let boot = link.deviceBootID
         let acknowledgment = try await request([("value", .string(value))], op: "mode")
+        guard DeviceAssistantProtocol.acceptsHotModeAcknowledgment(acknowledgment, target: value) else { throw AssistantError.deliveryUnknown }
         receive(acknowledgment)
-        if acknowledgment.restarting {
-            restarting = true
-            defer { restarting = false }
-            // mode ACK 只证明已保存；等设备新 boot 的握手证据，再读取实际应用状态。
-            let deadline = ContinuousClock.now + .seconds(35)
-            while link.deviceBootID == boot || link.connection == .disconnected {
-                try Task.checkCancellation()
-                guard ContinuousClock.now < deadline else { throw AssistantError.deliveryUnknown }
-                try await Task.sleep(for: .milliseconds(200))
-            }
-        }
         receive(try await request([], op: "status"))
         guard mode == value else { throw AssistantError.deliveryUnknown }
     } }
@@ -131,10 +122,19 @@ import Observation
     /// 每次异步回执后检查取消，旧事务不得继续上传或覆盖新事务进度。
     private func request(_ fields: [(String, FlatJSON.Value)], op: String,
                          revision: UInt32? = nil, offset: Int? = nil) async throws -> DeviceAssistantMessage {
-        try Task.checkCancellation()
-        let reply = try await link.assistantRequest(fields, op: op, revision: revision, offset: offset)
-        try Task.checkCancellation()
-        return reply
+        let readOnly = op == "status" || op == "capabilities"
+        let deadline = ContinuousClock.now + .seconds(3)
+        while true {
+            try Task.checkCancellation()
+            do {
+                let reply = try await link.assistantRequest(fields, op: op, revision: revision, offset: offset)
+                try Task.checkCancellation()
+                return reply
+            } catch let error as AssistantError where readOnly && error == .device("busy") && ContinuousClock.now < deadline {
+                // 热切ACK后后台预擦可能短暂持锁。只重查已明确拒绝的只读请求，不重发模式或提交。
+                try await Task.sleep(for: .milliseconds(100))
+            }
+        }
     }
 
     private func perform(_ body: @escaping @MainActor () async throws -> Void) {

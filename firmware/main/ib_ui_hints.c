@@ -1,5 +1,5 @@
 // 两侧实体键提示：统一10px/1px线宽和低调暖白，不加装饰点列或错位抖动。
-// 右侧物理UP/DOWN/OK的主图标中心固定y70/170/270；长按仅在同键下方以小圆环标记。
+// 右侧物理UP/DOWN/OK的主图标中心固定y70/170/270；每键唯一glyph，长按回退用小圆环标记。
 #include "ib_ui_hints.h"
 #include "ib_ui_gfx.h"
 #include "ib_ui_page.h"
@@ -7,20 +7,21 @@
 #define PRESS_MS 240
 #define MAIN_CX 10
 #define MAIN_CY 10
-#define HOLD_DY 14
 #define HINT_IDLE 0xB8B4A8
 #define HINT_HOLD 0x888478
 #define HINT_LIGHT 0xE8E4D8
 #define HINT_DISABLED 0x484840
 
 typedef struct {lv_obj_t *view;ib_icon_t press,hold;int32_t flash,deny;} hint_t;
-static lv_obj_t *s_layer;
+static lv_obj_t *s_layer,*s_pips;
+static uint16_t s_page_index,s_page_total;
+static bool s_page_active;
 static bool s_disabled,s_visible=true,s_recording;
 static int32_t s_recording_phase;
 static hint_t s_hints[IB_UI_KEY_COUNT];
 
 /* 常用动作全部采用相同1px路径，其他既有协议图标保留12px Material字形语义。 */
-static void glyph(const ib_fx_t *f,int x,int y,ib_icon_t icon,lv_color_t c)
+void ib_ui_action_glyph(const ib_fx_t *f,int x,int y,ib_icon_t icon,lv_color_t c)
 {
 #define LINE(a,b,d,e) ib_fx_line(f,x+(a),y+(b),x+(d),y+(e),1,c,LV_OPA_COVER)
     switch(icon){
@@ -68,13 +69,24 @@ static void hint_draw(lv_event_t *event)
         main=lv_color_mix(IB_C(0x58E898),IB_C(0x208850),(uint8_t)(s_recording_phase*255/IB_P_ONE));
         ib_fx_ring(&f,MAIN_CX,MAIN_CY,7+(s_recording_phase>IB_P_ONE/2),1,main,LV_OPA_COVER);
     }
-    glyph(&f,MAIN_CX,MAIN_CY,h->press,main);
-    if(h->hold!=IB_ICON_NONE){
-        int y=MAIN_CY+(h->press==IB_ICON_NONE?0:HOLD_DY);
-        lv_color_t hold=IB_C(s_disabled?HINT_DISABLED:HINT_HOLD);
-        glyph(&f,MAIN_CX,y,h->hold,hold);
-        ib_fx_ring(&f,18,y,1,1,hold,LV_OPA_COVER);
+    // 每实体键只有一个当前动作：可用短按/翻页优先，否则唯一长按动作回退。
+    bool hold_only=h->press==IB_ICON_NONE&&h->hold!=IB_ICON_NONE;
+    ib_ui_action_glyph(&f,MAIN_CX,MAIN_CY,hold_only?h->hold:h->press,hold_only?IB_C(HINT_HOLD):main);
+    if(hold_only)ib_fx_ring(&f,18,MAIN_CY,1,1,IB_C(HINT_HOLD),LV_OPA_COVER);
+}
+static void pips_draw(lv_event_t *event)
+{
+    if(!s_page_active||!s_page_total)return;
+    ib_fx_t f;ib_fx_begin(&f,event);unsigned visible=s_page_total<7?s_page_total:7;
+    ib_hint_pages_t window=ib_hints_page_window();unsigned start=window.first;
+    int first=38-(int)(visible-1)*4;lv_color_t ink=IB_C(0xB8B4A8);
+    for(unsigned i=0;i<visible;i++){
+        int y=first+(int)i*8;
+        if(start+i==s_page_index)ib_fx_circle(&f,MAIN_CX,y,2,ink,LV_OPA_COVER);
+        else ib_fx_ring(&f,MAIN_CX,y,2,1,ink,LV_OPA_COVER);
     }
+    if(start)for(int i=0;i<3;i++)ib_fx_rect(&f,MAIN_CX,4+i*3,1,1,0,ink,LV_OPA_COVER);
+    if(start+visible<s_page_total)for(int i=0;i<3;i++)ib_fx_rect(&f,MAIN_CX,66+i*3,1,1,0,ink,LV_OPA_COVER);
 }
 static void power_draw(lv_event_t *event)
 {
@@ -99,6 +111,7 @@ void ib_hints_create(lv_obj_t *screen)
         hint_t *h=&s_hints[i];h->press=h->hold=IB_ICON_NONE;
         h->view=ib_fx_create(s_layer,0,ys[i]-MAIN_CY,IB_HINT_COL_W,34,hint_draw,h);visibility(h);
     }
+    s_pips=ib_fx_create(s_layer,0,82,IB_HINT_COL_W,76,pips_draw,NULL);lv_obj_add_flag(s_pips,LV_OBJ_FLAG_HIDDEN);
     ib_fx_create(screen,6,IB_HINT_Y_POWER-7,12,14,power_draw,NULL);
 }
 void ib_hints_set_icon(ib_ui_key_t key,ib_icon_t icon)
@@ -147,4 +160,28 @@ void ib_hints_set_recording(bool active)
     lv_anim_t a;lv_anim_init(&a);lv_anim_set_var(&a,h);lv_anim_set_exec_cb(&a,recording_cb);
     lv_anim_set_values(&a,0,IB_P_ONE);lv_anim_set_duration(&a,700);lv_anim_set_reverse_duration(&a,700);
     lv_anim_set_repeat_count(&a,LV_ANIM_REPEAT_INFINITE);lv_anim_set_path_cb(&a,lv_anim_path_ease_in_out);lv_anim_start(&a);
+}
+
+void ib_hints_set_pagination(bool active,uint16_t index,uint16_t total)
+{
+    active=active&&total>0;
+    if(active==s_page_active&&index==s_page_index&&total==s_page_total)return;
+    s_page_active=active;s_page_total=total;s_page_index=total&&index>=total?total-1:index;
+    if(active)lv_obj_remove_flag(s_pips,LV_OBJ_FLAG_HIDDEN);else lv_obj_add_flag(s_pips,LV_OBJ_FLAG_HIDDEN);
+    lv_obj_invalidate(s_pips);
+}
+ib_icon_t ib_hints_current_icon(ib_ui_key_t key)
+{
+    if((unsigned)key>=IB_UI_KEY_COUNT)return IB_ICON_NONE;
+    hint_t *h=&s_hints[key];return h->press!=IB_ICON_NONE?h->press:h->hold;
+}
+
+ib_hint_pages_t ib_hints_page_window(void)
+{
+    ib_hint_pages_t out={.active=s_page_active,.current=s_page_index,.total=s_page_total};
+    if(!s_page_active||!s_page_total)return out;
+    out.count=s_page_total<7?s_page_total:7;
+    out.first=s_page_index>out.count/2?s_page_index-out.count/2:0;
+    if(out.first+out.count>s_page_total)out.first=s_page_total-out.count;
+    out.before=out.first>0;out.after=out.first+out.count<s_page_total;return out;
 }

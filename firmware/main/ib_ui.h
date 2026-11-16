@@ -98,6 +98,14 @@ typedef enum {
     IB_UI_LINK_WIFI,
 } ib_ui_link_t;
 
+typedef ib_reply_reader_fn ib_ui_reply_reader_fn;
+// 独立通知读层，不复用ASR或cloud reply的buffer/generation。
+typedef enum {IB_UI_NOTIFICATION_INPUT,IB_UI_NOTIFICATION_COMPLETED,IB_UI_NOTIFICATION_ERROR} ib_ui_notification_kind_t;
+bool ib_ui_notification_show(uint32_t generation,const char *source,ib_ui_notification_kind_t kind,bool truncated,size_t length,ib_ui_reply_reader_fn reader,void *ctx);
+bool ib_ui_notification_hide(void);
+bool ib_ui_notification_page(int delta);
+bool ib_ui_notification_visible(void);
+
 // 建立全部页面与状态栏,初始显示 OFFLINE。需先 bsp_lvgl_init()。
 esp_err_t ib_ui_init(void);
 
@@ -149,7 +157,6 @@ bool ib_ui_transcript_update(uint32_t generation,const char *utf8,bool final);
 // generation=0强制清理（断连/切目标）；已取消/已final轮次拒绝迟到partial。
 void ib_ui_transcript_clear(uint32_t generation);
 // 回复与ASR字幕独立；全文由assistant持有，reader只复制当前已发布前缀，不持有control/GUI锁。
-typedef ib_reply_reader_fn ib_ui_reply_reader_fn;
 bool ib_ui_reply_begin(uint32_t generation);
 // 完整校验length并发布当前页成功才true，可作为reply_final ACK门禁；最大4096B。
 bool ib_ui_reply_update(uint32_t generation,size_t length,bool final,ib_ui_reply_reader_fn reader,void *ctx);

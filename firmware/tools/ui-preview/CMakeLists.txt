@@ -53,6 +53,8 @@ set(UI_SOURCES
     "${UI_DIR}/ib_ui_dots.c"
     "${UI_DIR}/ib_ui_statusbar.c"
     "${UI_DIR}/ib_ui_hints.c"
+    "${UI_DIR}/ib_ui_activity.c"
+    "${UI_DIR}/ib_ui_notification.c"
     "${UI_DIR}/ib_ui_agent.c"
     "${UI_DIR}/ib_ui_offline.c"
     "${UI_DIR}/ib_ui_idle.c"
@@ -78,6 +80,8 @@ add_executable(ib_ui_preview
     preview_scenarios.c
     preview_main.c
     "${UI_DIR}/ib_reply_store.c"
+    "${UI_DIR}/ib_notification.c"
+    "${UI_DIR}/ib_crc32.c"
     "${UI_DIR}/ib_cloud_stream.c"
     ${UI_SOURCES})
 target_include_directories(ib_ui_preview PRIVATE

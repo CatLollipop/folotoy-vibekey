@@ -7,6 +7,9 @@
 #include "ib_ui.h"
 #include "ib_tts_player.h"
 #include "ib_run_menu.h"
+#include "ib_hot_mode.h"
+#include "ib_notification.h"
+#include "ib_notification_wire.h"
 #include "ib_app.h"
 #include "ib_ble.h"
 #include "ib_cloud_stream.h"
@@ -35,6 +38,11 @@ static bool (*s_reply_apply)(void *);
 static void *s_reply_apply_context;
 static uint32_t s_reply_generation;
 static bool s_reply_invalid;
+static bool (*s_notification_apply)(void *);
+static bool (*s_notification_hide)(void *);
+static void *s_notification_context;
+static int64_t s_notification_upload_deadline;
+void ib_assistant_set_notification_apply(bool (*apply)(void *),bool (*hide)(void *),void *context){s_notification_apply=apply;s_notification_hide=hide;s_notification_context=context;}
 void ib_assistant_set_reply_apply(bool (*apply)(void *),void *context){s_reply_apply=apply;s_reply_apply_context=context;}
 static SemaphoreHandle_t s_control;
 static TaskHandle_t s_worker,s_reader;
@@ -47,8 +55,9 @@ static const char *s_comp_error="";
 static char s_last_error[48];
 static portMUX_TYPE s_error_lock=portMUX_INITIALIZER_UNLOCKED;
 static volatile bool s_restart_requested;
+static volatile bool s_switching,s_worker_exit_requested,s_worker_starting;
 static volatile bool s_mode,s_busy,s_cancel,s_stop,s_record,s_record_error,s_prepared;
-static volatile bool s_press_pending,s_forget,s_button_held,s_server_change,s_prepare_failed,s_restart_while_held;
+static volatile bool s_press_pending,s_forget,s_button_held,s_prepare_failed,s_restart_while_held;
 static ib_voice_stats_t s_voice;
 static volatile ib_assistant_state_t s_state=IB_ASSIST_IDLE;
 static unsigned s_slot;
@@ -81,7 +90,7 @@ static void last_error_clear(void){portENTER_CRITICAL(&s_error_lock);s_last_erro
 static void report_state(void){
     char error_code[48];last_error_copy(error_code);
     char line[256];snprintf(line,sizeof(line),"{\"t\":\"assistant\",\"op\":\"state\",\"mode\":\"%s\",\"state\":\"%s\",\"configured\":%d,\"rev\":%lu,\"error_code\":\"%s\"}\n",s_mode?"standalone":"companion",ib_assistant_state_name(s_state),ib_assistant_store_configured(),(unsigned long)ib_assistant_store_revision(false),s_state==IB_ASSIST_ERROR?error_code:"");
-    ib_usb_send(line,strlen(line));if(!s_mode)ib_wifi_send((const uint8_t *)line,strlen(line));
+    ib_usb_send(line,strlen(line));ib_wifi_send((const uint8_t *)line,strlen(line));
 }
 static void state(ib_assistant_state_t st,const char *text){if(st==IB_ASSIST_ERROR)last_error_set(text);s_state=st;if(s_status)s_status(st,text?text:"",s_context);report_state();}
 bool ib_assistant_standalone(void){return s_mode;}
@@ -143,6 +152,7 @@ static const char *record_realtime(const ib_assistant_profile_t *profile,char *t
     if(!s_prepared)return "recording_not_ready";
     esp_err_t e=ESP_FAIL;for(int i=0;i<20&&!cancelled();i++){e=ib_audio_pcm_begin();if(e==ESP_OK)break;vTaskDelay(pdMS_TO_TICKS(20));}
     if(e!=ESP_OK)return "audio_busy";
+    bsp_audio_mute(true); //纯采音期间DAC保持静音，短提示音取消后的旧TX DMA不能漏回麦克风。
     s_samples=xStreamBufferCreate(RECORD_BUFFER,PCM_BLOCK);
     if(!s_samples){ib_audio_pcm_end();return "out_of_memory";}
     s_record=true;s_capture_done=false;s_prepared=false;
@@ -167,11 +177,13 @@ static const char *record_realtime(const ib_assistant_profile_t *profile,char *t
 static void worker(void *unused){
     (void)unused;
     for(;;){
-        if(s_server_change){vTaskDelay(pdMS_TO_TICKS(250));ib_wifi_set_companion_enabled(!s_mode);s_server_change=false;}
-        if(!s_mode){if(!s_restart_requested)ib_wifi_set_companion_enabled(true);ib_assistant_cloud_clear_history();s_worker=NULL;vTaskDelete(NULL);return;}
+        while(s_worker_starting&&!s_worker_exit_requested)vTaskDelay(pdMS_TO_TICKS(10));
+        if(s_worker_exit_requested||!s_mode){s_worker=NULL;vTaskDelete(NULL);return;}
         if(s_forget){ib_assistant_cloud_clear_history();s_forget=false;}
-        if(s_mode&&!s_busy&&!ib_assistant_store_uploading()&&!s_prepared&&!s_prepare_failed&&ib_assistant_store_configured()){
-            xSemaphoreTake(s_control,portMAX_DELAY);s_busy=true;
+        if(s_mode&&!s_switching&&!s_busy&&!ib_assistant_store_uploading()&&!s_prepared&&!s_prepare_failed&&ib_assistant_store_configured()){
+            if(xSemaphoreTake(s_control,pdMS_TO_TICKS(50))!=pdTRUE)continue;
+            if(s_switching||s_worker_exit_requested){xSemaphoreGive(s_control);continue;}
+            s_busy=true;
             bool ok=prepare_slot();s_busy=false;xSemaphoreGive(s_control);
             if(ok){
                 state(IB_ASSIST_IDLE,"HOLD OK TO TALK");
@@ -181,18 +193,17 @@ static void worker(void *unused){
         }
         ulTaskNotifyTake(pdTRUE,pdMS_TO_TICKS(250));
         if(!s_press_pending)continue;
+        if(xSemaphoreTake(s_control,pdMS_TO_TICKS(50))!=pdTRUE)continue;
         s_press_pending=false;
-        xSemaphoreTake(s_control,portMAX_DELAY);
-        if(!s_mode||s_busy||ib_assistant_store_uploading()){xSemaphoreGive(s_control);continue;}
+        if(!s_mode||s_switching||s_worker_exit_requested||s_busy||ib_assistant_store_uploading()){xSemaphoreGive(s_control);continue;}
         if(!ib_assistant_store_configured()){state(IB_ASSIST_ERROR,"profile_required");xSemaphoreGive(s_control);continue;}
         if(!s_prepared){state(IB_ASSIST_ERROR,"recording_not_ready");xSemaphoreGive(s_control);continue;}
+        if(s_notification_hide)(void)s_notification_hide(s_notification_context);
+        ib_notification_dismiss();
         s_busy=true;last_error_clear();ib_reply_store_clear(0);transcript_clear(0);xSemaphoreGive(s_control);const char *error=NULL;char *transcript=NULL,*reply=NULL;bool reply_started=false;
         if(!ib_wifi_is_ready())error="wifi_unavailable";
-        if(!error && !ib_wifi_companion_released()) {
-            ib_wifi_set_companion_enabled(false);
-            for(int i=0;i<100&&!ib_wifi_companion_released();i++)vTaskDelay(pdMS_TO_TICKS(20));
-            if(!ib_wifi_companion_released())error="companion_busy";
-        }
+        // 公网TLS前实际退出局域网会话/任务/队列；STA不动，Mac保留通知队列等待重连。
+        if(!error&&ib_wifi_companion_set_wait(false,2000)!=ESP_OK)error="companion_busy";
         const ib_assistant_profile_t *p=ib_assistant_profile();
         if(!error){transcript=calloc(1,4096);if(!transcript)error="out_of_memory";}
         if(!error)error=record_realtime(p,transcript,4096);
@@ -208,7 +219,8 @@ static void worker(void *unused){
             if(!ib_reply_store_worker_end(s_reply_generation,!error)&&!error)error=cancelled()?"cancelled":"empty_reply";
             reply=NULL; // 成功时store持有唯一4KiB正文；失败时store已安全释放。
         }
-        s_slot=1-s_slot;s_prepared=false;s_busy=false;s_record=false;
+        s_slot=1-s_slot;s_prepared=false;s_record=false;
+        (void)ib_wifi_companion_set_wait(true,1000);s_busy=false;
         if(error){transcript_clear(0);state(!strcmp(error,"cancelled")?IB_ASSIST_STOPPED:IB_ASSIST_ERROR,error);}
         else state(IB_ASSIST_DONE,"DONE");
         if(!(s_restart_while_held&&s_button_held))ulTaskNotifyTake(pdTRUE,pdMS_TO_TICKS(1200));
@@ -218,6 +230,7 @@ static void worker(void *unused){
 }
 void ib_assistant_press(void){
     s_button_held=true;if(!s_mode)return;
+    if(s_switching)return;
     if(!ib_assistant_store_configured()){state(IB_ASSIST_ERROR,"profile_required");return;}
     if(s_busy){s_restart_while_held=true;s_cancel=s_stop=true;ib_audio_pcm_interrupt();ib_assistant_cloud_cancel();ib_asr_realtime_cancel();return;}
     if(!s_prepared){s_restart_while_held=true;s_prepare_failed=false;if(s_worker)xTaskNotifyGive(s_worker);return;}
@@ -253,15 +266,37 @@ const char *ib_assistant_companion_error(void){return s_comp_error;}
 static bool uint_field(const cJSON *o,const char *key,uint32_t *v){const cJSON *x=cJSON_GetObjectItemCaseSensitive(o,key);if(!cJSON_IsNumber(x)||x->valuedouble<0||x->valuedouble>4294967295.0||x->valuedouble!=(uint32_t)x->valuedouble)return false;*v=(uint32_t)x->valuedouble;return true;}
 bool ib_assistant_mode_busy(void){
     bool active=s_state==IB_ASSIST_PREPARING||s_state==IB_ASSIST_LISTENING||s_state==IB_ASSIST_TRANSCRIBING||s_state==IB_ASSIST_THINKING||s_state==IB_ASSIST_REPLYING||s_state==IB_ASSIST_SPEAKING;
-    return s_busy||ib_audio_mic_active()||(!s_mode&&s_comp_owner&&active);
+    const ib_hot_mode_activity_t activity={s_switching,s_busy,s_press_pending,s_button_held,ib_audio_mic_active(),!s_mode&&s_comp_owner,s_comp_cloud,s_state==IB_ASSIST_TRANSCRIBING,active};
+    return ib_hot_mode_busy(&activity);
+}
+static bool mode_audio(bool companion,void *ctx){(void)ctx;return ib_audio_set_companion(companion)==ESP_OK;}
+static bool mode_worker(bool enabled,void *ctx){
+    (void)ctx;
+    if(enabled){s_worker_exit_requested=false;if(s_worker)return true;s_worker_starting=true;return start_worker();}
+    s_worker_exit_requested=true;s_worker_starting=false;if(s_worker)xTaskNotifyGive(s_worker);
+    int64_t deadline=esp_timer_get_time()+2000000;
+    while(s_worker&&esp_timer_get_time()<deadline)vTaskDelay(pdMS_TO_TICKS(10));
+    if(s_worker)return false;
+    vTaskDelay(1);return true;
+}
+static bool mode_lan(void *ctx){(void)ctx;return ib_wifi_companion_set_wait(true,1000)==ESP_OK;}
+static bool mode_save(bool standalone,void *ctx){(void)ctx;return ib_assistant_mode_save(standalone)==ESP_OK;}
+static void mode_publish(bool standalone,void *ctx){
+    (void)ctx;s_mode=standalone;s_cancel=s_stop=s_press_pending=s_button_held=s_restart_while_held=false;
+    s_comp_owner=s_comp_cloud=s_comp_has_phase=false;s_comp_error="";s_prepare_failed=false;
+    state(IB_ASSIST_IDLE,"idle");
 }
 static const char *mode_request_locked(bool standalone){
     static const char *const errors[]={NULL,"unavailable","busy","upload_active","wifi_required","profile_required","restarting"};
     ib_run_mode_check_t check=ib_run_mode_check(s_mode,standalone,s_available,ib_assistant_mode_busy(),ib_assistant_store_uploading(),ib_wifi_is_configured(),ib_assistant_store_configured(),s_restart_requested);
     if(check!=IB_RUN_READY)return errors[check];
     if(s_mode==standalone)return NULL;
-    if(ib_assistant_mode_save(standalone)!=ESP_OK)return "save_failed";
-    s_mode=standalone;s_cancel=s_stop=true;s_restart_requested=true;state(IB_ASSIST_PREPARING,"RESTARTING...");return NULL;
+    s_switching=true;
+    const ib_hot_mode_ops_t ops={mode_audio,mode_worker,mode_lan,mode_save,mode_publish,NULL};
+    const char *error=ib_hot_mode_apply(s_mode,standalone,&ops);
+    s_worker_starting=false;s_worker_exit_requested=false;s_switching=false;if(s_worker)xTaskNotifyGive(s_worker);
+    if(error&&!strcmp(error,"recovery_failed"))state(IB_ASSIST_ERROR,"recovery_failed");
+    return error;
 }
 const char *ib_assistant_request_mode(bool standalone){
     if(!s_control)return "unavailable";
@@ -272,13 +307,53 @@ void ib_assistant_maintenance(void){
     if(!s_control||s_busy||ib_audio_mic_active())return;
     if(xSemaphoreTake(s_control,0)!=pdTRUE)return;
     if(!s_busy&&!ib_audio_mic_active()&&ib_assistant_store_apply())(void)ib_assistant_store_cleanup();
+    static int64_t retry_at;int64_t now=esp_timer_get_time();
+    if(s_notification_upload_deadline&&now>=s_notification_upload_deadline){
+        ib_notification_snapshot_t view;ib_notification_snapshot(&view);
+        if(view.staging&&(!s_notification_hide||s_notification_hide(s_notification_context)))ib_notification_dismiss();
+        ib_notification_snapshot(&view);if(!view.staging)s_notification_upload_deadline=0;
+    }
+    if(!s_switching&&!s_busy&&ib_wifi_is_configured()&&!ib_wifi_companion_listening()&&now>=retry_at){retry_at=now+5000000;(void)ib_wifi_companion_set_wait(true,500);}
     xSemaphoreGive(s_control);
 }
+bool ib_assistant_notification_dismiss(void){
+    if(!s_control||xSemaphoreTake(s_control,pdMS_TO_TICKS(1000))!=pdTRUE)return false;
+    ib_notification_snapshot_t view;ib_notification_snapshot(&view);
+    bool hidden=!view.active||!s_notification_hide||s_notification_hide(s_notification_context);
+    if(hidden&&view.active)ib_notification_dismiss();
+    xSemaphoreGive(s_control);return hidden;
+}
+esp_err_t ib_assistant_companion_mic_start(ib_link_t link){
+    if(!s_control||xSemaphoreTake(s_control,pdMS_TO_TICKS(1000))!=pdTRUE)return ESP_ERR_TIMEOUT;
+    esp_err_t error=ESP_OK;ib_notification_snapshot_t view;ib_notification_snapshot(&view);
+    if(s_mode||s_switching||s_busy||ib_assistant_store_uploading())error=ESP_ERR_INVALID_STATE;
+    else if(view.active&&s_notification_hide&&!s_notification_hide(s_notification_context))error=ESP_ERR_TIMEOUT;
+    else{if(view.active)ib_notification_dismiss();error=ib_audio_mic_start(link);}
+    xSemaphoreGive(s_control);return error;
+}
+static bool notification_busy(void){return ib_assistant_mode_busy()||ib_assistant_store_uploading();}
+static bool notification_busy_adapter(void *ctx){(void)ctx;return notification_busy();}
+static void notification_handle(ib_link_t link,const cJSON *o){
+    char response[511];bool locked=s_control&&xSemaphoreTake(s_control,pdMS_TO_TICKS(50))==pdTRUE;
+    ib_notification_snapshot_t view;ib_notification_snapshot(&view);uint32_t generation=view.generation;size_t offset=view.offset;
+    const ib_notification_wire_ops_t ops={notification_busy_adapter,s_notification_hide,s_notification_apply,s_notification_context};
+    bool valid=ib_notification_wire_reply(link,o,locked,&ops,response,sizeof(response));
+    if(locked){
+        ib_notification_snapshot(&view);
+        if(!view.staging)s_notification_upload_deadline=0;
+        else if(view.generation!=generation||view.offset!=offset)s_notification_upload_deadline=esp_timer_get_time()+30000000;
+    }
+    if(locked)xSemaphoreGive(s_control);
+    if(valid)reply_to(link,response);
+}
+
 bool ib_assistant_handle_line(ib_link_t link,const char *line,size_t length){
     if(!line||length>511)return false;
     cJSON *o=cJSON_ParseWithLength(line,length);if(!o)return false;
     cJSON *command=cJSON_GetObjectItemCaseSensitive(o,"cmd"),*operation=cJSON_GetObjectItemCaseSensitive(o,"op");
-    if(!cJSON_IsString(command)||strcmp(command->valuestring,"assistant")){cJSON_Delete(o);return false;}
+    if(!cJSON_IsString(command)){cJSON_Delete(o);return false;}
+    if(!strcmp(command->valuestring,"notification")){if(link!=IB_LINK_BLE)notification_handle(link,o);cJSON_Delete(o);return true;}
+    if(strcmp(command->valuestring,"assistant")){cJSON_Delete(o);return false;}
     const char *op=cJSON_IsString(operation)?operation->valuestring:"invalid";
     for(const char *p=op;*p;p++)if(!((*p>='a'&&*p<='z')||*p=='_')){op="invalid";break;}
     uint32_t rid=0,reply_request_generation=0;uint_field(o,"rid",&rid);uint_field(o,"generation",&reply_request_generation);
@@ -286,6 +361,17 @@ bool ib_assistant_handle_line(ib_link_t link,const char *line,size_t length){
     if(link==IB_LINK_BLE){cJSON_Delete(o);return true;}
     if(!s_control){cJSON_Delete(o);return true;}
     if(xSemaphoreTake(s_control,pdMS_TO_TICKS(50))!=pdTRUE){error="busy";goto respond;}
+    if(!strcmp(op,"chime_status")){
+        ib_audio_stats_t st;ib_audio_stats(&st);
+        snprintf(response,sizeof(response),"{\"t\":\"assistant\",\"op\":\"chime_status\",\"rid\":%lu,\"ok\":1,\"queued\":%lu,\"started\":%lu,\"completed\":%lu,\"cancelled\":%lu,\"write_bytes\":%lu,\"write_errors\":%lu,\"codec_errors\":%lu,\"mic_starts\":%lu,\"mic_stack_min_bytes\":%lu,\"tone_stack_min_bytes\":%lu}\n",
+            (unsigned long)rid,(unsigned long)st.queued,(unsigned long)st.started,(unsigned long)st.completed,(unsigned long)st.cancelled,(unsigned long)st.write_bytes,(unsigned long)st.write_errors,(unsigned long)st.codec_errors,(unsigned long)st.mic_starts,(unsigned long)st.mic_stack_min_bytes,(unsigned long)st.tone_stack_min_bytes);
+        xSemaphoreGive(s_control);reply_to(link,response);cJSON_Delete(o);return true;
+    }
+    if(!strcmp(op,"mode_status")){
+        snprintf(response,sizeof(response),"{\"t\":\"assistant\",\"op\":\"mode_status\",\"rid\":%lu,\"ok\":1,\"mode\":\"%s\",\"switching\":%d,\"worker\":%d,\"audio_companion\":%d,\"lan_listening\":%d,\"lan_released\":%d,\"ble\":%d}\n",
+            (unsigned long)rid,s_mode?"standalone":"companion",s_switching,s_worker!=NULL,ib_audio_companion_enabled(),ib_wifi_companion_listening(),ib_wifi_companion_released(),ib_ble_is_started());
+        xSemaphoreGive(s_control);reply_to(link,response);cJSON_Delete(o);return true;
+    }
     if(!strcmp(op,"asr_diagnostics")){
         ib_asr_diagnostics_t d;ib_asr_realtime_diagnostics(&d);
         snprintf(response,sizeof(response),"{\"t\":\"assistant\",\"op\":\"asr_diagnostics\",\"rid\":%lu,\"ok\":1,\"port\":%d,\"connect_result\":%d,\"connect_errno\":%d,\"tls_error\":%d,\"tls_stack\":%d,\"tls_flags\":%d,\"http_code\":%d,\"error_type\":%d,\"ws_error\":%d,\"ws_stack\":%d,\"ws_flags\":%d,\"socket_errno\":%d,\"io_stage\":%d,\"io_result\":%d,\"io_errno\":%d}\n",
@@ -321,7 +407,7 @@ bool ib_assistant_handle_line(ib_link_t link,const char *line,size_t length){
     }
     if(!strcmp(op,"capabilities")){
         char last_error[48];last_error_copy(last_error);
-        snprintf(response,sizeof(response),"{\"t\":\"assistant\",\"op\":\"%s\",\"rid\":%lu,\"ok\":1,\"schema\":1,\"profile_schema\":2,\"asr\":\"doubao-realtime\",\"transcript\":1,\"tts\":0,\"reply_text\":1,\"display_ready\":%d,\"retired_clean\":%d,\"single_pet\":1,\"max\":16384,\"pet_max\":131072,\"pet_format\":\"aora-bundle-v2\",\"chunk\":288,\"profile\":1,\"pet\":1,\"standalone\":%d,\"run_menu\":1,\"owner\":%d,\"mode\":\"%s\",\"state\":\"%s\",\"configured\":%d,\"rev\":%lu,\"pet_rev\":%lu,\"last_error\":\"%s\"}\n",op,(unsigned long)rid,ib_app_display_ready(),ib_assistant_store_retired_clean(),s_available,s_comp_owner,s_mode?"standalone":"companion",ib_assistant_state_name(s_state),ib_assistant_store_configured(),(unsigned long)ib_assistant_store_revision(false),(unsigned long)ib_assistant_store_revision(true),last_error);
+        snprintf(response,sizeof(response),"{\"t\":\"assistant\",\"op\":\"%s\",\"rid\":%lu,\"ok\":1,\"schema\":1,\"profile_schema\":2,\"asr\":\"doubao-realtime\",\"transcript\":1,\"tts\":0,\"reply_text\":1,\"display_ready\":%d,\"retired_clean\":%d,\"single_pet\":1,\"max\":16384,\"pet_max\":131072,\"pet_format\":\"aora-bundle-v2\",\"chunk\":288,\"profile\":1,\"pet\":1,\"standalone\":%d,\"run_menu\":1,\"hot_mode\":1,\"owner\":%d,\"mode\":\"%s\",\"state\":\"%s\",\"configured\":%d,\"rev\":%lu,\"pet_rev\":%lu,\"last_error\":\"%s\"}\n",op,(unsigned long)rid,ib_app_display_ready(),ib_assistant_store_retired_clean(),s_available,s_comp_owner,s_mode?"standalone":"companion",ib_assistant_state_name(s_state),ib_assistant_store_configured(),(unsigned long)ib_assistant_store_revision(false),(unsigned long)ib_assistant_store_revision(true),last_error);
         xSemaphoreGive(s_control);reply_to(link,response);cJSON_Delete(o);return true;
     }
     if(!s_available)error="unavailable";
@@ -337,6 +423,7 @@ bool ib_assistant_handle_line(ib_link_t link,const char *line,size_t length){
         else{
             s_comp_owner=target!=NULL;s_comp_cloud=target&&!strcmp(target->valuestring,"cloud");
             s_comp_error=detail&&detail->valuestring[0]?"check_mac":"";
+            if(selected==IB_ASSIST_LISTENING){if(s_notification_hide)(void)s_notification_hide(s_notification_context);ib_notification_dismiss();}
             if(selected==IB_ASSIST_ERROR||selected==IB_ASSIST_STOPPED){transcript_clear(0);ib_reply_store_clear(0);}
             companion_present(value->valuestring,phase!=NULL,selected>=0?(ib_assistant_state_t)selected:IB_ASSIST_IDLE);
         }
@@ -407,7 +494,7 @@ esp_err_t ib_assistant_init(ib_assistant_status_cb cb,void *context){
     esp_err_t e=ib_assistant_store_ready()?ESP_OK:ib_assistant_store_init();if(e!=ESP_OK)return e;
     s_scratch=esp_partition_find_first(ESP_PARTITION_TYPE_DATA,0x42,"audio_scratch");
     if(!s_scratch||s_scratch->size!=2*SLOT_SIZE||s_scratch->address<0x35A000)return ESP_ERR_INVALID_SIZE;
-    s_available=true;s_mode=ib_assistant_mode_load();ib_wifi_set_companion_enabled(!s_mode);
+    s_available=true;s_mode=ib_assistant_mode_load();ib_wifi_set_companion_enabled(true);
     if(s_mode&&!start_worker()){s_available=false;s_mode=false;ib_wifi_set_companion_enabled(true);return ESP_ERR_NO_MEM;}
     if(s_mode&&!ib_assistant_store_configured())state(IB_ASSIST_ERROR,"profile_required");
     return ESP_OK;

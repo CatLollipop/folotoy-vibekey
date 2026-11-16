@@ -871,14 +871,14 @@ Mac配置调用链为 `AssistantDeviceSync → assistant begin/chunk/commit（ri
 
 先建立16项小事件队列与8KiB app任务，再初始化可选无线/音频。JSON按实际len（≤511B）短期分配，由消费者解析后立即释放。app任务等待main完成按键初始化后的boot barrier；接收任务只转移短期原始行所有权，唯一app任务解析1744B的ib_cmd_t，队列闲时节省约27KiB RAM，保持16项容量。profile从Flash mmap直接解析，commit保留一次验证结果更新全局，不复制整份JSON或重复parse。
 
-模式切换先校验wifi_required/profile_required，再持久化mode并回restarting=1；核心app延迟500ms重启。独立启动在RF之前就禁BLE与LAN TLS，避免先分配10KiB worker才释放已有无线栈。BLE可选启动门限为free≥96KiB、largest≥32KiB，低预算保留USB/Wi-Fi。status同时暴露app_ready/buttons/wifi_configured/wifi_ready/ble，须配合普通hello/pong确认启动，不能仅以assistant capabilities成功判定。
+0.6模式切换先校验wifi_required/profile_required与实际资源busy，再由hot_mode事务回收/启动对应运行资源并持久化mode；ACK要求restarting=false且actualmode已匹配。独立启动在RF之前就禁BLE与LAN TLS，避免先分配10KiB worker才释放已有无线栈。BLE可选启动门限为free≥96KiB、largest≥32KiB，低预算保留USB/Wi-Fi。status同时暴露app_ready/buttons/wifi_configured/wifi_ready/ble，须配合普通hello/pong确认启动，不能仅以assistant capabilities成功判定。
 
 
 ### 助手配置归并与设备重启确认
 
 `识别模型 MiniMax 卡片 → MiniMaxVoiceConfigSheet → AssistantStore / CloudASRStore → 共享 CredentialStore key → MiniMaxASRDecoder / AssistantCloudClient`；ASR/TTS使用同一Key/base，DeepSeek对话独立配置。`SettingsNavigation.integrations → vibe → AgentDiagnosticsView + 原用量/通知`保留旧深链。
 
-`AssistantDeviceSync.setMode → mode ACK restarting → DeviceLink 新 boot ID 握手 → status 复核 mode`，超时只报告未知，不自动重发模式提交。`PassportPane → usePassportForAssistant` 决定显示助手说明或旧按键映射。
+`AssistantDeviceSync.setMode → hot_mode能力门禁 → ACK(restarting=false,actualmode) → 同boot status复核mode`，超时只报告未知，不自动重发模式提交。`PassportPane → usePassportForAssistant` 决定显示助手说明或旧按键映射。
 
 公网请求采用两遍纯C JSON writer：先精确计数，再256B分块写HTTP，字符串控制字节完整转义；保留UTF-8原字节，计数与实际上传使用同一逻辑。LLM/TTS不再分配完整cJSON请求树或body副本。历史仅在成功响应cleanup TLS后按1KiB增长至8KiB上限，低内存裁旧完整轮次。独立boot不启动mDNS与相伴ADPCM/提示音任务；显示双DMA缓冲各4行，RGB565宠物缓存与错峰工作区减少静态RAM。证书链在验证/握手后释放，认证仍完整执行。LVGL池保留40KiB，用status lvgl_peak测量后再调整。
 
@@ -894,9 +894,9 @@ pet自绘使用当前layer clip先裁行/列，只为可见圆点创建draw任�
 
 ## 本地运行模式菜单与转写显示边界
 
-`ib_run_menu手势/选择 → ib_app本地owner → 共用ib_assistant_mode_request检查/NVS/重启 → ib_ui_run_mode_menu复用LIST`。UI不改ctx.list中的Mac缓存，菜单期间阻止show切屏并临时遮蔽Agent，退回时恢复最新数据。边缘提示复用原右列和Material字形，仅增加一个左电源自绘对象；短/长按语义由真实模式/阶段驱动，未定义留空，见[device-local-mode.md](device-local-mode.md)。
+`ib_run_menu手势/选择 → ib_app本地owner → 共用ib_assistant_mode_request检查/NVS/热切换 → ib_ui_run_mode_menu复用LIST`。UI不改ctx.list中的Mac缓存，菜单期间阻止show切屏并临时遮蔽Agent，退回时恢复最新数据。边缘提示复用原右列和Material字形，仅增加一个左电源自绘对象；短/长按语义由真实模式/阶段驱动，未定义留空，见[device-local-mode.md](device-local-mode.md)。
 
-`实际ASR快照 → generation邮箱/app任务 → ib_ui_transcript_* → ib_transcript_view有界UTF-8窗口 → phase+两行label`。UI不联网、不模拟字、不按计时器播放；final/error/取消拒绝同轮迟到partial。完整文本归ASR/对话层，UI仅192B尾部与256B渲染缓存。0.4来源/parser和真实供应商验收按[transcript-display.md](transcript-display.md)另行完成。
+`实际ASR快照 → generation邮箱/app任务 → ib_ui_transcript_* → ib_transcript_view有界UTF-8窗口 → 实际正文两行label/独立阶段图标`。UI不联网、不模拟字、不按计时器播放；final/error/取消拒绝同轮迟到partial。完整文本归ASR/对话层，UI仅192B尾部与256B渲染缓存。0.4来源/parser和真实供应商验收按[transcript-display.md](transcript-display.md)另行完成。
 
 
 ## 0.4.0 Mac助手实时ASR
@@ -913,7 +913,7 @@ pet自绘使用当前layer clip先裁行/列，只为可见圆点创建draw任�
 
 ## 0.5回复分页、quiet边缘提示与背光首帧
 
-`assistant单份ib_reply_store(≤4096B) → generation/length/final + 短锁reader → app/LVGL锁 → ib_reply_view完整前缀校验/真实字宽分页 → 当前193B页面 → ib_reply_font缺字□映射 → 中文阶段/页码+两行正文`。ASR窗口与reply状态独立，首个回复字出现后关闭旧ASR显示；增量默认尾页，手动翻页保当前，final未手翻则回首页。网络worker不持GUI锁；final线协议ACK必须同步UI发布成功，重复相同final幂等；clear0重置epoch后接受新连接小gen，指定gen clear拒迟到。模式菜单优先，正文键只翻页不落入清历史/停止。
+`assistant单份ib_reply_store(≤4096B) → generation/length/final + 短锁reader → app/LVGL锁 → ib_reply_view完整前缀校验/真实字宽分页 → 当前193B页面 → ib_reply_font缺字□映射 → 阶段图标+两行正文/右侧页点`。ASR窗口与reply状态独立，首个回复字出现后关闭旧ASR显示；增量默认尾页，手动翻页保当前，final未手翻则回首页。网络worker不持GUI锁；final线协议ACK必须同步UI发布成功，重复相同final幂等；clear0重置epoch后接受新连接小gen，指定gen clear拒迟到。模式菜单优先，正文键只翻页不落入清历史/停止。
 
 UI删除常驻绿色时间footer/线及三颗边缘装饰点，右短/长按和左被动电源统一小尺寸1px路径、中性暖白，不改变实体锚点。复用caption256B与现有Noto字库，无第二份全文/新增字体/逐帧malloc。`ib_ui_present_boot_frame → ib_pet_render_current → cached pixels → lv_refr_now → bsp_display_wait_idle`在GUI锁内完成当前宠物实际DMA后返回，由app门禁点亮，避免旧Dot缓存先显示。验证与限制见[device-reply.md](device-reply.md)。
 
@@ -938,6 +938,28 @@ UI删除常驻绿色时间footer/线及三颗边缘装饰点，右短/长按和�
 
 ## 0.5.1回复保留与真实采集指示修复
 
-成功DONE后的prepare_slot是后台录音槽预擦，不是新会话。UI不再在PREPARING/IDLE隐式清已发布reply；store revision不变时仍可保留final当前页和翻页。final标题固定完成，legacy pet_state也遵守已发布内容优先。真正新录音LISTENING、明确clear或错误/取消仍可清理。生产store→UI的DONE/PREPARING/IDLE序列和正文ROI独立像素回归覆盖该缺陷。
+成功DONE后的prepare_slot是后台录音槽预擦，不是新会话。UI不再在PREPARING/IDLE隐式清已发布reply；store revision不变时仍可保留final当前页和翻页。final图标固定完成，legacy pet_state也遵守已发布内容优先。真正新录音LISTENING、明确clear或错误/取消仍可清理。生产store→UI的DONE/PREPARING/IDLE序列和正文ROI独立像素回归覆盖该缺陷。
 
 codec实际reader flag→app→ib_ui_set_capture_active→hints绿色Mic循环；phase不决定绿色，停止/隐藏/休眠删除动画。主画布全宽240、宠物/198文字居中、caption自然1–3行，不用空回复框撑高；像素刷新只失效196×196宠物网格，背景统一。图与验证界限见device-reply.md和outputs/passport-ui-051。
+
+## 0.6 独立Agent通知与热模式门禁
+
+`Agent原进程事件/当前可见AX → AgentHub.onAnyEvent/onAnyReply → AgentNotificationReducer → 有界AgentNotificationQueue → AgentNotificationCoordinator → DeviceLink独立notificationPending → cmd/t notification逐块ACK → 设备独立单份2KiB通知store/reader`。原selectedSession回调仍只供助手/宠物使用；通知不打开会话、不覆盖本机ASR/云reply，不调用TTS。先真实completed后正文的情况升级同nid/rev；重复commit和旧ACK不能再响或删除新rev。Mac胶囊expired仅关闭Mac显示，明确dismiss才按Notice UUID→nid→rev清同一身份。busy/断连由Mac保留同一事务后有界重试。
+
+`Codex当前Hook → 白名单codex-hook.py → 0700/0600瞬时邮箱 + 无正文元数据URL → 相同nid合流`，不读取历史或改用户notify。AX真实生成上升边创建新turn并重置本轮文本去重；缺轮次只发独立真实通告，不猜配迟到正文。`AssistantDeviceSync.setMode → capabilities.hot_mode门禁(两个方向) → mode ACK(restarting=false/actualmode=target) → status复核`拒绝旧固件重启式切换。协议、来源边界、延迟队列与专项验证详见[agent-notifications.md](agent-notifications.md)。
+
+### 双链路握手与麦克风owner
+
+`DeviceLink.handleHello → DeviceLinkRouting.afterHandshake(USB > Wi-Fi > BLE) → 仅本次获选链路resendCachedState → setActive/MicStream`。备用链路的hello只保持连接，不重放任何state/config/mic；`mic=1`会把固件音频owner转到命令来源，`mic=0`也会停止当前采音，因此不能在USB采音时向稍晚握手的Wi-Fi补发任一值。真正active链路断开时仍由`linkLost → preferred(next) → resendCachedState(next) → setActive(next)`恢复缓存和采音。
+
+
+### 0.6设备读层与原子菜单
+
+`ib_ui_pet_assistant_state(typed) → ib_ui_activity`将阶段渲染成16px C图元；真实capture flag单独决定Mic绿色。文字label只装真实转写/当前回复和具体错误，不再拼阶段/数字页码。`notification reader优先 / cloud reply → index,total → ib_ui_hints有界7页圆点窗`不分配页表；每键唯一glyph，翻页有效性优先，边界回退实际可用长按动作。
+
+`app完整notification commit → ib_ui_notification_show → ib_ui_notification独立pager/零拷贝reader → ACK`。通知只另存当前193B页和≤48B source的缺字映射，不持第二份2KiB全文；允许body0仅显示来源/完成图标。UI只门禁菜单/实际capture，cloud资源busy由app/store判断，application后台thinking不会误拒。隐藏/版本升级使旧reader失效后安全拒读；菜单仅suspend，恢复原页；关闭恢复原cloud reply页，旧legacy Agent缓存不重放。
+
+本地菜单打开`switch_to(LIST,immediate)`同锁隐藏旧页并显示完整菜单；关闭先保留快照为return-pending，app明确show最新screen后才原子恢复。通知/Agent等迟到更新只缓存，不露READY。生产store/CRC/reader与同份LVGL联合host覆盖source-only→正文升级→幂等→菜单恢复→底层回复恢复；源与设备结果边界见[device-reply.md](device-reply.md)。
+
+
+通知渲染最终只占`(21,224,198,96)`caption区域，kind/source同行，正文紧接；上方pet与x220以上hint列不受root覆盖。生产flush像素回归同时断言pet ROI不变与pips/UP/DOWN/Mic/左power实际有墨迹，避免状态getter正确但图层不可见的假阳性。热资源事务/提示音生命周期和真实诊断边界见[device-runtime.md](device-runtime.md)。

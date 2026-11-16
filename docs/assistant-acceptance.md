@@ -1,37 +1,41 @@
-# AI 助理当前开发版验收记录
+# AI 助理 0.6.0 开发版验收记录
 
-上游基线为 `nexsjournal/folotoy-vibekey@0eb628bf7a563e67d76fc9e7841bbfdb768b7473`，个人 Fork 为 `CatLollipop/folotoy-vibekey`，分支 `codex/ai-assistant`。历史过程见 [阶段记录](assistant-acceptance-history.md)。本页区分自动化、真实服务和设备可见行为。
+上游基线为 `nexsjournal/folotoy-vibekey@0eb628bf7a563e67d76fc9e7841bbfdb768b7473`，个人 Fork 为 `CatLollipop/folotoy-vibekey`，分支 `codex/ai-assistant`。历史观察与缺陷见 [阶段记录](assistant-acceptance-history.md)。本页区分主机自动化、真实设备链路、真实云服务和人眼/听音观察。
 
-## 当前产品行为
+## 当前行为
 
-- 豆包流式 ASR 边说边转写，DeepSeek Flash 生成回复。用户已取消 MiniMax ASR，并暂时取消全部助手朗读。新设备 profile 不再携带 MiniMax Key/base/voice；Mac 历史配置保留。
-- Mac 云对话和原应用最终正文以文字显示；设备正文最大4096 UTF-8字节，短▲/▼分页，新一轮录音/取消/清历史清除旧正文。原应用超出设备预算时明确提示在电脑查看全文。
-- 设置窗口统一暗色。193外观、16脸型、44表情、43颜色、29桌面画风，桌面和Passport控制合在宠物选择画布的设置抽屉中；设备固定点阵。
-- 当前同步仅保留一份有效宠物资源，下一次更新短暂使用空白bank暂存。新资源校验、生效、释放旧mmap后擦除旧bank并全量读回空白，`retired_clean=1`才完成同步。该回收主要减少Flash中旧副本，不能等同RAM扩容。
+- 豆包流式 ASR 实时转写，DeepSeek Flash 生成文字。用户已取消 MiniMax ASR，并暂时停止全部助手朗读；新设备 profile 不携带 MiniMax Key/base/voice。Mac 旧凭据保留。0.6 本地完成短音受声音开关控制，不调用 TTS。
+- 长按上键进入原子模式菜单，AI 助理/连接电脑在同一次开机热切换。真实采音、转写、云请求、配置上传时拒绝切换；电脑应用后台思考不阻塞切换。ACK 确认实际 mode 与 restarting=0。
+- 普通阶段文字改为贴近宠物的 16px 动画图标，识别字幕、回复、具体错误及消息来源保留。右侧每个实体键只有一个当前动作；有效翻页箭头优先。上下键之间最多显示七个页点，当前实心、其它空心，滚动窗口与上下省略点表示隐藏页。
+- 两种模式接收 Mac 转发的应用完成/待确认/错误及最终正文。独立 2KiB 通知存储和 reader 不覆盖 4KiB 云回复；零正文完成提示可升级同一通知正文，不重复响。云采音/请求期间由 Mac 有界排队，完成后再投递。Mac 必须运行才能转发，独立云对话无需 Mac。
+- 设置维持暗色一体化画布：193 外观、16 脸型、44 表情、43 配色、29 桌面画风；Passport 固定点阵。资源成功替换后旧 bank 擦除并全量读回，只保留一份有效宠物包。这减少 Flash 副本，不等同增加 RAM。
 
-## 已实际验证
+## 构建与自动化
 
-- CLT/SwiftPM完整Mac应用编译、离线资源打包和ad-hoc深层严格签名通过。版本0.5.1/build31；1003条界面字符串无缺失英文。完整Xcode26.2未安装，Xcode宿主XCTest尚未执行。
-- Assistant核心通过：DeepSeek SSE完整终态、UTF-8分块、失败解析、取消与旧事件、完整历史轮次淘汰、纯文字模式。即使旧autoSpeakReplies=true，speech调用与播放器启动仍为0。
-- Agent Swift核心及正式Node/Python桥接4/4通过。组件专项覆盖合并/逐命令卸载/备份/幂等/畸形文件保留/0600/隔离偏好；缺失API已补齐，全应用编译通过。七类宿主的真实能力仍单独验收。
-- 固件生产store、reply store/pager、ASR协议及Flash保护测试通过：单副本NOR中断/部分擦除/重启恢复，旧reader失效、clear0重置epoch、4KiB预算、终态与UTF-8、有界队列等。
-- Mac真实豆包流式测试约6.25秒合成PCM，在发送期间13次更新，最终28字符；真实DeepSeek Flash文本测试成功，0.5未调用TTS。
-- 真实Mac窗口检查：深色侧栏和主画布无白色卡片，画布随窗口高度调整，桌面/Passport抽屉保留用户水灵/柔软/snow/胶囊偏好；识别模型入口只显示豆包实时识别与文本回复说明。
-- 0.5.0真实USB同步 profile revision5与宠物revision1794817063后，客户端显示新版本。设备capabilities给出single_pet1、retired_clean1、display_ready1、reply_text1、tts0。
-- 0.5.0读取assistant分区0x80000字节后核对：两个256KiB bank中恰有一个全FF、一个有效活动bank，头/profile/pet CRC全部有效；当前profile659B、pet15488B。活动profile无MiniMax字段。原始回读含凭据，仅私有保存；交付报告只含布尔与字节数。
-- 0.5.0合成3129B正文分块及final实际UI发布ACK通过，clear0后较小generation3通过。此测试未覆盖DONE后后台预擦状态，不能代替真实会话完成保留验证。
-- 0.5.0用户复测：字幕正常，但正文一闪而过且不能翻页，底部黑条过大、两侧留白不对称。串口真实经历listening→transcribing→thinking→replying→done→preparing→idle，录音113920B、ASR4partial/1final、DMA与ring overflow均0；播放器received0。PREPARING被UI误认为新轮清正文，是本次明确缺陷，不记为文字回复通过。
+- CLT/SwiftPM 完整 Mac 0.6.0/build32 编译、离线资源打包及 ad-hoc 深层严格签名通过。1003 条界面字符串无缺失英文。完整 Xcode26.2 未安装，Xcode 宿主 XCTest 未执行。
+- Assistant 核心覆盖 SSE 终态/UTF-8分块、错误、取消与旧事件、完整历史轮次淘汰，以及旧 autoSpeakReplies=true 时 speech 和播放器仍为 0。
+- 通知专项使用正式 reducer/queue/coordinator/protocol：完成与正文先后、应用/实例/会话/轮次身份、CRC/ACK、busy/断线同身份恢复、正文截断、双响去重、Mac 胶囊到期保留队列、用户明确取消隔离。Codex 合成 Hook、Agent 组件与正式桥接测试通过；七类宿主不以这些测试代替实机验收。
+- 双链路专项验证 USB 优先、备用 Wi-Fi 握手不重发 state/config/mic、USB 丢失后的正确接管。修复备用 Wi-Fi 改变采音 owner 导致短流的问题。
+- 固件主机 store/reply/pager/notification/wire/hot-mode/audio runtime 测试通过，开启 ASan/UBSan；受保护布局、NOR 断电恢复与旧资源回收回归通过。生产 LVGL 菜单 0/20/60ms/稳定帧一致，验证无 READY 过渡；通知仅覆盖 caption，pet9672、页点66、UP/DOWN各16、Mic37、power16 个亮像素仍可见。主机 LVGL 峰37544B仅参考，不作为 C3 测量。
+- 最终 IDF5.5.3 构建/size/layout 通过，无本次生产构建 warning/error。固件 2719120B，SHA256 `db2e0d75d49dd58b3c9a39f47083f2e5d4d8dd5c9d29c969b55d72bf102cd737`，适配原 3MiB 应用分区；静态 DRAM219030B、剩余102266B。没有云 TTS/播放器启动路径。
 
-## 0.5.1修正与本轮验证
+## 0.6.0 真实设备与链路
 
-修复后台预擦PREPARING清UI正文，保持完整正文及分页；统一宠物画布宽度、背景与两侧留白，正文按真实行数布局；去常驻“按住确认键说话”，右侧麦克风仅在真实采音时绿色呼吸。
+- 受保护刷写成功；独占重试后的完整回读通过：cardid 16384B 与首次整片备份一致。两个256KiB bank 恰有一个全 FF、一个有效活动 bank；头/profile/pet CRC 有效，profile revision5/659B、所选 pet revision1794817063/15488B 保留。原始备份与回读含凭据，只在本机私有目录，不进入仓库或交付包。
+- 五次热切资源检查保持同一 boot，无 restarting；companion 时 worker0/audio_companion1，standalone 时 worker1/audio_companion0；空闲 LAN 均可监听。模拟电脑应用 thinking 时允许切换、模拟真实 transcribing 时拒绝，配置和宠物未变化。这里状态输入为明确合成控制事件，不是实际 Codex 任务。
+- 正式 Mac 类 USB 通知：完成 rev1（0B）→正文 rev2（1404B/15块）两次提交及CRC ACK通过；重复 rev2 标记 duplicate，不重建提醒；清除 ACK通过。
+- 电脑采音曾出现短流与一次0样本；已定位并修复备用握手抢占短流，但首次0样本未复现，原因尚未确证。最终同一签名 binary 连续两次两秒实测分别收到32000与30080个16kHz样本（门限24000），未保存音频；这不代替长时稳定性验收。
+- 切回 standalone 后使用真实已配对 TLS Wi-Fi，重复两次完成0B→1404B正文升级、15块及CRC ACK通过，重复提交均 duplicate。没有给私人会话发消息；测试正文固定合成，报告只保留字节数/ACK。
+- 本地声音首次单事件检查：queued/started/completed各1、write_bytes7040、write/codec errors0；正文升级与重复提交没有多入队。BSP 写入成功不等同用户听音，实际听感另列。
+- 0.6 UI/音效人眼实测：当前已请求用户检查，尚未回报；不得把离屏夹具或协议 ACK 宣称为人眼通过。0.5.1 用户曾确认“绿色采音、回复保留和翻页都正常，布局也正常”，此为历史基线，不替代0.6新变化验收。
 
-0.5.1生产store/真实LVGL回归通过：没有新revision或重新发布的情况下，final→DONE→PREPARING→IDLE正文ROI像素不变，可翻页、模式菜单返回及legacy更新仍保页。背景左右一致、文字中心x120；实际capture true时Mic绿色像素79/103，false及仅LISTENING phase均为0，停止/睡眠/菜单后循环动画归0。143文案、1221字形使用、222独立字符检查通过；主机LVGL峰35712B仅供参考，不当C3实测。
+## 既有真实云服务证据与边界
 
-最终固件2701392B，SHA256 `e95e1764d4f46cd3a97f20dda2e827afde015de5e80bbbb96532dedf3a669642`，IDF5.5.3 build/size/layout通过且无warning/error，仍适配3MiB app分区。真实受保护刷写成功，cardid0x4000字节与原始备份一致；合并回读验证一活动bank与一全FF bank，profile5/pet1794817063及CRC保留。设备独立模式、Wi-Fi、app_ready/buttons/display_ready均正常，空闲heap56928B、largest45056B、min_free52396B、LVGL峰22708B。此后停止所有刷写、同步与重启，只读metadata监控实际轮次。用户最终确认“绿色采音、回复保留和翻页都正常，布局也正常”。读取到回复length147B、active1/final1，后台准备回到idle后revision38不变，连续多次仍保留，capture_active0；录音309760B、record_error0、DMA0、ring峰1920B、Flash写峰2855µs、空闲heap55988B、largest24576B、全局min_free7072B、LVGL峰23080B。这证明本轮实际会话结束正文保留与用户可见翻页通过，不代表完整长时/弱网/掉电矩阵通过。冷启动首帧已由生产夹具与显示屏障验证，用户单独的冷开机无默认Dot观察仍未明确回报。
+0.4 Mac 正式豆包流式测试约6.25秒合成PCM，发送期间13次更新、最终28字符；0.5真实 DeepSeek Flash 文本测试成功且无 TTS。0.5.1真机实际一轮收到147B final正文，后台 PREPARING→IDLE仍保留原revision，可翻页，用户确认通过。0.6新增LAN资源释放/恢复与声音并发仍需真实连续云会话补充，不以旧云服务测试代替。
 
-## 仍未完成的完整验收
+## 未完成的完整验收
 
-- 七类原应用尚未全部端到端验收。Claude Code原终端正式停止回执受限；OMP/DSH需原进程加载扩展，Kimi需连接原服务；Claude Desktop、ChatGPT.app、WorkBuddy依赖辅助功能授权和实际版本可靠消息/停止边界。
-- 30秒上限、打断、连续多轮资源水位、断网/无余额/掉电和Mac关机的完整矩阵未完成。历史扬声器断续仍未修复，当前按用户要求暂停朗读。
-- 设备使用有界原生特效，未宣称与Mac全部主题特效逐帧一致；缺字emoji/罕见汉字用□占位。
+- 七类原应用未全部端到端验收。Claude Code 原终端正式停止回执受限；OMP/DeepSeek Harness 需原进程加载扩展，Kimi 需附着原服务；Claude Desktop、ChatGPT.app、WorkBuddy 受实际版本、辅助功能授权和可靠回复/停止边界约束。只安装桥接或可以粘贴不算完整通过。
+- 原应用 Hook/扩展须已加载。Codex 仅升级本应用拥有的已有 Hook，保留其它条目/notify/备份；不自动重启宿主、重新信任插件或批准工具。当前已验证正式生产通知链的合成事件，不宣称七宿主真实任务均已触发完成。
+- 新版长时多轮、30秒上限/打断、弱网/大TLS record、无余额、断电和Mac关机完整矩阵未完成。历史长段朗读断续未修复，按用户要求停用；本地短音另测。
+- 冷启动保存宠物首帧有生产夹具/屏障证据，但用户单独冷开机无默认球球闪现仍未明确回报。设备有界原生特效不宣称与Mac主题逐帧相同；罕见字/缺失emoji用□占位。

@@ -1,5 +1,7 @@
 # AI 助理 · FoloVibe Key Fork
 
+0.6新增设备无重启模式切换、两种模式下的独立应用通知和短完成音。状态词改为紧凑动画图标，长正文分页使用右侧滚动圆点与省略点。通知协议及宿主实际能力边界见[通知说明](docs/agent-notifications.md)。
+
 本个人 Fork 增加 Mac 云端语音助手、Passport 独立云对话、应用会话双向桥接与 Aora Bot 球球。
 **默认球球；支持完整新版宠物外观、脸型和表情选择，Mac 支持29种画风，设备固定点阵渲染。不使用旧 JSON / NX 旧版兼容层。**
 
@@ -226,7 +228,7 @@ app 不内置固件,刷写时从官网下载最新固件([input.0os.io/firmware/
 
 - Claude Code：使用页面上方「安装 Claude Code Hook」，写入完整状态和最终回复 Hook；保留其他条目并备份为 `.vibekey-assistant.bak`。原会话加载后重新检测，不再同时提供另一套 Claude 通知安装按钮。
 - Codex：在「Codex 兼容通知」保留原「一键配置」，写入 `~/.codex/hooks.json` 或原位升级旧完成 Hook。首次配置或命令升级后，在终端运行 `codex`，用 `/hooks` 审查并信任新版 `Stop`；原文件备份为 `.folobutton-dev.bak`。
-- 关闭「Passport 按住说话用于 AI 助理」后，才使用原 Codex 设备流程：本轮结束显示 `DONE / OK OPEN`，短按 OK 或点击 Mac 通知打开原对话，等 `READY TO TALK` 后按住 OK 说话、松开形成草稿、上键发送。完成卡显示 15 秒。
+- 两种设备模式均使用新的独立通知层：完成图标、来源与最终正文暂读，支持上下翻页；按住 OK 关闭通知后直接进入正常录音。当前不再使用旧 `DONE / OK OPEN` 完成卡。点击 Mac 通知打开原 Codex 对话的导航能力保留；应用实际投递/停止能力以接入诊断为准。
 
 ## 本地化
 

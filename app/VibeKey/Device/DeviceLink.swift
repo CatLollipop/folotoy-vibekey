@@ -56,6 +56,7 @@ import Security
     @ObservationIgnored var onConnectionChange: ((Connection) -> Void)?
     @ObservationIgnored var onAssistantMessage: ((DeviceAssistantMessage) -> Void)?
     private var assistantPending: AssistantPending?
+    private var notificationPending: NotificationPending?
     /// 16 kHz 单声道 float 样本,在后台串行队列上调用。
     @ObservationIgnored var onMicSamples: (@Sendable ([Float]) -> Void)? {
         didSet { mic.setHandler(onMicSamples) }
@@ -583,7 +584,7 @@ import Security
 
     /// 切换当前连接链路,同步 `connection` 与麦克风过滤;连接状态真正变化时才回调 `onConnectionChange`。
     private func setActive(_ link: DeviceLinkKind?) {
-        if active != link { failAssistantRequest() }
+        if active != link { failAssistantRequest(); failNotificationRequest() }
         active = link
         mic.setActive(link)
         let newConnection: Connection = switch link {
@@ -615,7 +616,7 @@ import Security
         case .wifi: wifiHandshaken = false
         }
         if active == link {
-            let next: DeviceLinkKind? = usb?.handshaken == true ? .usb : (wifiHandshaken ? .wifi : (bleHandshaken ? .ble : nil))
+            let next = DeviceLinkRouting.preferred(usb: usb?.handshaken == true, wifi: wifiHandshaken, ble: bleHandshaken)
             if let next { resendCachedState(via: next) }
             setActive(next)
         }
@@ -708,6 +709,13 @@ import Security
         lastMessageDate = Date()
 
         switch message {
+        case .notification(let reply):
+            guard isHandshaken(link), link == active, let pending = notificationPending, pending.link == link,
+                  DeviceNotificationProtocol.matches(reply, requestID: pending.requestID, op: pending.op,
+                      id: pending.noticeID, revision: pending.revision, offset: pending.offset, checksum: pending.checksum) else { return }
+            notificationPending = nil; pending.timeout.cancel()
+            if reply.ok { pending.continuation.resume(returning: reply) }
+            else { pending.continuation.resume(throwing: DeviceNotificationError.rejected(reply.error)) }
         case .assistant(let reply):
             guard isHandshaken(link), link == active else { return }
             if DeviceAssistantProtocol.acceptsUnsolicited(reply) {
@@ -857,9 +865,10 @@ import Security
         firmwareBuild = hello.build.isEmpty ? nil : hello.build
         lastError = nil
 
-        resendCachedState(via: link)
-        let selected: DeviceLinkKind = usb?.handshaken == true ? .usb : (wifiHandshaken ? .wifi : link)
-        setActive(selected)
+        let route = DeviceLinkRouting.afterHandshake(link, usb: usb?.handshaken == true, wifi: wifiHandshaken, ble: bleHandshaken)
+        // mic=1会令固件切换采音owner，mic=0也会停止现有采音；备用握手不能重放任何缓存命令。
+        if let replay = route.replay { resendCachedState(via: replay) }
+        setActive(route.selected)
         updateBluetooth()
     }
 
@@ -1159,6 +1168,80 @@ import Security
         var offset: Int?
         var continuation: CheckedContinuation<DeviceAssistantMessage, Error>
         var timeout: Task<Void, Never>
+    }
+
+    /// 独立的通知ACK槽，不允许assistantAbort或旧轮取消清除它。
+    private struct NotificationPending {
+        let id: UUID
+        let requestID: UInt32
+        let link: DeviceLinkKind
+        let op: String
+        let noticeID: String
+        let revision: UInt32
+        let offset: Int?
+        let checksum: UInt32?
+        let continuation: CheckedContinuation<DeviceNotificationMessage, Error>
+        let timeout: Task<Void, Never>
+    }
+    private func failNotificationRequest() {
+        guard let pending = notificationPending else { return }
+        notificationPending = nil; pending.timeout.cancel()
+        pending.continuation.resume(throwing: DeviceNotificationError.deliveryUnknown)
+    }
+    private func notificationRequest(op: String, id: String = "", revision: UInt32 = 0,
+                                     fields: [(String, FlatJSON.Value)] = [], link: DeviceLinkKind,
+                                     offset: Int? = nil, checksum: UInt32? = nil) async throws -> DeviceNotificationMessage {
+        guard active == link, isHandshaken(link), link == .usb || link == .wifi else { throw DeviceNotificationError.unavailable }
+        guard notificationPending == nil else { throw DeviceNotificationError.rejected("busy") }
+        let token = UUID(), rid = UInt32.random(in: 1...UInt32.max)
+        let packet = try DeviceNotificationProtocol.encode(op: op, requestID: rid, id: id, revision: revision, fields: fields)
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await withCheckedThrowingContinuation { continuation in
+                let timeout = Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(4))
+                    guard !Task.isCancelled, self?.notificationPending?.id == token else { return }
+                    self?.failNotificationRequest()
+                }
+                notificationPending = .init(id: token, requestID: rid, link: link, op: op, noticeID: id,
+                    revision: revision, offset: offset, checksum: checksum, continuation: continuation, timeout: timeout)
+                sendRaw(packet, via: link)
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                guard self?.notificationPending?.id == token else { return }
+                self?.failNotificationRequest()
+            }
+        }
+    }
+    /// 同一nid/rev超时后可重试，设备返回已验证的下一偏移；commit重复不重复响。
+    func sendNotification(_ notice: PassportNotification) async throws -> DeviceNotificationDelivery {
+        guard let link = active, link == .usb || link == .wifi else { throw DeviceNotificationError.unavailable }
+        let capability = try await notificationRequest(op: "cap", link: link, offset: 0)
+        guard capability.schema == 1, capability.maximum >= 2_048, capability.chunk >= 96, capability.standalone else { throw DeviceNotificationError.unsupported }
+        let parts = try DeviceNotificationProtocol.chunks(notice)
+        let begin = try await notificationRequest(op: "begin", id: notice.id, revision: notice.revision,
+            fields: DeviceNotificationProtocol.beginFields(notice), link: link, checksum: notice.checksum)
+        let validOffsets = Set(parts.map(\.offset) + [notice.text.utf8.count])
+        guard validOffsets.contains(begin.offset) else { throw DeviceNotificationError.invalid }
+        var acknowledgedChunks = 0
+        for part in parts where part.offset >= begin.offset {
+            try Task.checkCancellation()
+            _ = try await notificationRequest(op: "chunk", id: notice.id, revision: notice.revision,
+                fields: [("off", .int(part.offset)), ("text", .string(part.text))], link: link,
+                offset: part.offset + part.text.utf8.count)
+            acknowledgedChunks += 1
+        }
+        try Task.checkCancellation()
+        let commit = try await notificationRequest(op: "commit", id: notice.id, revision: notice.revision,
+            fields: [("size", .int(notice.text.utf8.count)), ("crc", .int(Int(notice.checksum)))], link: link,
+            offset: notice.text.utf8.count, checksum: notice.checksum)
+        return .init(capability: capability, commit: commit, link: link == .usb ? "usb" : "wifi",
+                     acknowledgedChunks: acknowledgedChunks, resumedOffset: begin.offset)
+    }
+    func clearNotification(id: String, revision: UInt32) async throws {
+        guard let link = active, link == .usb || link == .wifi else { throw DeviceNotificationError.unavailable }
+        _ = try await notificationRequest(op: "clear", id: id, revision: revision, link: link)
     }
 }
 

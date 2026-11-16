@@ -15,6 +15,11 @@ final class AgentNotifier {
         let date: Date
         var threadID: UUID? = nil
         var project: String? = nil
+        var turnID: String? = nil
+        var instanceID: String? = nil
+        var eventID: String? = nil
+        var notificationID = UUID()
+        var dismissReason: AgentNoticeDismissReason? = nil
     }
 
     /// 最近一条未处理的通知(胶囊据此显示提醒)。
@@ -25,6 +30,8 @@ final class AgentNotifier {
     @ObservationIgnored private var waiting: [Notice] = []
     @ObservationIgnored private var recentTurns: [String] = []
     @ObservationIgnored private var completionPause: Task<Void, Never>?
+    @ObservationIgnored private let completionLifetime: Duration
+    init(completionLifetime: Duration = .seconds(15)) { self.completionLifetime = completionLifetime }
 
     /// 处理 `folobutton-dev://agent?...`;不是 agent URL 时返回 false。
     @discardableResult
@@ -34,16 +41,19 @@ final class AgentNotifier {
         func item(_ name: String) -> String? { items.first { $0.name == name }?.value }
         guard let event = Event(rawValue: item("event") ?? "") else { return false }
         let source = item("source") ?? "Agent"
-        if event == .done, source == "Codex", let rawID = item("thread") {
+        if event != .clear, source == "Codex", let rawID = item("thread") {
             guard let threadID = UUID(uuidString: rawID) else { return false }
             if let turn = item("turn"), !turn.isEmpty {
-                let key = threadID.uuidString + ":" + String(turn.prefix(100))
+                let key = event.rawValue + ":" + threadID.uuidString + ":" + String(turn.prefix(200)) + (event == .input ? (item("event_id") ?? "") : "")
                 if recentTurns.contains(key) { return true }
                 recentTurns.append(key)
                 if recentTurns.count > 64 { recentTurns.removeFirst() }
             }
             enqueue(Notice(event: event, source: source, date: Date(), threadID: threadID,
-                           project: item("project").flatMap { $0.isEmpty ? nil : String($0.prefix(30)) }))
+                           project: item("project").flatMap { $0.isEmpty ? nil : String($0.prefix(30)) },
+                           turnID: item("turn").map { String($0.prefix(200)) },
+                           instanceID: item("instance").map { String($0.prefix(128)) },
+                           eventID: item("event_id").map { String($0.prefix(240)) }))
         } else {
             post(event, source: source)
         }
@@ -54,7 +64,7 @@ final class AgentNotifier {
         if event == .clear {
             waiting.removeAll { $0.source == source && $0.event == .input }
             // 旧清除事件没有会话 ID，不能清掉另一个对话的完成卡。
-            if current?.threadID == nil { dismiss() }
+            if current?.threadID == nil { dismiss(reason: .sourceClear) }
             return
         }
         enqueue(Notice(event: event, source: source, date: Date()))
@@ -76,19 +86,21 @@ final class AgentNotifier {
         expireTask?.cancel()
         if event == .done {
             expireTask = Task {
-                try? await Task.sleep(for: .seconds(15))
-                if !Task.isCancelled, current == notice { dismiss() }
+                try? await Task.sleep(for: completionLifetime)
+                if !Task.isCancelled, current == notice { dismiss(reason: .expired) }
             }
         }
     }
 
     /// 用户已看到。在 Mac 上关掉(点了胶囊等)时同时清除设备上的提醒;
     /// 设备上按键确认的(`fromDevice`)设备已经自己清掉了,不用再发。
-    func dismiss(fromDevice: Bool = false) {
+    func dismiss(fromDevice: Bool = false, reason: AgentNoticeDismissReason = .user) {
         guard let notice = current else { return }
         current = nil
         expireTask?.cancel()
-        if !fromDevice { onNotice?(Notice(event: .clear, source: notice.source, date: Date())) }
+        if !fromDevice { onNotice?(Notice(event: .clear, source: notice.source, date: Date(), threadID: notice.threadID,
+            turnID: notice.turnID, instanceID: notice.instanceID, eventID: notice.eventID,
+            notificationID: notice.notificationID, dismissReason: reason)) }
         showNext()
     }
 

@@ -13,6 +13,8 @@
 #include "ib_pet.h"
 #include "ib_transcript_view.h"
 #include "ib_reply_font.h"
+#include "ib_ui_activity.h"
+#include "ib_ui_notification.h"
 
 #include "bsp_display.h"
 #include "ib_ui_agent.h"
@@ -50,7 +52,10 @@ static const ib_ui_page_t *const PAGES[IB_UI_SCREEN_COUNT] = {
 };
 
 static lv_obj_t *s_roots[IB_UI_SCREEN_COUNT];
-static lv_obj_t *s_pet_root, *s_pet_label;
+static lv_obj_t *s_pet_root, *s_pet_label,*s_activity;
+static ib_ui_assistant_phase_t s_activity_phase=IB_UI_ASSIST_IDLE;
+static bool s_activity_error;
+static uint32_t s_activity_last_frame;
 static uint16_t s_pet_pixels[IB_PET_SIZE * IB_PET_SIZE];
 static volatile uint32_t s_pet_frame_max_ms,s_pet_frame_last_ms;
 static ib_ui_screen_t s_screen = IB_UI_OFFLINE;
@@ -58,7 +63,7 @@ static ib_ui_ctx_t s_ctx;
 static lv_timer_t *s_frame_timer;
 static bool s_ready;
 static bool s_awake = true;
-static bool s_capture_active;
+static bool s_capture_active,s_menu_return_pending;
 static bool s_waiting_refresh;
 static ib_icon_t s_key_icons[IB_UI_KEY_COUNT];
 static bool s_hint_standalone;
@@ -78,9 +83,13 @@ static void apply_key_hints(void)
         s_hint_phase!=IB_UI_ASSIST_ERROR&&s_hint_phase!=IB_UI_ASSIST_STOPPED&&s_hint_phase!=IB_UI_ASSIST_COUNT;
     for(unsigned key=0;key<IB_UI_KEY_COUNT;key++){
         ib_icon_t icon=s_key_icons[key],hold=key==IB_UI_KEY_UP?IB_ICON_MODE:key==IB_UI_KEY_DOWN?IB_ICON_APPS:IB_ICON_NONE;
-        if(s_ctx.run_mode_menu){
+        if(s_ctx.run_mode_menu||s_menu_return_pending){
             icon=key==IB_UI_KEY_UP?IB_ICON_UP:key==IB_UI_KEY_DOWN?IB_ICON_DOWN:IB_ICON_CHECK;
             hold=key==IB_UI_KEY_OK?IB_ICON_ESC:IB_ICON_NONE;
+        }else if(ib_notification_active()){
+            unsigned index=ib_notification_index(),total=ib_notification_total();
+            icon=key==IB_UI_KEY_UP?(index?IB_ICON_UP:IB_ICON_NONE):
+                key==IB_UI_KEY_DOWN?(index+1<total?IB_ICON_DOWN:IB_ICON_NONE):IB_ICON_MIC;
         }else if(reply_visible()){
             icon=key==IB_UI_KEY_UP?(s_reply.page_index?IB_ICON_UP:IB_ICON_NONE):
                 key==IB_UI_KEY_DOWN?(s_reply.page_index+1<s_reply.page_count?IB_ICON_DOWN:IB_ICON_NONE):IB_ICON_MIC;
@@ -89,13 +98,17 @@ static void apply_key_hints(void)
         }else if(s_screen==IB_UI_OFFLINE){
             icon=key==IB_UI_KEY_OK?IB_ICON_REPEAT:IB_ICON_NONE;
         }
-        if(s_capture_active&&key==IB_UI_KEY_OK&&!s_ctx.run_mode_menu)icon=IB_ICON_MIC;
+        if(s_hint_standalone&&busy&&key==IB_UI_KEY_DOWN)hold=IB_ICON_NONE;
+        if(s_capture_active&&key==IB_UI_KEY_OK&&!s_ctx.run_mode_menu&&!s_menu_return_pending)icon=IB_ICON_MIC;
         ib_hints_set_icon((ib_ui_key_t)key,icon);
         ib_hints_set_hold_icon((ib_ui_key_t)key,hold);
     }
+    bool reading=!s_ctx.run_mode_menu&&!s_menu_return_pending;
+    if(reading&&ib_notification_active())ib_hints_set_pagination(true,ib_notification_index(),ib_notification_total());
+    else ib_hints_set_pagination(reading&&reply_visible(),s_reply.page_index,s_reply.page_count);
     ib_hints_set_disabled(!s_ctx.run_mode_menu&&!s_hint_standalone&&s_hint_phase==IB_UI_ASSIST_COUNT&&s_screen==IB_UI_PROC);
     ib_hints_set_visible(true);
-    ib_hints_set_recording(s_capture_active&&s_awake&&!s_ctx.run_mode_menu&&
+    ib_hints_set_recording(s_capture_active&&s_awake&&!s_ctx.run_mode_menu&&!s_menu_return_pending&&!ib_notification_active()&&
         s_screen!=IB_UI_LIST&&s_screen!=IB_UI_USAGE);
 }
 
@@ -143,38 +156,49 @@ static size_t transcript_line_start(const char *text,size_t end)
 }
 static bool transcript_visible(void){return !s_caption_blocks_transcript&&s_transcript.active&&s_transcript.text[0]&&!s_transcript.closed;}
 static bool reply_visible(void){return !s_caption_blocks_transcript&&ib_reply_view_active(&s_reply)&&s_reply.text[0];}
+static ib_ui_assistant_phase_t canonical_phase(const char *name)
+{
+    if(!name)return IB_UI_ASSIST_IDLE;
+    if(!strcmp(name,"listening")||!strcmp(name,"dictating"))return IB_UI_ASSIST_LISTENING;
+    if(!strcmp(name,"uploading"))return IB_UI_ASSIST_TRANSCRIBING;
+    if(!strcmp(name,"loading")||!strcmp(name,"spawning")||!strcmp(name,"waking"))return IB_UI_ASSIST_PREPARING;
+    if(!strcmp(name,"thinking")||!strcmp(name,"searching")||!strcmp(name,"reading")||!strcmp(name,"radar")||!strcmp(name,"orbit"))return IB_UI_ASSIST_THINKING;
+    if(!strcmp(name,"writing")||!strcmp(name,"working")||!strcmp(name,"composing")||!strcmp(name,"sending")||!strcmp(name,"receiving"))return IB_UI_ASSIST_REPLYING;
+    if(!strcmp(name,"happy")||!strcmp(name,"celebrate")||!strcmp(name,"done"))return IB_UI_ASSIST_DONE;
+    if(!strcmp(name,"alerting"))return IB_UI_ASSIST_ERROR;
+    if(!strcmp(name,"powering-down"))return IB_UI_ASSIST_STOPPED;
+    return IB_UI_ASSIST_IDLE;
+}
+static ib_ui_assistant_phase_t activity_phase(void)
+{
+    return s_capture_active?IB_UI_ASSIST_LISTENING:reply_visible()&&s_reply.final?IB_UI_ASSIST_DONE:s_activity_phase;
+}
+static void activity_draw(lv_event_t *event)
+{
+    ib_fx_t f;ib_fx_begin(&f,event);ib_activity_draw(&f,8,8,activity_phase(),s_capture_active,s_ctx.now_ms);
+}
 static void caption_layout(const char *text)
 {
     lv_point_t size;lv_text_get_size(&size,text,&ib_cjk_font_12,0,2,PET_TEXT_W,LV_TEXT_FLAG_NONE);
-    int height=size.y>0?size.y:16;
-    int available=IB_UI_H-IB_UI_BAR_H-PET_GRID_BOTTOM;
+    int height=size.y>0?size.y:16,available=IB_UI_H-IB_UI_BAR_H-PET_GRID_BOTTOM-18;
     if(height>available)height=available;
-    lv_obj_set_height(s_pet_label,height);
-    lv_obj_align(s_pet_label,LV_ALIGN_TOP_MID,0,PET_GRID_BOTTOM+(available-height)/2);
+    lv_obj_set_height(s_pet_label,height);lv_obj_align(s_pet_label,LV_ALIGN_TOP_MID,0,PET_GRID_BOTTOM+18);
 }
 static void render_pet_caption(void)
 {
-    const char *status=s_pet_status?s_pet_status:ib_ui_assistant_label(IB_UI_ASSIST_IDLE,false,NULL);
+    const char *text=NULL;
     if(reply_visible()){
-        const char *reading_status=s_reply.final?ib_ui_assistant_label(IB_UI_ASSIST_DONE,false,NULL):status;
-        char header[40];size_t end=strcspn(reading_status,"\n"),cap=end+1<sizeof(header)?end+1:sizeof(header);
-        copy_utf8(header,cap,reading_status);
-        int used=snprintf(s_caption_text,sizeof(s_caption_text),"%s  %u/%u\n",header,
-                          (unsigned)s_reply.page_index+1,(unsigned)s_reply.page_count);
-        if(used>0&&(size_t)used<sizeof(s_caption_text))
-            ib_reply_font_copy(s_caption_text+used,sizeof(s_caption_text)-(size_t)used,s_reply.text);
-        lv_label_set_text_static(s_pet_label,s_caption_text);
+        if(ib_reply_font_copy(s_caption_text,sizeof(s_caption_text),s_reply.text))text=s_caption_text;
     }else if(transcript_visible()){
         size_t end=strlen(s_transcript.text),split=transcript_line_start(s_transcript.text,end);
         size_t start=split?transcript_line_start(s_transcript.text,split):0;
-        int header=(int)strcspn(status,"\n");
-        if(split)snprintf(s_caption_text,sizeof(s_caption_text),"%.*s\n%.*s\n%s",header,status,(int)(split-start),s_transcript.text+start,s_transcript.text+split);
-        else snprintf(s_caption_text,sizeof(s_caption_text),"%.*s\n%s",header,status,s_transcript.text);
-        lv_label_set_text_static(s_pet_label,s_caption_text);
-    }else{
-        lv_label_set_text_static(s_pet_label,status);
-    }
-    caption_layout(lv_label_get_text(s_pet_label));
+        if(split)snprintf(s_caption_text,sizeof(s_caption_text),"%.*s\n%s",(int)(split-start),s_transcript.text+start,s_transcript.text+split);
+        else snprintf(s_caption_text,sizeof(s_caption_text),"%s",s_transcript.text);
+        text=s_caption_text;
+    }else if(s_activity_error)text=s_pet_status;
+    if(text&&text[0]){lv_label_set_text_static(s_pet_label,text);caption_layout(text);lv_obj_remove_flag(s_pet_label,LV_OBJ_FLAG_HIDDEN);}
+    else{lv_label_set_text_static(s_pet_label,"");lv_obj_add_flag(s_pet_label,LV_OBJ_FLAG_HIDDEN);}
+    if(s_activity)lv_obj_invalidate(s_activity);
 }
 
 // 点阵绘制只读缓存；模拟在frame_cb运行，避免LVGL重绘时被fps限流清空。
@@ -209,9 +233,11 @@ static void pet_visibility(void)
 {
     if(!s_pet_root)return;
     bool offline=s_screen==IB_UI_OFFLINE;
-    bool show=(offline||ib_pet_enabled()||reply_visible()||transcript_visible())&&s_screen!=IB_UI_LIST&&s_screen!=IB_UI_USAGE&&s_screen!=IB_UI_SUB;
+    bool show=(offline||ib_pet_enabled()||s_hint_standalone||s_hint_phase!=IB_UI_ASSIST_COUNT||reply_visible()||transcript_visible())&&s_screen!=IB_UI_LIST&&s_screen!=IB_UI_USAGE&&s_screen!=IB_UI_SUB;
     lv_obj_set_size(s_pet_root,IB_UI_W,offline?208:IB_UI_H-IB_UI_BAR_H);
-    if(offline)lv_obj_add_flag(s_pet_label,LV_OBJ_FLAG_HIDDEN);else lv_obj_remove_flag(s_pet_label,LV_OBJ_FLAG_HIDDEN);
+    if(offline){lv_obj_add_flag(s_pet_label,LV_OBJ_FLAG_HIDDEN);lv_obj_add_flag(s_activity,LV_OBJ_FLAG_HIDDEN);}
+    else{if(lv_label_get_text(s_pet_label)[0])lv_obj_remove_flag(s_pet_label,LV_OBJ_FLAG_HIDDEN);lv_obj_remove_flag(s_activity,LV_OBJ_FLAG_HIDDEN);}
+    ib_notification_suspend(s_ctx.run_mode_menu||s_menu_return_pending);
     if(show)lv_obj_remove_flag(s_pet_root,LV_OBJ_FLAG_HIDDEN);else lv_obj_add_flag(s_pet_root,LV_OBJ_FLAG_HIDDEN);
 }
 // ---------------------------------------------------------------------------
@@ -269,7 +295,7 @@ static bool cut_transition(ib_ui_screen_t from, ib_ui_screen_t to)
     return from != to && dot_page(from) && dot_page(to);
 }
 
-static void switch_to(ib_ui_screen_t screen)
+static void switch_to(ib_ui_screen_t screen,bool immediate)
 {
     uint32_t now = lv_tick_get();
     lv_obj_t *old = s_roots[s_screen];
@@ -277,7 +303,7 @@ static void switch_to(ib_ui_screen_t screen)
     // 旧页面还没完全显示出来(例如正在淡入)时不直切,免得新页面从一个没出现过的画面开始变形。
     bool dot_cut = cut_transition(s_screen, screen) && !lv_obj_has_flag(old, LV_OBJ_FLAG_HIDDEN) &&
                    lv_obj_get_style_opa(old, 0) == LV_OPA_COVER;
-    bool cut = !s_awake || dot_cut || screen==IB_UI_OFFLINE || s_screen==IB_UI_OFFLINE;
+    bool cut = immediate || !s_awake || dot_cut || screen==IB_UI_OFFLINE || s_screen==IB_UI_OFFLINE;
     s_ctx.prev_screen = dot_cut && s_awake ? s_screen : IB_UI_SCREEN_NONE;
 
     if (cut) {
@@ -351,11 +377,11 @@ static void frame_cb(lv_timer_t *t)
     ib_bar_frame(s_ctx.now_ms);
     // 新页面还在等旧页面淡出(enter_ms 在未来)时不推进它的动画。
     bool started = (int32_t)(s_ctx.now_ms - s_ctx.enter_ms) >= 0;
-    if (started && !ib_agent_covering()) PAGES[s_screen]->frame(&s_ctx);
+    if(started&&!ib_agent_covering()&&(s_screen==IB_UI_OFFLINE||!s_pet_root||lv_obj_has_flag(s_pet_root,LV_OBJ_FLAG_HIDDEN)))PAGES[s_screen]->frame(&s_ctx);
     ib_agent_frame(s_ctx.now_ms);
     if(started&&s_screen==IB_UI_OFFLINE){const char *desired=s_ctx.now_ms-s_ctx.enter_ms>45000?"sleeping":"idle";if(strcmp(ib_pet_state_name(),desired))ib_pet_set_state_name(desired,s_ctx.now_ms);}
     pet_visibility();
-    if(s_pet_root&&!lv_obj_has_flag(s_pet_root,LV_OBJ_FLAG_HIDDEN)&&(s_screen==IB_UI_OFFLINE||ib_pet_enabled())){
+    if(s_pet_root&&!lv_obj_has_flag(s_pet_root,LV_OBJ_FLAG_HIDDEN)&&(s_screen==IB_UI_OFFLINE||ib_pet_enabled())&&!ib_notification_active()){
         uint32_t before=lv_tick_get();
         if(ib_pet_render(s_ctx.now_ms,pet_pixel,NULL)){
             uint32_t elapsed=lv_tick_get()-before;s_pet_frame_last_ms=elapsed;if(elapsed>s_pet_frame_max_ms)s_pet_frame_max_ms=elapsed;
@@ -365,6 +391,11 @@ static void frame_cb(lv_timer_t *t)
             lv_obj_invalidate_area(s_pet_root,&dirty);
         }
     }
+    if(s_activity&&!lv_obj_has_flag(s_pet_root,LV_OBJ_FLAG_HIDDEN)&&!ib_notification_active()&&
+       ib_activity_animates(activity_phase(),s_capture_active)&&s_ctx.now_ms-s_activity_last_frame>=100){
+        s_activity_last_frame=s_ctx.now_ms;lv_obj_invalidate(s_activity);
+    }
+    ib_notification_frame(s_ctx.now_ms);
     // 无图元变化时也恢复refresh timer，以便REFR_READY解除等待；熄屏仍保持暂停。
     lv_timer_pause(t);s_waiting_refresh=true;
     lv_timer_resume(lv_display_get_refr_timer(lv_display_get_default()));
@@ -404,7 +435,9 @@ esp_err_t ib_ui_init(void)
     lv_obj_set_style_text_line_space(s_pet_label,2,0);
     lv_obj_set_style_bg_opa(s_pet_label,LV_OPA_TRANSP,0);
     lv_label_set_long_mode(s_pet_label,LV_LABEL_LONG_CLIP);
+    s_activity=ib_fx_create(s_pet_root,(IB_UI_W-16)/2,PET_GRID_BOTTOM,16,16,activity_draw,NULL);
     s_pet_status=ib_ui_assistant_label(IB_UI_ASSIST_IDLE,false,NULL);render_pet_caption();
+    ib_notification_create(scr);
     ib_bar_create(scr);     // 后建,位于页面之上
     ib_hints_create(scr);
     ib_hints_set_visible(false);
@@ -434,11 +467,18 @@ bool ib_ui_show(ib_ui_screen_t screen, ib_ui_mode_t mode, const char *msg)
     s_ctx.mode = mode;
     copy_text(s_ctx.msg, sizeof(s_ctx.msg), msg);
     if(s_ctx.run_mode_menu){bsp_lvgl_unlock();return true;}
-    if (screen != s_screen) {
-        switch_to(screen);
+    bool returning=s_menu_return_pending;
+    if (screen != s_screen||returning) {
+        switch_to(screen,returning);
     } else if (changed) {
         ib_bar_set_mode(bar_mode_for(screen), lv_tick_get());     // 例如 IDLE 上 LIVE 徽章出现 / 消失
         PAGES[screen]->update(&s_ctx);
+    }
+    if(returning){
+        s_menu_return_pending=false;
+        if(s_agent_latest.visible)ib_agent_show(s_agent_latest.kind,s_agent_latest.source,s_screen==IB_UI_REC,lv_tick_get());
+        else ib_agent_hide();
+        ib_agent_set_suspended(ib_notification_active());apply_key_hints();pet_visibility();
     }
     bsp_lvgl_unlock();
     return true;
@@ -447,7 +487,7 @@ bool ib_ui_show(ib_ui_screen_t screen, ib_ui_mode_t mode, const char *msg)
 void ib_ui_set_capture_active(bool active)
 {
     if(!s_ready||s_capture_active==active||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return;
-    s_capture_active=active;apply_key_hints();bsp_lvgl_unlock();
+    s_capture_active=active;apply_key_hints();if(s_activity)lv_obj_invalidate(s_activity);bsp_lvgl_unlock();
 }
 
 void ib_ui_set_level(uint8_t level)
@@ -561,11 +601,12 @@ void ib_ui_run_mode_menu(bool standalone,unsigned selected,ib_ui_run_mode_notice
 {
     if(!s_ready||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return;
     bool opening=!s_ctx.run_mode_menu;
+    s_menu_return_pending=false;
     s_ctx.run_mode_menu=true;s_ctx.run_mode_standalone=standalone;
     s_ctx.run_mode_selected=selected<3?(uint8_t)selected:2;
     s_ctx.run_mode_notice=(unsigned)notice<IB_UI_RUN_MODE_NOTICE_COUNT?notice:IB_UI_RUN_MODE_NOTICE_NONE;
     ib_agent_set_suspended(true);
-    if(opening&&s_screen!=IB_UI_LIST)switch_to(IB_UI_LIST);
+    if(opening)switch_to(IB_UI_LIST,true);
     else PAGES[IB_UI_LIST]->update(&s_ctx);
     apply_key_hints();pet_visibility();
     bsp_lvgl_unlock();
@@ -573,12 +614,11 @@ void ib_ui_run_mode_menu(bool standalone,unsigned selected,ib_ui_run_mode_notice
 void ib_ui_run_mode_menu_hide(void)
 {
     if(!s_ready||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return;
-    s_ctx.run_mode_menu=false;
-    if(s_screen==IB_UI_LIST)PAGES[IB_UI_LIST]->update(&s_ctx);
-    if(s_agent_latest.visible)ib_agent_show(s_agent_latest.kind,s_agent_latest.source,s_screen==IB_UI_REC,lv_tick_get());
-    else ib_agent_hide();
-    ib_agent_set_suspended(false);
-    apply_key_hints();bsp_lvgl_unlock();
+    if(s_ctx.run_mode_menu){
+        // 保留菜单这一帧，直到app明确show最新目标；不在两次GUI锁之间露出旧LIST/READY。
+        s_ctx.run_mode_menu=false;s_menu_return_pending=true;
+    }
+    bsp_lvgl_unlock();
 }
 bool ib_ui_run_mode_menu_visible(void){return s_ctx.run_mode_menu;}
 bool ib_ui_transcript_begin(uint32_t generation)
@@ -636,10 +676,41 @@ bool ib_ui_reply_page(int delta)
 bool ib_ui_reply_visible(void)
 {
     if(!s_ready||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return false;
-    bool visible=reply_visible()&&!s_ctx.run_mode_menu&&s_screen!=IB_UI_OFFLINE&&
+    bool visible=reply_visible()&&!ib_notification_active()&&!s_ctx.run_mode_menu&&!s_menu_return_pending&&s_screen!=IB_UI_OFFLINE&&
         s_screen!=IB_UI_LIST&&s_screen!=IB_UI_USAGE&&s_screen!=IB_UI_SUB;
     bsp_lvgl_unlock();return visible;
 }
+bool ib_ui_notification_show(uint32_t generation,const char *source,ib_ui_notification_kind_t kind,bool truncated,size_t length,ib_ui_reply_reader_fn reader,void *ctx)
+{
+    if(!s_ready||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return false;
+    /* 云端资源忙由app/store门禁判定；电脑后台thinking不代表设备正在占用录音/网络。 */
+    bool busy=s_ctx.run_mode_menu||s_menu_return_pending||s_capture_active;
+    bool ok=!busy&&ib_notification_show(generation,source,kind,truncated,length,reader,ctx);
+    if(ok){
+        s_agent_latest.visible=false;ib_agent_set_suspended(true);ib_agent_hide();
+        apply_key_hints();pet_visibility();
+    }
+    bsp_lvgl_unlock();return ok;
+}
+bool ib_ui_notification_hide(void)
+{
+    if(!s_ready||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return false;
+    ib_notification_hide();if(!s_ctx.run_mode_menu&&!s_menu_return_pending)ib_agent_set_suspended(false);
+    apply_key_hints();pet_visibility();render_pet_caption();bsp_lvgl_unlock();return true;
+}
+bool ib_ui_notification_page(int delta)
+{
+    if(!s_ready||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return false;
+    bool ok=!s_ctx.run_mode_menu&&!s_menu_return_pending&&ib_notification_page(delta);
+    apply_key_hints();bsp_lvgl_unlock();return ok;
+}
+bool ib_ui_notification_visible(void)
+{
+    if(!s_ready||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return false;
+    bool visible=ib_notification_active()&&!s_ctx.run_mode_menu&&!s_menu_return_pending;
+    bsp_lvgl_unlock();return visible;
+}
+
 bool ib_ui_present_boot_frame(void)
 {
     if(!s_ready||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return false;
@@ -683,8 +754,9 @@ void ib_ui_set_usage(const ib_ui_usage_t *usage)
 void ib_ui_agent_show(ib_ui_agent_t kind, const char *source)
 {
     if (!s_ready || !bsp_lvgl_lock(LOCK_TIMEOUT_MS)) return;
+    if(ib_notification_active()){bsp_lvgl_unlock();return;}
     s_agent_latest.visible=true;s_agent_latest.kind=kind;copy_text(s_agent_latest.source,sizeof(s_agent_latest.source),source);
-    if(!s_ctx.run_mode_menu)ib_agent_show(kind, source, s_screen == IB_UI_REC, lv_tick_get());
+    if(!s_ctx.run_mode_menu&&!s_menu_return_pending)ib_agent_show(kind, source, s_screen == IB_UI_REC, lv_tick_get());
     bsp_lvgl_unlock();
 }
 
@@ -692,7 +764,7 @@ void ib_ui_agent_hide(void)
 {
     if (!s_ready || !bsp_lvgl_lock(LOCK_TIMEOUT_MS)) return;
     s_agent_latest.visible=false;
-    if(!s_ctx.run_mode_menu)ib_agent_hide();
+    if(!s_ctx.run_mode_menu&&!s_menu_return_pending)ib_agent_hide();
     bsp_lvgl_unlock();
 }
 
@@ -713,9 +785,9 @@ bool ib_ui_pet_state(const char *name,const char *body,bool standalone)
     if(!s_ready||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return false;
     bool ok=ib_pet_set_state_name(name,lv_tick_get());
     if(ok){
-        s_pet_status=ib_ui_pet_label(name,standalone);
+        s_pet_status=ib_ui_pet_label(name,standalone);s_activity_phase=canonical_phase(name);s_activity_error=false;
         if(reply_visible()||transcript_visible())render_pet_caption();
-        else if(body&&body[0]){char text[192];copy_utf8(text,sizeof(text),body);lv_label_set_text(s_pet_label,text);caption_layout(text);}
+        else if(body&&body[0]){char text[192];copy_utf8(text,sizeof(text),body);lv_label_set_text(s_pet_label,text);caption_layout(text);lv_obj_remove_flag(s_pet_label,LV_OBJ_FLAG_HIDDEN);}
         else render_pet_caption();
     }
     pet_visibility();bsp_lvgl_unlock();return ok;
@@ -726,7 +798,8 @@ bool ib_ui_pet_assistant_state(const char *name,ib_ui_assistant_phase_t phase,bo
     bool ok=ib_pet_set_state_name(name,lv_tick_get());
     if(ok){
         const char *label=phase==IB_UI_ASSIST_COUNT?ib_ui_pet_label(name,cloud_target):ib_ui_assistant_label(phase,cloud_target,error_code);
-        s_pet_status=label;
+        s_pet_status=label;s_activity_phase=phase==IB_UI_ASSIST_COUNT?canonical_phase(name):phase;
+        s_activity_error=phase==IB_UI_ASSIST_ERROR||(phase==IB_UI_ASSIST_COUNT&&!strcmp(name,"alerting"));
         s_caption_blocks_transcript=phase==IB_UI_ASSIST_ERROR||phase==IB_UI_ASSIST_STOPPED||
             (phase==IB_UI_ASSIST_COUNT&&(!strcmp(name,"alerting")||!strcmp(name,"powering-down")));
         if(s_caption_blocks_transcript){ib_transcript_view_clear(&s_transcript,0);ib_reply_view_clear(&s_reply,0);}
@@ -739,7 +812,7 @@ void ib_ui_pet_assistant_status(ib_ui_assistant_phase_t phase,bool cloud_target,
 {
     if(!s_ready||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return;
     /* 文案为只读常量，无逐帧分配；保留原协议/日志机器码供排查。 */
-    s_pet_status=ib_ui_assistant_label(phase,cloud_target,error_code);
+    s_pet_status=ib_ui_assistant_label(phase,cloud_target,error_code);s_activity_phase=phase;s_activity_error=phase==IB_UI_ASSIST_ERROR;
     s_caption_blocks_transcript=phase==IB_UI_ASSIST_ERROR||phase==IB_UI_ASSIST_STOPPED;
     if(s_caption_blocks_transcript){ib_transcript_view_clear(&s_transcript,0);ib_reply_view_clear(&s_reply,0);}
     else if(phase==IB_UI_ASSIST_LISTENING)ib_reply_view_clear(&s_reply,0);

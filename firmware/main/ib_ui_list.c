@@ -94,8 +94,8 @@ static void fx_draw(lv_event_t *e)
         }
     }
     if(s_run_mode_menu){
-        lv_color_t color=IB_C(s_run_mode_notice==IB_UI_RUN_MODE_NOTICE_NONE?IB_COLOR_TEXT_MID:
-            s_run_mode_notice==IB_UI_RUN_MODE_NOTICE_RESTARTING?IB_COLOR_DONE:IB_COLOR_ERR);
+        lv_color_t color=IB_C(s_run_mode_notice==IB_UI_RUN_MODE_NOTICE_NONE||
+            s_run_mode_notice==IB_UI_RUN_MODE_NOTICE_RESTARTING?IB_COLOR_TEXT_MID:IB_COLOR_ERR);
         /* 说明最多两行，不能用给小图标设计的120px×单行ib_fx_text区域。 */
         lv_draw_label_dsc_t d;lv_draw_label_dsc_init(&d);
         d.text=ib_ui_run_mode_notice(s_run_mode_notice);d.font=&ib_cjk_font_12;d.color=color;d.opa=fx.opa;d.align=LV_TEXT_ALIGN_CENTER;

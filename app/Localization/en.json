@@ -1264,5 +1264,7 @@
   "（未配置）": " (Not Set Up)",
   "；当前会话 Hook 已绑定": "; hook bound to the current session",
   "；未发现与当前会话身份匹配的 Hook": "; no hook matches the current session identity",
-  "云端待机": "Cloud assistant ready"
+  "云端待机": "Cloud assistant ready",
+  "正在切换模式\n请稍候": "Switching modes\nPlease wait",
+  "正文已截断": "Message truncated"
 }

@@ -24,7 +24,7 @@ static const char *const run_mode_text[]={
     "请先在电脑同步云端配置",
     "模式保存失败，请重试",
     "助手暂不可用\n请连接电脑检查配置",
-    "正在切换模式\n设备即将重新启动",
+    "正在切换模式\n请稍候",
     "正在同步配置\n请稍后切换模式"
 };
 const char *ib_ui_run_mode_title(void){return run_mode_text[0];}

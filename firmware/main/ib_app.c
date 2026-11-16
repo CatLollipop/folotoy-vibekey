@@ -26,6 +26,7 @@
 #include "ib_audio.h"
 #include "ib_assistant.h"
 #include "ib_reply_keys.h"
+#include "ib_notification.h"
 #include "ib_assistant_store.h"
 #include "ib_pet_bundle.h"
 #include "ib_pet.h"
@@ -112,6 +113,13 @@ static SemaphoreHandle_t s_pet_apply_lock,s_reply_apply_lock,s_boot_frame_done;
 static uint32_t s_reply_ui_seen,s_reply_ui_generation;
 static bool s_boot_ui_ready,s_reply_nav_replaying,s_reply_up_text,s_reply_down_blocked;
 static ib_reply_keys_t s_reply_keys;
+static SemaphoreHandle_t s_notification_ui_lock;
+static uint32_t s_notification_ui_generation,s_notification_ui_revision,s_notification_blocked_generation;
+static int64_t s_notification_deadline;
+static bool s_notification_chime_pending,s_notification_clear_legacy;
+static char s_notification_chime_id[33];
+static ib_sound_t s_notification_sound;
+static uint32_t s_completion_revision,s_completion_seen;
 static esp_partition_mmap_handle_t s_pet_mapping;
 static bool s_pet_mapping_live;
 static ib_run_menu_t s_run_menu;
@@ -173,6 +181,8 @@ static ib_ui_connection_hint_t offline_hint(void);
 static ib_ui_screen_t screen_for(ib_state_t st);
 static void refresh_assistant(int64_t now);
 static bool reply_apply(void *context);
+static bool notification_apply(void *context);
+static bool notification_hide(void *context);
 static void refresh_boot_frame(void);
 static void handle_key(ib_key_t,ib_key_ev_t,int64_t);
 _Static_assert(IB_CAPTION_MAX == IB_UI_CAPTION_MAX, "caption buffer size mismatch");
@@ -326,9 +336,10 @@ static void wake(int64_t now)
     set_backlight(true);
 }
 
-static void play(ib_sound_t sound)
+static bool play(ib_sound_t sound)
 {
-    if (s_audio_ok && s_cfg_sound) ib_audio_play(sound);
+    if(!s_cfg_sound)return true; //尊重用户静音，不在日后开启声音时补播旧事件。
+    return s_audio_ok&&ib_audio_play(sound);
 }
 
 static ib_ui_mode_t ui_mode(void)
@@ -462,7 +473,7 @@ static void mic_start(ib_link_t link, bool local, int64_t now)
 {
     if (!s_audio_ok||ib_assistant_store_uploading()) return;
     if (ib_audio_mic_active() && ib_audio_mic_link() != link) mic_stop();
-    if (ib_audio_mic_start(link) != ESP_OK) return;
+    if (ib_assistant_companion_mic_start(link) != ESP_OK) return;
     s_mic_prestart = false;
     s_mic_prestart_long = false;
     s_mic_local = local;
@@ -763,12 +774,20 @@ static bool reply_has_text(void){
     if(s_screen==IB_UI_LIST||s_screen==IB_UI_USAGE||s_screen==IB_UI_SUB||s_screen==IB_UI_OFFLINE)return false;
     ib_reply_snapshot_t view;ib_reply_store_snapshot(&view);return view.active&&view.length>0;
 }
+static bool notification_has_text(void){return s_ui_ok&&ib_ui_notification_visible();}
+static bool text_has_page(void){return notification_has_text()||reply_has_text();}
+static void text_page(int delta,int64_t now){
+    if(notification_has_text()){
+        (void)ib_ui_notification_page(delta);
+        if(xSemaphoreTake(s_notification_ui_lock,pdMS_TO_TICKS(50))==pdTRUE){s_notification_deadline=now+30000;xSemaphoreGive(s_notification_ui_lock);}
+    }else if(s_ui_ok)(void)ib_ui_reply_page(delta);
+}
 static bool reply_down_key(ib_key_t key,ib_key_ev_t event,int64_t now){
     if(s_reply_nav_replaying)return false;
-    ib_reply_key_result_t r=ib_reply_keys_down(&s_reply_keys,key,event,reply_has_text(),s_run_menu.open||s_wifi_menu,!s_backlight_on);
+    ib_reply_key_result_t r=ib_reply_keys_down(&s_reply_keys,key,event,text_has_page(),s_run_menu.open||s_wifi_menu,!s_backlight_on);
     if(!r.consumed)return false;
     if(event==IB_KEY_EV_DOWN)wake(now);
-    if(r.action==IB_REPLY_KEY_NEXT){if(s_ui_ok)(void)ib_ui_reply_page(1);}
+    if(r.action==IB_REPLY_KEY_NEXT)text_page(1,now);
     else if(r.action==IB_REPLY_KEY_LONG){if(ib_assistant_standalone()&&ib_assistant_busy()){s_reply_down_blocked=true;return true;}s_reply_nav_replaying=true;handle_key(key,IB_KEY_EV_DOWN,now-1);handle_key(key,IB_KEY_EV_LONG,now);s_reply_nav_replaying=false;}
     else if(r.action==IB_REPLY_KEY_RELEASE){if(s_reply_down_blocked){s_reply_down_blocked=false;return true;}s_reply_nav_replaying=true;handle_key(key,IB_KEY_EV_UP,now);s_reply_nav_replaying=false;}
     return true;
@@ -794,6 +813,8 @@ static void run_menu_render(void){
 static void run_menu_close(int64_t now){
     ib_run_menu_close(&s_run_menu);ib_keys_reset(&s_keys);
     if(s_ui_ok)ib_ui_run_mode_menu_hide();
+    // 热切后先按实际mode重新计算已存在的USB/WiFi链路，不能借旧standalone的s_online闪一次OFFLINE。
+    refresh_links(now);
     ib_ui_screen_t restore=ib_assistant_standalone()?IB_UI_IDLE:!s_online?IB_UI_OFFLINE:(s_st==IB_ST_LIST&&!s_list_ready)?IB_UI_IDLE:screen_for(s_st);
     show_screen(restore);s_assist_seen=0;refresh_assistant(now);wake(now);
 }
@@ -810,11 +831,13 @@ static bool run_menu_key(ib_key_t key,ib_key_ev_t event,int64_t now){
     case IB_RUN_ACT_CLOSE:run_menu_close(now);break;
     case IB_RUN_ACT_CONFIRM:{
         if(s_run_menu.selected==2||(s_run_menu.selected==0)==ib_assistant_standalone()){run_menu_close(now);break;}
+        s_run_notice=IB_UI_RUN_MODE_NOTICE_RESTARTING;run_menu_render(); //既有enum保留，UI文案现为正在切换。
         const char *error=ib_assistant_request_mode(s_run_menu.selected==0);
-        s_run_notice=error?run_notice(error):IB_UI_RUN_MODE_NOTICE_RESTARTING;run_menu_render();break;
+        if(!error){run_menu_close(now);break;}
+        s_run_notice=run_notice(error);run_menu_render();break;
     }
     case IB_RUN_ACT_SHORT_UP:
-        if(s_reply_up_text||reply_has_text()){s_reply_up_text=false;if(s_ui_ok&&!s_run_menu.wake_only)(void)ib_ui_reply_page(-1);break;}
+        if(s_reply_up_text||text_has_page()){s_reply_up_text=false;if(s_ui_ok&&!s_run_menu.wake_only)text_page(-1,now);break;}
         if(ib_assistant_standalone()){if(!ib_assistant_busy())ib_assistant_clear_history();}
         else if(!s_run_menu.wake_only){s_run_replaying=true;handle_key(IB_KEY_UP,IB_KEY_EV_DOWN,now-1);handle_key(IB_KEY_UP,IB_KEY_EV_UP,now);s_run_replaying=false;}
         break;
@@ -827,7 +850,9 @@ static bool run_menu_key(ib_key_t key,ib_key_ev_t event,int64_t now){
 
 static void handle_key(ib_key_t key, ib_key_ev_t ev, int64_t now)
 {
-    if(!s_reply_nav_replaying&&key==IB_KEY_UP&&ev==IB_KEY_EV_DOWN&&!s_run_menu.open&&!s_wifi_menu)s_reply_up_text=reply_has_text();
+    if(!s_reply_nav_replaying&&key==IB_KEY_UP&&ev==IB_KEY_EV_DOWN&&!s_run_menu.open&&!s_wifi_menu)s_reply_up_text=text_has_page();
+    // OK首沿先关闭/释放通知，然后走同一个PTT路径；不吞键、不加长按等待，保留首句采集。
+    if(key==IB_KEY_OK&&ev==IB_KEY_EV_DOWN&&!s_run_menu.open&&!s_wifi_menu)(void)ib_assistant_notification_dismiss();
     if(reply_down_key(key,ev,now))return;
     // 菜单进入前已按住的PTT松开仍须结束录音；不能让本地菜单吞掉麦克风释放沿。
     if(s_run_menu.open&&ib_assistant_standalone()&&key==IB_KEY_OK&&ev==IB_KEY_EV_UP)ib_assistant_release();
@@ -1131,6 +1156,7 @@ static void assistant_status(ib_assistant_state_t state,const char *text,void *c
     s_assist_view.owned=ib_assistant_companion_owned();
     s_assist_view.companion_error=ib_assistant_companion_error();
     s_assist_view.revision++;
+    if(state==IB_ASSIST_DONE&&ib_assistant_standalone())s_completion_revision++;
     portEXIT_CRITICAL(&s_assist_lock);
 }
 static void refresh_assistant(int64_t now)
@@ -1187,6 +1213,64 @@ static bool reply_apply(void *context){
     }
     xSemaphoreGive(s_reply_apply_lock);return ok;
 }
+// callback可来自USB final ACK；仅同步UI发布。chime/wake/legacy业务状态留给app tick消费。
+static bool notification_hide(void *context){
+    (void)context;if(!s_ui_ok||!s_notification_ui_lock)return false;
+    if(xSemaphoreTake(s_notification_ui_lock,pdMS_TO_TICKS(1000))!=pdTRUE)return false;
+    bool ok=ib_ui_notification_hide();
+    // 高rev begin也先hide；pending按事件保留到新rev发布，避免0body→正文太快而永远不响。
+    if(ok){ib_notification_snapshot_t view;ib_notification_snapshot(&view);s_notification_blocked_generation=view.generation;s_notification_ui_generation=0;s_notification_deadline=0;}
+    xSemaphoreGive(s_notification_ui_lock);return ok;
+}
+static bool notification_apply(void *context){
+    (void)context;if(!s_ui_ok||!s_notification_ui_lock)return false;
+    if(xSemaphoreTake(s_notification_ui_lock,pdMS_TO_TICKS(1000))!=pdTRUE)return false;
+    ib_notification_snapshot_t view;ib_notification_snapshot(&view);bool ok=true;
+    if(!view.active||!view.committed){
+        if(!view.active){s_notification_chime_pending=false;s_notification_chime_id[0]=0;s_notification_deadline=0;s_notification_ui_generation=0;}
+        if(view.revision!=s_notification_ui_revision){ok=ib_ui_notification_hide();if(ok)s_notification_ui_revision=view.revision;}
+    }
+    else if(view.generation==s_notification_blocked_generation)ok=false;
+    else if(ib_assistant_mode_busy()||ib_assistant_capture_active())ok=false;
+    else if(view.generation!=s_notification_ui_generation||!ib_ui_notification_visible()){
+        const ib_ui_notification_kind_t kinds[]={IB_UI_NOTIFICATION_INPUT,IB_UI_NOTIFICATION_COMPLETED,IB_UI_NOTIFICATION_ERROR};
+        ok=ib_ui_notification_show(view.generation,view.source,kinds[view.kind],view.truncated,view.length,ib_notification_read,NULL);
+        if(ok){
+            bool changed=s_notification_ui_generation!=view.generation;s_notification_ui_generation=view.generation;
+            s_notification_ui_revision=view.revision;
+            if(changed)s_notification_deadline=now_ms()+AGENT_DONE_MS;
+            s_notification_clear_legacy=true;
+            if(s_notification_chime_pending&&strcmp(s_notification_chime_id,view.nid))s_notification_chime_pending=false;
+            if(ib_notification_presented(view.generation)){s_notification_chime_pending=true;strcpy(s_notification_chime_id,view.nid);s_notification_sound=view.kind==IB_NOTIFICATION_DONE?IB_SOUND_DONE:view.kind==IB_NOTIFICATION_INPUT?IB_SOUND_AGENT_INPUT:IB_SOUND_STOP;}
+        }
+    }
+    xSemaphoreGive(s_notification_ui_lock);return ok;
+}
+static void refresh_notification(int64_t now){
+    (void)notification_apply(NULL);
+    bool played=false,clear_legacy=false,expired=false;
+    if(xSemaphoreTake(s_notification_ui_lock,0)==pdTRUE){
+        clear_legacy=s_notification_clear_legacy;s_notification_clear_legacy=false;
+        if(s_notification_deadline&&(s_run_menu.open||s_wifi_menu))s_notification_deadline=now+30000;
+        expired=s_notification_deadline&&now>=s_notification_deadline&&!s_run_menu.open&&!s_wifi_menu;
+        // 入队与消费pending共用UI发布锁，高rev hide/show不能插在两者中间导致重复或吞短音。
+        // audio任务从不取得GUI/notification锁；此处只入队，不等待声音播放结束。
+        if(s_notification_chime_pending&&s_notification_ui_generation&&!ib_assistant_mode_busy()&&!ib_assistant_capture_active()&&play(s_notification_sound)){
+            s_notification_chime_pending=false;played=true;
+        }
+        xSemaphoreGive(s_notification_ui_lock);
+    }
+    if(clear_legacy){agent_clear();wake(now);} //文字提醒独立于声音开关/codec分配是否成功。
+    else if(played)wake(now);
+    if(expired)(void)ib_assistant_notification_dismiss();
+    // DONE是一次业务事件，不依赖可能被后台PREPARING覆盖的last-write-wins状态快照。
+    uint32_t completed;portENTER_CRITICAL(&s_assist_lock);completed=s_completion_revision;portEXIT_CRITICAL(&s_assist_lock);
+    if(completed!=s_completion_seen){
+        ib_reply_snapshot_t reply;ib_reply_store_snapshot(&reply);
+        if(!reply.active||!reply.final||!ib_assistant_standalone())s_completion_seen=completed;
+        else if(!ib_assistant_busy()&&!ib_assistant_capture_active()&&play(IB_SOUND_DONE))s_completion_seen=completed;
+    }
+}
 // 背光闸门只在持久宠物应用及首帧提交成功后打开。失败仍保留USB/按键，可重试加载恢复。
 static void refresh_boot_frame(void){
     if(s_boot_ui_ready)return;
@@ -1234,6 +1318,7 @@ static void app_task(void *arg)
         if(s_ui_ok)ib_ui_set_capture_active(ib_assistant_standalone()?ib_assistant_capture_active():ib_audio_mic_active());
         refresh_transcript();
         (void)reply_apply(NULL);
+        refresh_notification(now);
         refresh_boot_frame();
         refresh_ble_fallback(now);
         refresh_timers(now);
@@ -1270,7 +1355,7 @@ esp_err_t ib_app_start(bool ui_ok, bool battery_ok)
     }
     wake(now_ms());
 
-    s_pet_apply_lock=xSemaphoreCreateMutex();s_reply_apply_lock=xSemaphoreCreateMutex();
+    s_pet_apply_lock=xSemaphoreCreateMutex();s_reply_apply_lock=xSemaphoreCreateMutex();s_notification_ui_lock=xSemaphoreCreateMutex();
     ib_assistant_store_set_apply(apply_pet_configuration,NULL);ib_assistant_store_apply();
     xTaskNotifyGive(s_app_task);
     if(s_boot_frame_done)(void)xSemaphoreTake(s_boot_frame_done,pdMS_TO_TICKS(1500));
@@ -1283,7 +1368,8 @@ esp_err_t ib_app_start(bool ui_ok, bool battery_ok)
     bool wifi_configured=ib_wifi_is_configured();
     bool solo_boot=ib_assistant_mode_load()&&wifi_configured;
     if(!wifi_configured&&ib_assistant_mode_load())ib_assistant_mode_save(false);
-    ib_wifi_set_companion_enabled(!solo_boot);
+    // 两种模式空闲都保留已配对电脑通知链路；公网云会话前由worker实际释放LAN TLS。
+    ib_wifi_set_companion_enabled(true);
     s_ble_budget=!solo_boot&&heap_caps_get_free_size(MALLOC_CAP_8BIT)>=98304&&heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)>=32768;
     s_ble_only=wifi_configured&&!solo_boot&&s_ble_budget&&ib_wifi_ble_fallback_requested();
     s_ble_manual=s_ble_only&&ib_wifi_ble_manual_requested();
@@ -1299,6 +1385,7 @@ esp_err_t ib_app_start(bool ui_ok, bool battery_ok)
     if (!s_audio_ok) ESP_LOGE(TAG, "audio unavailable");
     if(ib_assistant_init(assistant_status,NULL)!=ESP_OK)ESP_LOGE(TAG,"assistant unavailable");
     ib_assistant_set_reply_apply(reply_apply,NULL);
+    ib_assistant_set_notification_apply(notification_apply,notification_hide,NULL);
     ib_assistant_store_set_apply(apply_pet_configuration,NULL);
     ib_assistant_store_apply();
     assistant_status(ib_assistant_state(),ib_assistant_standalone()&&!ib_assistant_store_configured()?"profile_required":"",NULL);

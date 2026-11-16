@@ -71,6 +71,13 @@ import Foundation
         let commands = (remainingGroups[0]["hooks"] as! [[String: Any]]).compactMap { $0["command"] as? String }
         expect(commands == [claudeSource, "unrelated-notification"], "Codex removal preserves Claude and user hooks")
         expect(remainingConfig["notify"] as? [String] == ["user-notifier"], "Codex removal preserves notify setting")
+        // 其他来源拥有同一URL scheme，不能阻止Codex安装，也不能在升级时被替换。
+        try AgentHookInstaller.install(.codex, at: codexFile)
+        let installedConfig = try JSONSerialization.jsonObject(with: Data(contentsOf: codexFile)) as! [String: Any]
+        let installedGroups = (installedConfig["hooks"] as! [String: Any])["Stop"] as! [[String: Any]]
+        let installedCommands = installedGroups.flatMap { ($0["hooks"] as! [[String: Any]]).compactMap { $0["command"] as? String } }
+        expect(installedCommands.contains(codexSource) && installedCommands.contains(claudeSource), "same-scheme other source must not suppress Codex installation")
+        expect(installedConfig["notify"] as? [String] == ["user-notifier"], "new body helper must preserve existing notify")
         let suite = "agent-components-test-" + UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }

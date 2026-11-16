@@ -10,6 +10,9 @@
 #include "ib_ui.h"
 #include "lvgl.h"
 #include "ib_reply_store.h"
+#include "ib_notification.h"
+#include "ib_crc32.h"
+#include "ib_ui_hints.h"
 #include "ib_cloud_stream.h"
 #include "preview_host.h"
 
@@ -606,5 +609,83 @@ int preview_run_scenarios(const char *out_dir, int scale, const char *filter)
     ib_ui_set_capture_active(false);
     if(lv_anim_count_running()!=neutral_animations)s_failures++;
     printf("Capture cue: real flag on/off, sleep/menu stop loop, wake restores only active reader; base animations=%u\n",neutral_animations);
+    // 本地模式菜单首帧就完整显示，进入/退出都不经过旧READY淡出。
+    ib_ui_set_capture_active(false);ib_ui_reply_clear(0);ib_reply_store_clear(0);ib_ui_notification_hide();
+    ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");ib_ui_set_awake(true);
+    ib_ui_set_assistant_key_hints(true,IB_UI_ASSIST_IDLE);ib_ui_pet_assistant_state("idle",IB_UI_ASSIST_IDLE,true,NULL);
+    preview_advance(400);shot("next_idle_activity_icon");
+    ib_ui_run_mode_menu(true,1,IB_UI_RUN_MODE_NOTICE_NONE);shot("next_mode_menu_000ms");
+    uint32_t menu_pixels=preview_region_hash(0,24,240,296);
+    preview_advance(20);shot("next_mode_menu_020ms");if(preview_region_hash(0,24,240,296)!=menu_pixels)s_failures++;
+    preview_advance(40);shot("next_mode_menu_060ms");if(preview_region_hash(0,24,240,296)!=menu_pixels)s_failures++;
+    preview_advance(300);shot("next_mode_menu_settled");if(preview_region_hash(0,24,240,296)!=menu_pixels)s_failures++;
+    ib_ui_run_mode_menu_hide();shot("next_mode_menu_return_pending");
+    if(preview_region_hash(0,24,240,296)!=menu_pixels)s_failures++;
+    ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");shot("next_mode_menu_closed_atomic");
+    // 当前读层页数很多时只保留7个圆点，当前页必须始终在窗口中。
+    char long_reply[1801];for(size_t i=0;i<sizeof(long_reply)-1;i++)long_reply[i]="0123456789 abcdefghijklmnopqrstuvwxyz"[i%37];long_reply[1800]=0;
+    if(ib_reply_store_begin(800,NULL)||!ib_ui_reply_begin(800))s_failures++;
+    for(size_t offset=0;offset<1800;){size_t n=1800-offset;if(n>192)n=192;
+        if(ib_reply_store_append(800,offset,long_reply+offset,n))s_failures++;offset+=n;}
+    if(ib_reply_store_final(800,1800)||!ib_ui_reply_update(800,1800,true,ib_reply_store_read,NULL))s_failures++;
+    ib_ui_pet_assistant_state("happy",IB_UI_ASSIST_DONE,true,NULL);ib_ui_set_assistant_key_hints(true,IB_UI_ASSIST_DONE);
+    preview_advance(300);ib_ui_set_awake(false);shot("next_reply_pips_first");
+    ib_hint_pages_t first=ib_hints_page_window();
+    if(!first.active||first.count!=7||first.before||!first.after||first.current!=0||ib_hints_current_icon(IB_UI_KEY_UP)!=IB_ICON_MODE||ib_hints_current_icon(IB_UI_KEY_DOWN)!=IB_ICON_DOWN)s_failures++;
+    ib_ui_reply_page(12);shot("next_reply_pips_middle");ib_hint_pages_t middle=ib_hints_page_window();
+    if(!middle.before||!middle.after||middle.current<middle.first||middle.current>=middle.first+middle.count)s_failures++;
+    uint32_t reply_page_pixels=preview_region_hash(20,240,200,80);
+    uint32_t pet_before_notice=preview_region_hash(20,24,200,200);
+    // 泛用完成通知先无正文，再同事件rev升级完整正文；CRC完整前reader不能用于展示。
+    static const char nid[]="0123456789abcdef0123456789abcdef";ib_notification_dismiss();
+    if(ib_notification_begin(IB_LINK_USB,nid,1,"Claude Code",IB_NOTIFICATION_DONE,0,0,false,false)||
+       ib_notification_commit(IB_LINK_USB,nid,1,0,0))s_failures++;
+    ib_notification_snapshot_t notice;ib_notification_snapshot(&notice);
+    if(!ib_ui_notification_show(notice.generation,notice.source,IB_UI_NOTIFICATION_COMPLETED,false,0,ib_notification_read,NULL))s_failures++;
+    if(ib_hints_page_window().active||!ib_ui_notification_visible()||ib_ui_reply_visible())s_failures++;
+    if(!ib_notification_presented(notice.generation)||ib_notification_presented(notice.generation))s_failures++;
+    shot("next_notification_source_only");
+    // application后台工作不占用设备资源；真实capture仍由UI硬门禁拦截。
+    ib_ui_notification_hide();ib_ui_set_assistant_key_hints(false,IB_UI_ASSIST_THINKING);
+    if(!ib_ui_notification_show(notice.generation,notice.source,IB_UI_NOTIFICATION_COMPLETED,false,0,ib_notification_read,NULL))s_failures++;
+    ib_ui_set_assistant_key_hints(true,IB_UI_ASSIST_DONE);
+    ib_ui_notification_hide();uint32_t crc=ib_crc32(long_reply,1500);
+    if(ib_notification_begin(IB_LINK_USB,nid,2,"Claude Code",IB_NOTIFICATION_DONE,1500,crc,false,false))s_failures++;
+    ib_notification_snapshot(&notice);
+    if(ib_ui_notification_show(notice.generation,notice.source,IB_UI_NOTIFICATION_COMPLETED,false,1500,ib_notification_read,NULL))s_failures++;
+    for(size_t offset=0;offset<1500;){size_t n=1500-offset;if(n>96)n=96;
+        if(ib_notification_chunk(IB_LINK_USB,nid,2,offset,long_reply+offset,n))s_failures++;offset+=n;}
+    if(ib_notification_commit(IB_LINK_USB,nid,2,1500,crc))s_failures++;ib_notification_snapshot(&notice);
+    if(!ib_ui_notification_show(notice.generation,notice.source,IB_UI_NOTIFICATION_COMPLETED,false,1500,ib_notification_read,NULL)||ib_notification_presented(notice.generation))s_failures++;
+    shot("next_notification_body_first");ib_ui_notification_page(9);shot("next_notification_body_middle");
+    ib_hint_pages_t notice_page=ib_hints_page_window();uint32_t notice_pixels=preview_region_hash(21,224,198,96);
+    if(!notice_page.before||!notice_page.after||notice_page.current!=9||notice_page.total==middle.total)s_failures++;
+    // 不只查pager getter：生产flush后的真正像素必须保留pet、页轨道与每个实体键。
+    unsigned pet_ink=preview_region_ink(20,24,200,200),pip_ink=preview_region_ink(224,82,9,76);
+    unsigned up_ink=preview_region_ink(220,62,18,16),down_ink=preview_region_ink(220,162,18,16);
+    unsigned mic_ink=preview_region_ink(220,260,18,20),power_ink=preview_region_ink(5,50,14,16);
+    if(preview_region_hash(20,24,200,200)!=pet_before_notice||pet_ink<500||pip_ink<20||up_ink<5||down_ink<5||mic_ink<10||power_ink<5)s_failures++;
+    printf("Notification visible pixels: pet=%u pips=%u up=%u down=%u mic=%u power=%u; pet unchanged=%u\n",pet_ink,pip_ink,up_ink,down_ink,mic_ink,power_ink,preview_region_hash(20,24,200,200)==pet_before_notice);
+    // exact commit不响、不换当前页。菜单开关也不能因store revision不变而丢通知页。
+    if(ib_notification_commit(IB_LINK_USB,nid,2,1500,crc)||!ib_ui_notification_show(notice.generation,notice.source,IB_UI_NOTIFICATION_COMPLETED,false,1500,ib_notification_read,NULL)||ib_hints_page_window().current!=9)s_failures++;
+    ib_ui_run_mode_menu(true,1,IB_UI_RUN_MODE_NOTICE_NONE);preview_advance(50);
+    if(ib_ui_notification_visible()||ib_hints_page_window().active)s_failures++;
+    ib_ui_run_mode_menu_hide();ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");
+    if(!ib_ui_notification_visible()||ib_hints_page_window().current!=9||preview_region_hash(21,224,198,96)!=notice_pixels)s_failures++;
+    shot("next_notification_menu_restored");
+    ib_ui_notification_hide();ib_notification_dismiss();
+    if(!ib_ui_reply_visible()||ib_hints_page_window().current!=middle.current||preview_region_hash(20,240,200,80)!=reply_page_pixels)s_failures++;
+    shot("next_notification_closed_reply_restored");ib_ui_reply_page(999);shot("next_reply_pips_last");
+    ib_hint_pages_t last=ib_hints_page_window();if(!last.before||last.after||last.current+1!=last.total||ib_hints_current_icon(IB_UI_KEY_DOWN)!=IB_ICON_APPS)s_failures++;
+    // 助手关闭宠物显示仍使用自身小状态图标，不能退露旧READY文字。
+    ib_ui_reply_clear(0);ib_reply_store_clear(0);ib_ui_pet_config(false,12,80,0xEADBB9);
+    ib_ui_pet_assistant_state("thinking",IB_UI_ASSIST_THINKING,true,NULL);ib_ui_set_assistant_key_hints(true,IB_UI_ASSIST_THINKING);ib_ui_set_awake(true);
+    preview_advance(200);shot("next_pet_disabled_activity_owned");
+    ib_ui_set_capture_active(true);
+    if(ib_ui_notification_show(999,"Claude Code",IB_UI_NOTIFICATION_COMPLETED,false,0,NULL,NULL))s_failures++;
+    preview_advance(200);shot("next_capture_activity_green");ib_ui_set_capture_active(false);
+    ib_ui_pet_assistant_state("alerting",IB_UI_ASSIST_ERROR,true,"authentication_failed");preview_advance(200);shot("next_error_keeps_diagnostic");
+    ib_ui_pet_config(true,12,80,0xEADBB9);
+    printf("Next UI: atomic menu first frame, one action per key, bounded pips and independent production notification lifecycle checks complete.\n");
     return s_failures;
 }

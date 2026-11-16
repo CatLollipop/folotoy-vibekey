@@ -14,7 +14,7 @@
 
 ## 常用命令
 
-AI助理新增：`app/scripts/build-clt.sh`（CLT/SwiftPM构建）、`app/scripts/test-assistant-core.sh`、`app/scripts/test-agent-bridges.sh`、`app/scripts/test-agent-components.sh`；工具链用 `scripts/setup-dev.sh` 安装、`source scripts/dev-env.sh` 激活。运行链路见 `docs/assistant-desktop.md` / `docs/assistant-device-protocol.md`。
+AI助理新增：`app/scripts/build-clt.sh`（CLT/SwiftPM构建）、`app/scripts/test-assistant-core.sh`、`app/scripts/test-agent-bridges.sh`、`app/scripts/test-agent-components.sh`、`app/scripts/test-agent-notifications.sh`；工具链用 `scripts/setup-dev.sh` 安装、`source scripts/dev-env.sh` 激活。运行链路见 `docs/assistant-desktop.md` / `docs/assistant-device-protocol.md`。
 接入组件隔离测试：`bash app/scripts/test-agent-components.sh`（临时目录验证安装/卸载，不访问用户真实配置）；已有隔离提取产物可用 `app/scripts/update-strings.sh --strings-dir <目录>` 检查本地化，避免重打包运行中的客户端。
 
 
@@ -107,3 +107,5 @@ GitHub 仓库是公开的,提交前确认不含敏感信息:
 
 - passport-keys(FoloToy AI Passport 的另一个开源项目)只是参考实现,本项目不依赖它,也不复制其中的业务逻辑。
 - 烧录固件前必须先确认已有整片 Flash 备份(`~/esp/passport-backups/`),绝不写 `cardid` 分区(`0x356000`)。
+
+独立通知硬件诊断：先退出常驻App释放USB，在开发App可执行文件后传`--diagnose-device-notification <安全报告路径> [--require-wifi] [--clear-after] [--test-companion-mic]`。仅用固定合成event/reply经过正式Coordinator/DeviceLink，不启动Hub、不读取私人会话、不调用云服务。mic参数仅在已热切companion时统计两秒样本数，不保存音频。报告无正文、密钥或设备标识。

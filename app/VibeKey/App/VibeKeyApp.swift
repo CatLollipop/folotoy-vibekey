@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         if CodexAccessDiagnostics.runIfRequested() { return }
         if VoicePipelineDiagnostics.runIfRequested() { return }
+        if DeviceNotificationDiagnostics.runIfRequested() { return }
         // XCTest 使用 app 作为宿主;测试时不能启动串口、蓝牙或后台服务。
         guard ProcessInfo.processInfo.environment["IB_TEST_MODE"] != "1" else { return }
         let state = AppState()

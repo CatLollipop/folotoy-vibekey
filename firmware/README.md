@@ -1,6 +1,6 @@
 # VibeKey Passport 固件
 
-FoloToy AI Passport(ESP32-C3、8 MB Flash、ST7789 240×320、三键单 ADC、ES8311 麦克风/扬声器、CW2017 电量计)上的 VibeKey 配套固件。设备支持相伴和独立两种模式：相伴模式上报按键、状态与麦克风音频；独立模式在 Mac 关闭后直接完成 豆包实时ASR → DeepSeek → MiniMax TTS。默认相伴，独立模式须先经USB同步云端凭据并保存Wi-Fi。模式切换回执restarting=1后安全重启，独立启动在RF初始化前只启Wi-Fi、不启LAN TLS；未配网返回wifi_required。
+FoloToy AI Passport(ESP32-C3、8 MB Flash、ST7789 240×320、三键单 ADC、ES8311 麦克风/扬声器、CW2017 电量计)上的 VibeKey 配套固件。设备支持相伴和独立两种模式：相伴模式上报按键、状态与麦克风音频；独立模式在 Mac 关闭后直接完成 豆包实时ASR → DeepSeek → 设备完整文字回复。默认相伴，独立模式须先经USB同步云端凭据并保存Wi-Fi。0.6模式切换要求hot_mode能力并验证restarting=false/actualmode回执，独立启动在RF初始化前只启Wi-Fi、不启LAN TLS；未配网返回wifi_required。
 
 当前分支使用 Aora Bot v0.2.0 的 Dot preset，在设备播放24×24核心点阵及装饰动画；宠物通过44个官方状态联动会话。设备使用通用C运动/栅格器，通过≤128KiB的已验证AORAPET2资产支持所选角色/面部/44态表情，Flash mmap零拷贝读取，不加载SVG、旧emotion-ball JSON或远程脚本。列表/字幕/用量页保留专用界面。几何来源、许可和数值比对见 `../docs/pet-runtime.md`。
 
@@ -12,7 +12,7 @@ FoloToy AI Passport(ESP32-C3、8 MB Flash、ST7789 240×320、三键单 ADC、ES
 
 USB 初次配网后，设备加入 2.4 GHz Wi-Fi 并提供 TLS-PSK TCP 8765 服务，通过 mDNS 寻址。Mac 与设备在同一局域网可跨房间使用（取决于信号覆盖），设备可拔线用电池供电。USB 优先；配网后启用Wi-Fi；无配网时BLE仍须通过内存预算门禁，低预算保留USB，避免两套无线栈同时占用录音/TLS内存；音频与按键沿用 v1 协议。BLE仅在启动时free heap≥96KiB且largest≥32KiB的预算门限下可选启用，否则保留USB/Wi-Fi并释放蓝牙控制器内存，不以自动BLE回退造成反复重启。网络凭据仅经 USB 写入普通 NVS，不写出厂 cardid；配网和状态说明见 `docs/protocol.md`。需要同时安装本分支新版 Mac app，原版 InputBetter 不支持此新增链路。C3 无 PSRAM，sdkconfig.defaults 已按低带宽语音调整 Wi-Fi/NimBLE 缓冲和动态 TLS 分配；不要直接恢复 Wi-Fi 默认缓冲数量。
 
-新网络须用 USB 在 Mac 的「设置 › Passport › Wi-Fi 无线连接」添加；长按 ▲ 约 1 秒切换听写 / 翻译 / 字幕，继续按住到约 2.5 秒打开已保存网络列表。蓝牙模式或完全离线时也可长按 ▼ 直接打开列表，选择后短按 OK 切换；Wi-Fi 正常在线时长按 ▼ 仍用于 Agent 导航。蓝牙在线时选择当前标记的 Wi-Fi 会退出蓝牙并尝试连接；Wi-Fi 离线时选择当前网络会重试。Wi-Fi 录音期间临时关闭无线省电，并分开排队发送控制消息和录音帧；录音结束恢复省电。串口日志记录路由器断开原因码和 TLS 收发错误，用来区分无线掉线和加密链路中断。
+新网络须用 USB 在 Mac 的「设置 › Passport › Wi-Fi 无线连接」添加；长按 ▲ 进入设备运行模式菜单；独立模式/蓝牙模式/完全离线时长按 ▼ 打开已保存网络列表，选择后短按 OK 切换；Wi-Fi 正常在线时长按 ▼ 仍用于 Agent 导航。蓝牙在线时选择当前标记的 Wi-Fi 会退出蓝牙并尝试连接；Wi-Fi 离线时选择当前网络会重试。Wi-Fi 录音期间临时关闭无线省电，并分开排队发送控制消息和录音帧；录音结束恢复省电。串口日志记录路由器断开原因码和 TLS 收发错误，用来区分无线掉线和加密链路中断。
 
 ## 编译
 
@@ -80,7 +80,9 @@ firmware/
 │   ├── ib_ui_dots.*       点阵:8 px 网格上的圆点、点阵字形、页面之间的点重排(morph)
 │   ├── ib_ui_wave.*       点阵声波(REC 用:活柱跟随电平,历史柱每 100 ms 跳一格)
 │   ├── ib_ui_statusbar.*  顶部状态栏(链路 / 电量 / 录音计时 / LIVE)
-│   ├── ib_ui_hints.*      右侧竖排按键提示(12 px 图标 + 小点;PROC 时禁用;三个键的纵坐标常量 IB_HINT_Y_* 在这里调)
+│   ├── ib_ui_hints.*      单键唯一动作glyph、真实采集绿Mic、至多7页滚动圆点窗(IB_HINT_Y_*实体锚点)
+│   ├── ib_ui_activity.*   16px真实语义阶段图标(C图元)
+│   ├── ib_ui_notification.* 独立通知读层/reader、source-only/正文分页、菜单暂停恢复
 │   ├── ib_icons.*         keys 命令的图标 id ↔ 枚举(纯逻辑)
 │   ├── fonts/             终端 ASCII 字体 + SUB / LIST / Agent 名称用简体中文字体 ib_cjk_font_12.c（Noto Sans SC，OFL）
 │   ├── icons/             生成的图标字体 ib_icon_font_12.c / ib_icon_font_56.c、图标表 ib_icon_list.h / ib_icon_large_list.h、Apache-2.0 许可证
@@ -123,7 +125,7 @@ Matrix 终端字体由 `tools/gen-terminal-font.sh` 从固定提交的 Roboto Mo
 
 C3无PSRAM。16 KiB采音环只在录音时分配，转写/回复缓冲分阶段释放；历史最大8 KiB，退出独立模式释放，云worker也只在独立模式存在。TLS接收记录上限16 KiB、动态缓冲、CA bundle与SNTP校时均随工程配置启用。独立模式暂停Mac局域网TLS任务和队列，三个公网阶段顺序执行。
 
-按住OK说话、松开发送；处理/朗读中再次按住OK，旧轮取消后在仍按住时自动开录。▼短按取消、空闲长按退出独立模式，▲空闲短按清历史。`assistant/status`提供heap/min_free/largest及录音写入/溢出/能量统计。30秒持续采音Flash实时性、真实账号的三阶段链路及连续多轮堆余量是硬件验收项；没有配置不会自动调用云服务。协议和完整验收边界见独立助手文档。
+按住OK说话、松开发送；处理中再次按住OK，旧轮取消后在仍按住时自动开录。▼短按取消、长▲切换运行模式、空闲长▼无线列表，▲空闲短按清历史；阅读正文时▲▼优先翻页并消费边界。`assistant/status`提供heap/min_free/largest及录音写入/溢出/能量统计。30秒持续采音Flash实时性、真实账号的三阶段链路及连续多轮堆余量是硬件验收项；没有配置不会自动调用云服务。协议和完整验收边界见独立助手文档。
 
 核心启动先分配16项小事件队列与8KiB app任务，再初始化可选无线/音频；app任务等待按键初始化后的boot barrier。原ib_cmd_t为1744字节；现在命令JSON按实际len短期分配，唯一消费者解析后立即释放，队列闲时省约27KiB且保留16项深度。status的app_ready/buttons用于确认普通hello/pong和按键链已运行；assistant capabilities由USB直接处理，单独成功不能证明核心启动完成。profile直接从Flash mmap解析并一次性更新，减少低内存提交峰值。
 
@@ -153,3 +155,15 @@ C3无PSRAM。16 KiB采音环只在录音时分配，转写/回复缓冲分阶段
 
 
 0.5.1修复后台预擦录音槽发PREPARING而误清成功正文：生产store revision不变的final→DONE→PREPARING→IDLE序列仍可读/翻页。主画布全宽对称，caption按自然行高，无空回复框。真实codec reader flag驱动右Mic绿色小环呼吸，停止/睡眠/菜单立即停循环，idle不再常驻说话指令。新production离屏夹具与像素/动画回归在outputs/passport-ui-051，不能当设备照片；真机复测由主集成确认。
+
+
+## 0.6原子模式菜单与独立任务通知
+
+模式菜单同锁直接显示，退出保留快照直到app明确show最新页，避免旧READY淡出。每实体键只画一个动作；有效翻页优先，无有效短按时只回退可用长按glyph。助手阶段改小型真实状态图标，正文上移，错误诊断和来源保留。右侧UP/DOWN间页轨道至多7圆点，当前实心，溢出前后各显示省略并随当前页滚动；无总页数数组。关闭宠物显示也不退露旧Matrix页面。
+
+新通知是独立2KiB生产store/reader，UI另保当前193B页，先source-only完成提示后同nid更高rev升级完整正文，重复commit不重响、不换页。只在完整CRC/UTF-8与UI发布后ACK；actual capture/菜单在UI防护，真实cloud忙由app门禁，电脑后台任务不误当录音。关闭/新PTT释放通知并恢复原cloud reply页；菜单暂停通知保留页码。旧legacy Agent UI缓存不会重复弹出。详细协议见[agent-notifications.md](../docs/agent-notifications.md)，读层见[device-task-notifications.md](../docs/device-task-notifications.md)。
+
+生产联合回归仍用`tools/test-display-ui.sh`，当前包括菜单首帧hash、最终正文保留、真实采集启停、生产notification store body0→1500B rev升级/CRC门禁/幂等/菜单和cloud reply原页恢复。`tools/test-ui-labels.sh`检查143静态文案、219独立字形，正文font测试检查GB2312/缺字□和截断提示。`IB_PREVIEW_SANITIZERS=ON`用于生产UI/store/reader的ASan/UBSan；64位host LVGL峰37544B不代表C3峰值。`outputs/passport-next-ui`是合成离屏截图，不是设备照片；冷启动、热切同boot及真实USB/Wi-Fi通知由主集成验收。
+
+
+最终通知读层仅覆盖宠物下方198×96px caption：kind/source同一行、两行正文紧接，保留pet/状态栏/实体键/右页轨道。生产像素断言检查pet ROI与通知前一致、页点与UP/DOWN/Mic/power均实际可见。资源热切/通知短音的运行合同见[device-runtime.md](../docs/device-runtime.md)；纯业务回归可分别运行`tools/test-notification.sh`与`tools/test-audio-runtime.sh`（ASan/UBSan，非硬件声音验证）。

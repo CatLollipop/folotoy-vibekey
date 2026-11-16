@@ -11,10 +11,14 @@ import Foundation
     private(set) var lastError: String?
     @ObservationIgnored var onEvent: ((ConversationEvent) -> Void)?
     @ObservationIgnored var onReply: ((AgentReply) -> Void)?
+    /// 通知独立订阅所有已启用来源；不改变下方只针对selectedSession的助手/宠物回调。
+    @ObservationIgnored var onAnyEvent: ((ConversationEvent) -> Void)?
+    @ObservationIgnored var onAnyReply: ((AgentReply) -> Void)?
     @ObservationIgnored var onSelectionChange: ((AssistantAgentSession?) -> Void)?
     @ObservationIgnored private let mailbox: AgentMailbox
     @ObservationIgnored private let adapters: [any AgentAdapter]
     @ObservationIgnored private let kimi: KimiAgentAdapter
+    @ObservationIgnored private let codexNotifications: MailboxAgentAdapter
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var eventFilter = AgentEventFilter()
     @ObservationIgnored private var replied = Set<String>()
@@ -28,6 +32,7 @@ import Foundation
         let mailbox = AgentMailbox()
         self.mailbox = mailbox
         let kimi = KimiAgentAdapter(); self.kimi = kimi
+        codexNotifications = MailboxAgentAdapter(id: "codexHook", name: "Codex", mailbox: mailbox)
         adapters = [
             ClaudeCodeAgentAdapter(mailbox: mailbox),
             DesktopAXAgentAdapter(id: "claudeDesktop", name: "Claude Desktop", bundleIDs: ["com.anthropic.claudefordesktop", "com.anthropic.claude"]),
@@ -42,6 +47,8 @@ import Foundation
             adapter.onEvent = { [weak self] event in self?.receive(event) }
             adapter.onReply = { [weak self] reply in self?.receive(reply) }
         }
+        codexNotifications.onEvent = { [weak self] event in self?.receive(event) }
+        codexNotifications.onReply = { [weak self] reply in self?.receive(reply) }
     }
 
     func start() {
@@ -51,7 +58,15 @@ import Foundation
             await self?.refresh()
             while !Task.isCancelled {
                 guard let self else { return }
-                for adapter in adapters where integrationEnabled(adapter.id) { await adapter.poll(selectedSession) }
+                for adapter in adapters where integrationEnabled(adapter.id) {
+                    var observed = selectedSession?.applicationID == adapter.id ? selectedSession : nil
+                    // AX只能看当前可见窗口；通知检测不activate、不抢焦点、不打开后台私人会话。
+                    if observed == nil, ["claudeDesktop", "chatGPT", "workBuddy", "deepseekHarness"].contains(adapter.id) {
+                        observed = try? await adapter.discover().first
+                    }
+                    await adapter.poll(observed)
+                }
+                if integrationEnabled("codexHook") { await codexNotifications.poll(nil) }
                 try? await Task.sleep(for: .milliseconds(400))
             }
         }
@@ -140,7 +155,9 @@ import Foundation
             }
         }
     }
-    private func integrationEnabled(_ id: String) -> Bool { AgentIntegrationPreferences.isEnabled(id, defaults: defaults) }
+    func integrationEnabled(_ id: String) -> Bool {
+        AgentIntegrationPreferences.isEnabled(id == "codexHook" ? "chatGPT" : id, defaults: defaults)
+    }
     private func disabledDiagnostic(_ adapter: any AgentAdapter) -> AgentDiagnostic {
         AgentDiagnostic(id: adapter.id, name: adapter.name, capabilities: [],
                         detail: String(localized: "接入组件已卸载；安装后重新检测。", bundle: .l10n), installed: false, verifiedAt: Date())
@@ -151,18 +168,21 @@ import Foundation
         return adapters.first { $0.id == session.applicationID }
     }
     private func receive(_ event: ConversationEvent) {
-        guard integrationEnabled(event.applicationID), eventFilter.accepts(event), let selected = selectedSession,
+        guard integrationEnabled(event.applicationID), eventFilter.accepts(event) else { return }
+        onAnyEvent?(event)
+        guard let selected = selectedSession,
               event.applicationID == selected.applicationID, event.instanceID == selected.instanceID,
               event.sessionID == selected.sessionID else { return }
         latestEvent = event; onEvent?(event)
     }
     private func receive(_ reply: AgentReply) {
-        guard integrationEnabled(reply.session.applicationID), reply.isFinal, reply.session == selectedSession, !reply.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard integrationEnabled(reply.session.applicationID), reply.isFinal, !reply.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let identity = reply.session.id + ":" + reply.turnID + ":" + reply.messageID
         guard replied.insert(identity).inserted else { return }
         replyOrder.append(identity)
         if replyOrder.count > 2_048 { replied.remove(replyOrder.removeFirst()) }
-        onReply?(reply)
+        onAnyReply?(reply)
+        if reply.session == selectedSession { onReply?(reply) }
     }
 }
 
@@ -200,5 +220,9 @@ import Foundation
     func submit(in session: AssistantAgentSession) async throws { try await route(session).submit(in: session) }
     func sendPrompt(_ text: String, in session: AssistantAgentSession) async throws { try await route(session).sendPrompt(text, in: session) }
     func stop(in session: AssistantAgentSession) async throws { try await route(session).stop(in: session) }
-    func poll(_ session: AssistantAgentSession?) async { await bridge.poll(session); await desktop.poll(session) }
+    func poll(_ session: AssistantAgentSession?) async {
+        await bridge.poll(session)
+        // 原生bridge是独立会话身份的权威来源，存在时不再从同一窗口产出第二份AX完成通知。
+        if !bridge.hasLiveInstances { await desktop.poll(session) }
+    }
 }

@@ -121,3 +121,14 @@ uint32_t preview_region_hash(int x,int y,int width,int height)
     }
     return hash;
 }
+
+uint32_t preview_region_ink(int x,int y,int width,int height)
+{
+    if(x<0||y<0||width<1||height<1||x+width>PREVIEW_W||y+height>PREVIEW_H)return 0;
+    lv_refr_now(s_disp);uint32_t count=0;
+    for(int row=y;row<y+height;row++)for(int col=x;col<x+width;col++){
+        uint16_t pixel=s_fb[row][col];
+        if(((pixel>>11)&31)>=12&&((pixel>>5)&63)>=24&&(pixel&31)>=12)count++;
+    }
+    return count;
+}

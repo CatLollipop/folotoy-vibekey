@@ -46,6 +46,11 @@ void ib_assistant_transcript_snapshot(ib_transcript_view_t *,uint32_t *revision)
 
 // 相伴reply_final同步UI发布门禁；网络增量仍只提交邮箱，由app轮询。
 void ib_assistant_set_reply_apply(bool (*apply)(void *),void *context);
+// 通知使用单独reader/UI页；先hide再释放唯一正文，不借用cloud reply generation。
+void ib_assistant_set_notification_apply(bool (*apply)(void *),bool (*hide)(void *),void *context);
+bool ib_assistant_notification_dismiss(void);
+// 同一control内关闭通知并启动伴随麦克风，避免begin检查空闲后与首个采音沿交错分配2KiB。
+esp_err_t ib_assistant_companion_mic_start(ib_link_t);
 
 // app空闲维护：与USB事务共用control，不在采音/同步中擦除退休bank。
 void ib_assistant_maintenance(void);

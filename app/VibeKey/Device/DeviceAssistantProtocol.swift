@@ -84,6 +84,10 @@ nonisolated enum DeviceAssistantProtocol {
         capability.schema == 1 && capability.profileSchema >= 2 && capability.asrProvider == "doubao-realtime" &&
         capability.supportsTranscript && capability.supportsReplyText && capability.supportsSinglePetAsset && capability.supportsSpeech == false
     }
+    static func supportsHotMode(_ capability: DeviceAssistantMessage) -> Bool { capability.schema == 1 && capability.supportsHotMode }
+    static func acceptsHotModeAcknowledgment(_ reply: DeviceAssistantMessage, target: String) -> Bool {
+        reply.ok && !reply.restarting && reply.mode == target && ["companion", "standalone"].contains(target)
+    }
     static func acceptsUnsolicited(_ message: DeviceAssistantMessage) -> Bool { message.op == "state" && message.requestID == nil }
     static func encode(_ fields: [(String, FlatJSON.Value)], op: String, requestID: UInt32) throws -> Data {
         guard requestID != 0, !op.isEmpty, op.utf8.count <= 24,

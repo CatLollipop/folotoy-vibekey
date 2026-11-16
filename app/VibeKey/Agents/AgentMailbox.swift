@@ -165,6 +165,7 @@ import Darwin
     var onReply: ((AgentReply) -> Void)?
     private let mailbox: AgentMailbox
     init(id: String, name: String, mailbox: AgentMailbox) { self.id = id; self.name = name; self.mailbox = mailbox }
+    var hasLiveInstances: Bool { !mailbox.registrations(for: id).isEmpty }
     func diagnose() async -> AgentDiagnostic {
         let registrations = mailbox.registrations(for: id)
         let capabilities = registrations.reduce(Set<AgentCapability>()) { $0.union($1.capabilities) }
@@ -184,9 +185,14 @@ import Darwin
             guard let reply = envelope.reply,
                   let session = mailbox.registrations(for: id).flatMap(\.sessions).first(where: {
                       $0.instanceID == envelope.event.instanceID && $0.sessionID == envelope.event.sessionID
-                  }) else { continue }
+                  }) ?? notificationSession(envelope.event) else { continue }
             onReply?(AgentReply(session: session, turnID: envelope.event.turnID, messageID: reply.messageID,
                                text: reply.text, isFinal: reply.isFinal))
         }
+    }
+    /// Stop后宿主可能已退出/心跳已过期，仍可显示本轮私有邮箱提供的真实正文；不据此授予控制能力。
+    private func notificationSession(_ event: ConversationEvent) -> AssistantAgentSession? {
+        guard event.applicationID == id, !event.instanceID.isEmpty, !event.sessionID.isEmpty else { return nil }
+        return .init(applicationID: id, instanceID: event.instanceID, sessionID: event.sessionID, name: name)
     }
 }

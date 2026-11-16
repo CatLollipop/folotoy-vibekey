@@ -16,7 +16,7 @@ static void verify_known(const char *text){
         assert(ib_reply_font_codepoint(c)==c);assert(ib_reply_font_advance(c,NULL));}
 }
 int main(void){
-    lv_init();verify_known("中华人民共和国你好世界语音设备按钮亍丐丕乜卮氐胤爰甬刈仄厍");
+    lv_init();verify_known("中华人民共和国你好世界语音设备按钮正文已截断亍丐丕乜卮氐胤爰甬刈仄厍");
     lv_font_glyph_dsc_t square;assert(lv_font_get_glyph_dsc(&ib_cjk_font_12,&square,0x25a1,0)&&!square.is_placeholder&&square.adv_w);
     assert(ib_reply_font_codepoint(0x1f642)==0x25a1);assert(ib_reply_font_codepoint(0x9f98)==0x25a1);
     assert(ib_reply_font_advance(0x1f642,NULL)==square.adv_w&&ib_reply_font_advance(0x9f98,NULL)==square.adv_w);

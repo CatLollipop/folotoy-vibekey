@@ -3,7 +3,7 @@
 // 任务:
 //   ib_mic  (prio 6):bsp_audio_read 20 ms → IMA ADPCM 块 → 二进制帧 → tx 回调
 //   ib_tone (prio 6):从队列取提示音,逐块合成正弦并 bsp_audio_write
-// 两个任务可同时运行(I2S 全双工,读写各用一个通道)。codec 的打开/关闭由引用计数串行化。
+// 两种任务均按次懒创建。新录音先协作取消短音，禁止把提示音录进麦克风。
 #include "ib_audio.h"
 
 #include "bsp_audio.h"
@@ -34,6 +34,7 @@ static const char *TAG = "ib_audio";
 #define TAIL_SILENCE_MS  120        // 等 DMA 里的尾巴播完再关 codec
 
 #define BIT_MIC_IDLE  (1 << 0)
+#define BIT_TONE_IDLE (1 << 1)
 
 static bool s_ready;
 static ib_audio_tx_cb_t s_tx;
@@ -42,6 +43,9 @@ static EventGroupHandle_t s_events;
 static QueueHandle_t s_tone_queue;
 static int s_codec_users;
 static bool s_external_pcm;
+static bool s_companion_enabled;
+static volatile bool s_tone_cancel;
+static TaskHandle_t s_tone_task;
 
 static volatile bool s_mic_on;
 static ib_link_t s_mic_link;
@@ -51,12 +55,16 @@ static uint8_t s_mic_frame[IB_BIN_HDR + 2 * IB_ADPCM_BLOCK_BYTES];
 
 static int16_t s_sine[256];
 static int16_t s_tone_pcm[IB_ADPCM_BLOCK_SAMPLES];
+static bool stop_tone(void);
+static portMUX_TYPE s_stats_lock=portMUX_INITIALIZER_UNLOCKED;
+static ib_audio_stats_t s_stats;
+void ib_audio_stats(ib_audio_stats_t *out){portENTER_CRITICAL(&s_stats_lock);*out=s_stats;portEXIT_CRITICAL(&s_stats_lock);}
 
 // ---------------------------------------------------------------------------
 // codec 引用计数:0→1 打开,1→0 静音后关闭。调用方保证切换时没有任务在读写。
 // ---------------------------------------------------------------------------
 
-static esp_err_t codec_acquire(void)
+static esp_err_t codec_acquire(bool output)
 {
     esp_err_t err = ESP_OK;
     xSemaphoreTake(s_lock, portMAX_DELAY);
@@ -65,7 +73,7 @@ static esp_err_t codec_acquire(void)
         err = bsp_audio_set_format(SAMPLE_RATE, 16, 1);
         if (err == ESP_OK) {
             bsp_audio_set_volume(OUT_VOLUME);
-            bsp_audio_mute(false);
+            bsp_audio_mute(!output);
         }
     }
     if (err == ESP_OK) s_codec_users++;
@@ -91,52 +99,55 @@ static void mic_task(void *arg)
 {
     (void)arg;
     ib_adpcm_state_t st;
-    for (;;) {
-        xEventGroupSetBits(s_events, BIT_MIC_IDLE);
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        xEventGroupClearBits(s_events, BIT_MIC_IDLE);
-
-        ib_adpcm_init(&st);
-        uint8_t seq = 0;
-        // 丢掉 DMA 里的旧样本(约 60 ms),之后每块都是新鲜数据。
-        for (int i = 0; i < 3 && s_mic_on; i++) bsp_audio_read(s_mic_pcm, sizeof(s_mic_pcm));
-        int blocks = s_mic_link == IB_LINK_BLE ? 1 : 2;
-        while (s_mic_on) {
-            int got = 0;
-            while (got < blocks && s_mic_on) {
-                if (bsp_audio_read(s_mic_pcm, sizeof(s_mic_pcm)) != ESP_OK) {
-                    vTaskDelay(pdMS_TO_TICKS(20));
-                    continue;
-                }
-                ib_adpcm_encode_block(&st, s_mic_pcm, s_mic_frame + IB_BIN_HDR + got * IB_ADPCM_BLOCK_BYTES);
-                got++;
+    ib_adpcm_init(&st);
+    uint8_t seq = 0;
+    // 丢掉 DMA 里的旧样本(约 60 ms),之后每块都是新鲜数据。
+    for (int i = 0; i < 3 && s_mic_on; i++) bsp_audio_read(s_mic_pcm, sizeof(s_mic_pcm));
+    int blocks = s_mic_link == IB_LINK_BLE ? 1 : 2;
+    while (s_mic_on) {
+        int got = 0;
+        while (got < blocks && s_mic_on) {
+            if (bsp_audio_read(s_mic_pcm, sizeof(s_mic_pcm)) != ESP_OK) {
+                vTaskDelay(pdMS_TO_TICKS(20));
+                continue;
             }
-            if (!s_mic_on) break;
-            size_t payload = (size_t)blocks * IB_ADPCM_BLOCK_BYTES;
-            ib_bin_header(s_mic_frame, IB_BIN_ADPCM, seq++, payload);
-            if (s_tx) s_tx(s_mic_link, s_mic_frame, IB_BIN_HDR + payload);
+            ib_adpcm_encode_block(&st, s_mic_pcm, s_mic_frame + IB_BIN_HDR + got * IB_ADPCM_BLOCK_BYTES);
+            got++;
         }
+        if (!s_mic_on) break;
+        size_t payload = (size_t)blocks * IB_ADPCM_BLOCK_BYTES;
+        ib_bin_header(s_mic_frame, IB_BIN_ADPCM, seq++, payload);
+        if (s_tx) s_tx(s_mic_link, s_mic_frame, IB_BIN_HDR + payload);
     }
+    // 每次麦克风请求只持有一份栈；先释放codec再发布退出，超时stop也不会悬挂引用。
+    uint32_t stack=uxTaskGetStackHighWaterMark(NULL);portENTER_CRITICAL(&s_stats_lock);s_stats.mic_stack_min_bytes=stack;portEXIT_CRITICAL(&s_stats_lock);
+    codec_release();xSemaphoreTake(s_lock,portMAX_DELAY);
+    s_mic_task=NULL;xEventGroupSetBits(s_events,BIT_MIC_IDLE);xSemaphoreGive(s_lock);vTaskDelete(NULL);
 }
 
 esp_err_t ib_audio_mic_start(ib_link_t link)
 {
-    if (!s_ready||!s_mic_task) return ESP_ERR_INVALID_STATE;
+    if (!s_ready||!s_companion_enabled) return ESP_ERR_INVALID_STATE;
     if (s_mic_on && s_mic_link == link) return ESP_OK;
-    if (s_mic_on) ib_audio_mic_stop();
-    ESP_RETURN_ON_ERROR(codec_acquire(), TAG, "codec open failed");
+    if (s_mic_on||s_mic_task) ib_audio_mic_stop();
+    if(s_mic_task)return ESP_ERR_TIMEOUT;
+    if(!stop_tone())return ESP_ERR_TIMEOUT;
+    ESP_RETURN_ON_ERROR(codec_acquire(false), TAG, "codec open failed");
     s_mic_link = link;
     s_mic_on = true;
-    xTaskNotifyGive(s_mic_task);
+    xEventGroupClearBits(s_events,BIT_MIC_IDLE);
+    if(xTaskCreate(mic_task,"ib_mic",MIC_TASK_STACK,NULL,TASK_PRIO,&s_mic_task)!=pdPASS){
+        s_mic_on=false;xEventGroupSetBits(s_events,BIT_MIC_IDLE);codec_release();return ESP_ERR_NO_MEM;
+    }
+    portENTER_CRITICAL(&s_stats_lock);s_stats.mic_starts++;portEXIT_CRITICAL(&s_stats_lock);
     return ESP_OK;
 }
 
 void ib_audio_mic_stop(void)
 {
-    if (!s_mic_on) return;
+    if (!s_mic_on&&!s_mic_task) return;
     s_mic_on = false;
-    xEventGroupWaitBits(s_events, BIT_MIC_IDLE, pdFALSE, pdTRUE, pdMS_TO_TICKS(STOP_TIMEOUT_MS));
-    codec_release();
+    if(!(xEventGroupWaitBits(s_events, BIT_MIC_IDLE, pdFALSE, pdTRUE, pdMS_TO_TICKS(STOP_TIMEOUT_MS))&BIT_MIC_IDLE))return;
 }
 
 bool ib_audio_mic_active(void)
@@ -168,13 +179,18 @@ static const tone_seg_t SOUND_AGENT_INPUT[] = {
     { 1319, 70, false }, { 0, 60, false }, { 1319, 70, false }, { 0, 60, false }, { 1760, 160, true },
 };
 
+static void tone_write(size_t bytes){
+    esp_err_t error=bsp_audio_write(s_tone_pcm,bytes);
+    portENTER_CRITICAL(&s_stats_lock);if(error==ESP_OK)s_stats.write_bytes+=bytes;else s_stats.write_errors++;portEXIT_CRITICAL(&s_stats_lock);
+    if(error!=ESP_OK)s_tone_cancel=true;
+}
 static void write_silence(int ms)
 {
     memset(s_tone_pcm, 0, sizeof(s_tone_pcm));
     int samples = SAMPLE_RATE * ms / 1000;
-    while (samples > 0) {
+    while (samples > 0&&!s_tone_cancel) {
         int n = samples < IB_ADPCM_BLOCK_SAMPLES ? samples : IB_ADPCM_BLOCK_SAMPLES;
-        bsp_audio_write(s_tone_pcm, (size_t)n * 2);
+        tone_write((size_t)n * 2);
         samples -= n;
     }
 }
@@ -189,7 +205,7 @@ static void play_segment(const tone_seg_t *seg)
     uint32_t phase = 0;
     uint32_t step = (uint32_t)(((uint64_t)seg->hz << 32) / SAMPLE_RATE);   // 32 位相位累加器
     int done = 0;
-    while (done < total) {
+    while (done < total&&!s_tone_cancel) {
         int n = total - done < IB_ADPCM_BLOCK_SAMPLES ? total - done : IB_ADPCM_BLOCK_SAMPLES;
         for (int i = 0; i < n; i++) {
             int idx = done + i;
@@ -202,7 +218,7 @@ static void play_segment(const tone_seg_t *seg)
             s_tone_pcm[i] = (int16_t)(s * env / 256);
             phase += step;
         }
-        bsp_audio_write(s_tone_pcm, (size_t)n * 2);
+        tone_write((size_t)n * 2);
         done += n;
     }
 }
@@ -212,8 +228,15 @@ static void tone_task(void *arg)
     (void)arg;
     ib_sound_t sound;
     for (;;) {
-        if (xQueueReceive(s_tone_queue, &sound, portMAX_DELAY) != pdTRUE) continue;
-        if (codec_acquire() != ESP_OK) continue;
+        xSemaphoreTake(s_lock,portMAX_DELAY);
+        bool got=!s_tone_cancel&&xQueueReceive(s_tone_queue,&sound,0)==pdTRUE;
+        if(!got){
+            uint32_t stack=uxTaskGetStackHighWaterMark(NULL);portENTER_CRITICAL(&s_stats_lock);s_stats.tone_stack_min_bytes=stack;portEXIT_CRITICAL(&s_stats_lock);
+            s_tone_task=NULL;xEventGroupSetBits(s_events,BIT_TONE_IDLE);xSemaphoreGive(s_lock);vTaskDelete(NULL);return;
+        }
+        xSemaphoreGive(s_lock);
+        if (codec_acquire(true) != ESP_OK){portENTER_CRITICAL(&s_stats_lock);s_stats.codec_errors++;portEXIT_CRITICAL(&s_stats_lock);continue;}
+        portENTER_CRITICAL(&s_stats_lock);s_stats.started++;portEXIT_CRITICAL(&s_stats_lock);
         write_silence(10);
         const tone_seg_t *segs;
         size_t count;
@@ -226,22 +249,42 @@ static void tone_task(void *arg)
         default: PICK(SOUND_DONE); break;
         }
 #undef PICK
-        for (size_t i = 0; i < count; i++) play_segment(&segs[i]);
-        write_silence(TAIL_SILENCE_MS);
+        for (size_t i = 0; i < count&&!s_tone_cancel; i++) play_segment(&segs[i]);
+        if(!s_tone_cancel)write_silence(TAIL_SILENCE_MS);
+        portENTER_CRITICAL(&s_stats_lock);if(s_tone_cancel)s_stats.cancelled++;else s_stats.completed++;portEXIT_CRITICAL(&s_stats_lock);
         codec_release();
     }
 }
 
-void ib_audio_play(ib_sound_t sound)
+bool ib_audio_play(ib_sound_t sound)
 {
-    if (!s_ready || s_external_pcm || !s_tone_queue) return;
-    xQueueOverwrite(s_tone_queue, &sound);
+    if (!s_ready || !s_tone_queue) return false;
+    bool accepted=false;
+    xSemaphoreTake(s_lock,portMAX_DELAY);
+    if(!s_external_pcm&&!s_mic_on){
+        xQueueOverwrite(s_tone_queue, &sound);
+        accepted=true;
+        if(!s_tone_task){
+            s_tone_cancel=false;xEventGroupClearBits(s_events,BIT_TONE_IDLE);
+            if(xTaskCreate(tone_task,"ib_tone",TONE_TASK_STACK,NULL,TASK_PRIO,&s_tone_task)!=pdPASS){xQueueReset(s_tone_queue);xEventGroupSetBits(s_events,BIT_TONE_IDLE);accepted=false;}
+        }
+    }
+    if(accepted){portENTER_CRITICAL(&s_stats_lock);s_stats.queued++;portEXIT_CRITICAL(&s_stats_lock);}
+    xSemaphoreGive(s_lock);return accepted;
+}
+
+// 不在持codec mutex时等任务，避免tone退出释放codec时形成反向等待。
+static bool stop_tone(void){
+    if(!s_events)return true;
+    xSemaphoreTake(s_lock,portMAX_DELAY);s_tone_cancel=true;if(s_tone_queue)xQueueReset(s_tone_queue);bool active=s_tone_task!=NULL;if(active)bsp_audio_mute(true);xSemaphoreGive(s_lock);
+    return !active||(xEventGroupWaitBits(s_events,BIT_TONE_IDLE,pdFALSE,pdTRUE,pdMS_TO_TICKS(STOP_TIMEOUT_MS))&BIT_TONE_IDLE);
 }
 
 esp_err_t ib_audio_pcm_begin(void)
 {
     if (!s_ready) return ESP_ERR_INVALID_STATE;
     ib_audio_mic_stop();
+    if(!stop_tone())return ESP_ERR_TIMEOUT;
     xSemaphoreTake(s_lock, portMAX_DELAY);
     if (s_codec_users || s_external_pcm) { xSemaphoreGive(s_lock); return ESP_ERR_INVALID_STATE; }
     esp_err_t e = bsp_audio_set_format(SAMPLE_RATE, 16, 1);
@@ -273,18 +316,27 @@ esp_err_t ib_audio_init_mode(ib_audio_tx_cb_t tx,bool companion)
 
     s_lock = xSemaphoreCreateMutex();
     ESP_RETURN_ON_FALSE(s_lock,ESP_ERR_NO_MEM,TAG,"audio lock alloc failed");
-    // 独立模式直接使用PCM所有者，不常驻相伴ADPCM/提示音两个任务（约6KiB）。
-    if(!companion){bsp_audio_mute(true);s_ready=true;return ESP_OK;}
     s_events = xEventGroupCreate();
     s_tone_queue = xQueueCreate(1, sizeof(ib_sound_t));
-    ESP_RETURN_ON_FALSE(s_lock && s_events && s_tone_queue, ESP_ERR_NO_MEM, TAG, "alloc failed");
-    BaseType_t ok = xTaskCreate(mic_task, "ib_mic", MIC_TASK_STACK, NULL, TASK_PRIO, &s_mic_task);
-    ESP_RETURN_ON_FALSE(ok == pdPASS, ESP_ERR_NO_MEM, TAG, "mic task failed");
-    ok = xTaskCreate(tone_task, "ib_tone", TONE_TASK_STACK, NULL, TASK_PRIO, NULL);
-    ESP_RETURN_ON_FALSE(ok == pdPASS, ESP_ERR_NO_MEM, TAG, "tone task failed");
+    if(!s_events||!s_tone_queue){
+        if(s_events){vEventGroupDelete(s_events);s_events=NULL;}
+        if(s_tone_queue){vQueueDelete(s_tone_queue);s_tone_queue=NULL;}
+        vSemaphoreDelete(s_lock);s_lock=NULL;return ESP_ERR_NO_MEM;
+    }
+    xEventGroupSetBits(s_events,BIT_MIC_IDLE|BIT_TONE_IDLE);s_companion_enabled=companion;
     bsp_audio_mute(true);
     s_ready = true;
     return ESP_OK;
 }
 
 esp_err_t ib_audio_init(ib_audio_tx_cb_t tx){return ib_audio_init_mode(tx,true);}
+
+esp_err_t ib_audio_set_companion(bool enabled){
+    if(!s_ready)return ESP_ERR_INVALID_STATE;
+    if(!enabled){ib_audio_mic_stop();if(s_mic_task||!stop_tone())return ESP_ERR_TIMEOUT;}
+    xSemaphoreTake(s_lock,portMAX_DELAY);
+    esp_err_t error=s_external_pcm?ESP_ERR_INVALID_STATE:ESP_OK;
+    if(error==ESP_OK)s_companion_enabled=enabled;
+    xSemaphoreGive(s_lock);return error;
+}
+bool ib_audio_companion_enabled(void){return s_companion_enabled;}

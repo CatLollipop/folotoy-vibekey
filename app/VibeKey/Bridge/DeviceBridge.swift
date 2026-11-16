@@ -14,6 +14,8 @@ import AppKit
 final class DeviceBridge {
     /// 助手运行时暂时拥有设备页面；其余时候完全保留原听写/字幕/导航状态机。
     var assistantDisplay: (() -> (DeviceUIState, String)?)?
+    /// 新独立通知事务接管后关闭旧23B ASCII通道，保留Mac胶囊/原对话导航。
+    var forwardsLegacyAgentNotices = true
     /// 需要 AppState 提供的动作。
     struct Hooks {
         /// 收起 / 展开 Mac 上的字幕条。
@@ -137,7 +139,7 @@ final class DeviceBridge {
             self?.connectionChanged(connection)
         }
         agent.onNotice = { [weak self] notice in
-            guard let self else { return }
+            guard let self, forwardsLegacyAgentNotices else { return }
             let event: DeviceAgentEvent = switch notice.event {
             case .done: .done
             case .input: .input

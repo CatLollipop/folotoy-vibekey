@@ -156,7 +156,11 @@ import CryptoKit
         let controls = inspectControls(window)
         if controls.approval != nil { emit(.waitingInput, session: session); return }
         if controls.stop != nil {
-            if !sawRunning.contains(session.id) { turns[session.id] = turns[session.id] ?? UUID().uuidString }
+            // 生成控件真实出现代表新一轮；手动发起的后续轮也不能复用上次completed的身份。
+            if !sawRunning.contains(session.id) {
+                turns[session.id] = UUID().uuidString
+                lastReplies[session.id] = nil // 两轮可合法回答同样文本；只在本轮内去重。
+            }
             sawRunning.insert(session.id)
             emit(.replying, session: session)
             return

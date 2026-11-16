@@ -65,6 +65,21 @@ nonisolated enum DeviceLinkKind: String, Sendable {
     case wifi
 }
 
+/// 链路优先级与缓存重发目标共用一个决定，备用hello不能改变固件采音owner或页面。
+nonisolated enum DeviceLinkRouting {
+    struct HandshakeDecision: Equatable, Sendable {
+        let selected: DeviceLinkKind
+        let replay: DeviceLinkKind?
+    }
+    static func preferred(usb: Bool, wifi: Bool, ble: Bool) -> DeviceLinkKind? {
+        usb ? .usb : wifi ? .wifi : ble ? .ble : nil
+    }
+    static func afterHandshake(_ arrived: DeviceLinkKind, usb: Bool, wifi: Bool, ble: Bool) -> HandshakeDecision {
+        let selected = preferred(usb: usb, wifi: wifi, ble: ble) ?? arrived
+        return .init(selected: selected, replay: arrived == selected ? selected : nil)
+    }
+}
+
 /// 设备右侧按键提示用的图标 ID(`keys` 命令的取值,固件用图标字体渲染)。列表与 docs/protocol.md 一致。
 nonisolated enum DeviceIcon: String, CaseIterable, Sendable {
     case enter, esc, undo, stab, tab, send, stop, cancel, check, `repeat`, mode, apps, mic, translate, hide, up, down, play, open, bksp, del

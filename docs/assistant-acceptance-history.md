@@ -65,3 +65,13 @@
 - 协议测试验证4KiB回复预算、UTF-8 scalar分块无损、64B块最坏JSON转义整帧≤511B、off连续、cap reply_text，以及更长原应用回复的显式截断提示；Agent桥接Swift与Node/Python4/4通过。
 - 首轮真实暗色窗口确认：主内容和表单已暗色，全部宠物控制在同一画布的桌面/Passport抽屉内，显示真实已应用版本，无外部白色设置卡片；没有改动用户当前水灵/柔软/snow偏好。发现侧栏材质过亮与大窗口下600px画布留白，已统一暗侧栏并按窗口高度自适应；最后确认待本轮更新。
 - 新设备候选包含全文回复分页、去常驻时间栏、统一边缘图标和持久宠物首帧门禁；其最终镜像/真机/首次显示证据待本轮补充，不能用此前0.4结果替代。
+
+
+## 0.5.1历史最终通过记录
+
+
+修复后台预擦PREPARING清UI正文，保持完整正文及分页；统一宠物画布宽度、背景与两侧留白，正文按真实行数布局；去常驻“按住确认键说话”，右侧麦克风仅在真实采音时绿色呼吸。
+
+0.5.1生产store/真实LVGL回归通过：没有新revision或重新发布的情况下，final→DONE→PREPARING→IDLE正文ROI像素不变，可翻页、模式菜单返回及legacy更新仍保页。背景左右一致、文字中心x120；实际capture true时Mic绿色像素79/103，false及仅LISTENING phase均为0，停止/睡眠/菜单后循环动画归0。143文案、1221字形使用、222独立字符检查通过；主机LVGL峰35712B仅供参考，不当C3实测。
+
+最终固件2701392B，SHA256 `e95e1764d4f46cd3a97f20dda2e827afde015de5e80bbbb96532dedf3a669642`，IDF5.5.3 build/size/layout通过且无warning/error，仍适配3MiB app分区。真实受保护刷写成功，cardid0x4000字节与原始备份一致；合并回读验证一活动bank与一全FF bank，profile5/pet1794817063及CRC保留。设备独立模式、Wi-Fi、app_ready/buttons/display_ready均正常，空闲heap56928B、largest45056B、min_free52396B、LVGL峰22708B。此后停止所有刷写、同步与重启，只读metadata监控实际轮次。用户最终确认“绿色采音、回复保留和翻页都正常，布局也正常”。读取到回复length147B、active1/final1，后台准备回到idle后revision38不变，连续多次仍保留，capture_active0；录音309760B、record_error0、DMA0、ring峰1920B、Flash写峰2855µs、空闲heap55988B、largest24576B、全局min_free7072B、LVGL峰23080B。这证明本轮实际会话结束正文保留与用户可见翻页通过，不代表完整长时/弱网/掉电矩阵通过。冷启动首帧已由生产夹具与显示屏障验证，用户单独的冷开机无默认Dot观察仍未明确回报。

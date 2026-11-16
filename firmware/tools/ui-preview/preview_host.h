@@ -25,3 +25,5 @@ uint32_t preview_mem_max_used(void);
 
 // 生产label区域的独立RGB565像素指纹；正文回归不受无关边缘图标抗锯齿影响。
 uint32_t preview_region_hash(int x,int y,int width,int height);
+// 真实帧缓冲中三通道均达到96的像素数，用于断言小图标/页点没有被不透明层盖住。
+uint32_t preview_region_ink(int x,int y,int width,int height);

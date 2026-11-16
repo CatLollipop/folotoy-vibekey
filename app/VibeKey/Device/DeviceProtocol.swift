@@ -1,5 +1,25 @@
 import Foundation
 
+/// 独立通知事务回执；不复用assistant字段，避免本机云对话状态被通知污染。
+nonisolated struct DeviceNotificationMessage: Equatable, Sendable {
+    let op: String
+    let requestID: UInt32
+    let id: String
+    let revision: UInt32
+    let ok: Bool
+    let offset: Int
+    let checksum: UInt32?
+    let error: String
+    let schema: Int
+    let maximum: Int
+    let chunk: Int
+    let standalone: Bool
+    var duplicate: Bool = false
+    static func validIdentity(_ id: String) -> Bool {
+        id.utf8.count == 32 && id.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
+    }
+}
+
 nonisolated struct DeviceWiFiStatus: Equatable, Sendable {
     let stage: String
     let host: String
@@ -43,6 +63,7 @@ nonisolated struct DeviceAssistantMessage: Equatable, Sendable {
     var supportsSinglePetAsset: Bool = false
     var supportsSpeech:Bool? = nil
     var retiredClean: Bool? = nil
+    var supportsHotMode: Bool = false
 }
 
 // MARK: - 设备 → Mac
@@ -89,6 +110,7 @@ nonisolated enum DeviceMessage: Equatable, Sendable {
     /// 离线页背景上传结果。`phase` 为 `start`（擦除完成）/ `done` / `clear`。
     case wallpaper(ok: Bool, phase: String)
     case assistant(DeviceAssistantMessage)
+    case notification(DeviceNotificationMessage)
 
     static let firmwareName = "vibekey"
     /// 0.1.7 及更早的固件沿用了上游 `inputbetter` 标识;新 app 继续接受,避免必须先刷机才能连上。
@@ -124,6 +146,22 @@ nonisolated enum DeviceMessage: Equatable, Sendable {
         }
 
         switch type {
+        case "notification":
+            func uint32(_ key: String) -> UInt32? {
+                guard let raw = object[key] as? NSNumber, CFGetTypeID(raw) != CFBooleanGetTypeID(),
+                      raw.doubleValue >= 0, raw.doubleValue <= Double(UInt32.max),
+                      raw.doubleValue.rounded(.towardZero) == raw.doubleValue else { return nil }
+                return raw.uint32Value
+            }
+            guard let op = string("op"), ["cap", "begin", "chunk", "commit", "abort", "clear"].contains(op),
+                  let rid = uint32("rid"), rid != 0, let nid = string("nid"), let rev = uint32("rev"),
+                  let ok = uint32("ok"), ok == 0 || ok == 1,
+                  let offset = uint32("off"), offset <= 2_048,
+                  op == "cap" ? nid.isEmpty && rev == 0 : DeviceNotificationMessage.validIdentity(nid) && rev != 0 else { return nil }
+            return .notification(.init(op: op, requestID: rid, id: nid, revision: rev, ok: ok == 1,
+                offset: Int(offset), checksum: uint32("crc"), error: string("error") ?? "", schema: Int(uint32("schema") ?? 0),
+                maximum: Int(uint32("max") ?? 0), chunk: Int(uint32("chunk") ?? 0), standalone: uint32("standalone") == 1,
+                duplicate: uint32("duplicate") == 1))
         case "assistant":
             guard let op = string("op"), !op.isEmpty, op.utf8.count <= 24 else { return nil }
             var requestID: UInt32?
@@ -158,6 +196,7 @@ nonisolated enum DeviceMessage: Equatable, Sendable {
             assistant.supportsSinglePetAsset = (int("single_pet") ?? 0) != 0
             if let speech=int("tts") { assistant.supportsSpeech = speech != 0 }
             if let clean=int("retired_clean") { assistant.retiredClean = clean != 0 }
+            assistant.supportsHotMode = int("hot_mode") == 1
             return .assistant(assistant)
         case "wifi":
             guard let stage = string("stage") else { return nil }

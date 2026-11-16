@@ -15,6 +15,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "lwip/sockets.h"
 #include "mdns.h"
@@ -42,6 +43,7 @@
 static const char *TAG = "ib_wifi";
 typedef struct { size_t len; uint8_t bytes[PACKET_MAX]; } packet_t;
 static QueueHandle_t s_config_queue, s_control_tx, s_audio_tx;
+static SemaphoreHandle_t s_runtime_lock; //串行化fd登记/撤销和TX queue生命周期；不在portMUX内调用socket。
 static EventGroupHandle_t s_events;
 static ib_wifi_line_cb_t s_line;
 static ib_wifi_link_cb_t s_link;
@@ -55,6 +57,7 @@ static volatile bool s_available;
 static bool s_mdns_started;
 static volatile bool s_companion_enabled = true;
 static TaskHandle_t s_server_task;
+static volatile bool s_server_ready;
 static volatile int s_active_fd = -1;
 static char s_stage[24] = "unconfigured";
 static esp_netif_t *s_netif;
@@ -323,16 +326,19 @@ static void line_received(const char *line, size_t len, void *user)
 }
 
 // 按键、心跳和录音分开排队。录音来不及发时可丢帧，不能挤掉松键或心跳。
-static void enqueue(QueueHandle_t queue, const uint8_t *data, size_t len)
+static void enqueue(bool audio, const uint8_t *data, size_t len)
 {
-    if (!s_companion_enabled || !s_session || !queue || len == 0 || len > PACKET_MAX) return;
+    if(!s_runtime_lock||xSemaphoreTake(s_runtime_lock,0)!=pdTRUE)return;
+    QueueHandle_t queue=audio?s_audio_tx:s_control_tx;
+    if (!s_companion_enabled || !s_session || !queue || len == 0 || len > PACKET_MAX){xSemaphoreGive(s_runtime_lock);return;}
     packet_t packet = { .len = len };
     memcpy(packet.bytes, data, len);
     xQueueSend(queue, &packet, 0);
+    xSemaphoreGive(s_runtime_lock);
 }
 
-void ib_wifi_send(const uint8_t *data, size_t len) { enqueue(s_control_tx, data, len); }
-void ib_wifi_send_audio(const uint8_t *data, size_t len) { enqueue(s_audio_tx, data, len); }
+void ib_wifi_send(const uint8_t *data, size_t len) { enqueue(false, data, len); }
+void ib_wifi_send_audio(const uint8_t *data, size_t len) { enqueue(true, data, len); }
 
 // 单个任务拥有 TLS。暂时不可读写时保留待发帧及偏移，直到同一次 TLS 写入完成。
 static void run_session(esp_tls_t *tls, int fd, uint32_t generation)
@@ -410,11 +416,19 @@ static void run_session(esp_tls_t *tls, int fd, uint32_t generation)
     }
 }
 
+static void server_socket_close(esp_tls_t *tls,int fd){
+    xSemaphoreTake(s_runtime_lock,portMAX_DELAY);
+    if(s_active_fd==fd)s_active_fd=-1;
+    if(s_handshake_fd==fd){s_handshake_fd=-1;s_handshake_started=0;}
+    xSemaphoreGive(s_runtime_lock);
+    if(tls)esp_tls_server_session_delete(tls);else close(fd);
+}
 static void server_task(void *arg)
 {
     (void)arg;
-    s_control_tx = xQueueCreate(4, sizeof(packet_t));
-    s_audio_tx = xQueueCreate(4, sizeof(packet_t));
+    xSemaphoreTake(s_runtime_lock,portMAX_DELAY);
+    s_control_tx = xQueueCreate(4, sizeof(packet_t));s_audio_tx = xQueueCreate(4, sizeof(packet_t));
+    xSemaphoreGive(s_runtime_lock);
     if (!s_control_tx || !s_audio_tx) goto server_cleanup;
     int listener = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
     if (listener < 0) { status("server_error", NULL); goto server_cleanup; }
@@ -424,11 +438,14 @@ static void server_task(void *arg)
         close(listener); status("server_error", NULL); goto server_cleanup;
     }
     fcntl(listener, F_SETFL, fcntl(listener, F_GETFL, 0) | O_NONBLOCK);
+    s_server_ready=true;
     while (s_companion_enabled) {
         if (!(xEventGroupWaitBits(s_events, IP_READY, pdFALSE, pdTRUE, pdMS_TO_TICKS(100)) & IP_READY)) continue;
         int socket_fd = accept(listener, NULL, NULL);
         if (socket_fd < 0) { vTaskDelay(pdMS_TO_TICKS(100)); continue; }
-        s_active_fd = socket_fd;
+        xSemaphoreTake(s_runtime_lock,portMAX_DELAY);
+        if(!s_companion_enabled){xSemaphoreGive(s_runtime_lock);close(socket_fd);break;}
+        s_active_fd = socket_fd;xSemaphoreGive(s_runtime_lock);
         struct timeval timeout = { .tv_sec = 4, .tv_usec = 0 };
         setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
         setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
@@ -442,28 +459,26 @@ static void server_task(void *arg)
             .tls_handshake_timeout_ms = 5000,
         };
         esp_tls_t *tls = esp_tls_init();
-        portENTER_CRITICAL(&s_lock);
+        xSemaphoreTake(s_runtime_lock,portMAX_DELAY);
         s_handshake_fd = socket_fd;
         s_handshake_started = esp_timer_get_time();
-        portEXIT_CRITICAL(&s_lock);
+        xSemaphoreGive(s_runtime_lock);
         if (s_handshake_timer) esp_timer_start_once(s_handshake_timer, WIFI_HANDSHAKE_TIMEOUT_US);
         int handshake = tls ? esp_tls_server_session_create(&tls_config, socket_fd, tls) : -1;
         if (s_handshake_timer) esp_timer_stop(s_handshake_timer);
-        portENTER_CRITICAL(&s_lock);
+        xSemaphoreTake(s_runtime_lock,portMAX_DELAY);
         s_handshake_fd = -1;
         s_handshake_started = 0;
-        portEXIT_CRITICAL(&s_lock);
+        xSemaphoreGive(s_runtime_lock);
         if (handshake != 0) {
             ESP_LOGW(TAG, "TLS handshake failed: %d", handshake);
-            if (tls) esp_tls_server_session_delete(tls); else close(socket_fd);
-            s_active_fd = -1;
+            server_socket_close(tls,socket_fd);
             memset(&config, 0, sizeof(config)); continue;
         }
         int flags = fcntl(socket_fd, F_GETFL, 0);
         if (flags < 0 || fcntl(socket_fd, F_SETFL, flags | O_NONBLOCK) < 0) {
             ESP_LOGW(TAG, "Cannot set TLS socket nonblocking: errno=%d", errno);
-            esp_tls_server_session_delete(tls);
-            s_active_fd = -1;
+            server_socket_close(tls,socket_fd);
             memset(&config, 0, sizeof(config)); continue;
         }
         xQueueReset(s_control_tx);
@@ -473,46 +488,74 @@ static void server_task(void *arg)
         run_session(tls, socket_fd, generation);
         s_session = false;
         if (s_link) s_link(false);
-        esp_tls_server_session_delete(tls);
+        server_socket_close(tls,socket_fd);
         memset(&config, 0, sizeof(config));
-        s_active_fd = -1;
     }
     close(listener);
 server_cleanup:
-    s_active_fd = -1; s_session = false;
+    s_server_ready=false;
+    xSemaphoreTake(s_runtime_lock,portMAX_DELAY);s_active_fd = -1; s_session = false;
     if (s_control_tx) { vQueueDelete(s_control_tx); s_control_tx = NULL; }
     if (s_audio_tx) { vQueueDelete(s_audio_tx); s_audio_tx = NULL; }
+    xSemaphoreGive(s_runtime_lock);
     s_server_task = NULL;
     vTaskDelete(NULL);
 }
 
 void ib_wifi_set_companion_enabled(bool enabled)
 {
+    // 启动前只记录意图。运行时需要确认资源的调用者使用set_wait。
+    if(s_available){(void)ib_wifi_companion_set_wait(enabled,enabled?1000:0);return;}
     s_companion_enabled = enabled;
-    if (!enabled) {
-        s_generation++;
-        int fd = s_active_fd;
-        if (fd >= 0) shutdown(fd, SHUT_RDWR);
-    } else if (s_available && !s_server_task) {
-        xTaskCreate(server_task, "ib_wifi_tls", 8192, NULL, 4, &s_server_task);
-    }
 }
 
 bool ib_wifi_companion_released(void) { return !s_server_task && !s_session; }
+bool ib_wifi_companion_listening(void){return s_server_ready;}
+
+esp_err_t ib_wifi_companion_set_wait(bool enabled,uint32_t timeout_ms){
+    s_companion_enabled=enabled;
+    if(!enabled){
+        s_generation++;
+        if(s_runtime_lock){
+            xSemaphoreTake(s_runtime_lock,portMAX_DELAY);int fd=s_active_fd,handshake=s_handshake_fd;
+            if(fd>=0)shutdown(fd,SHUT_RDWR);
+            if(handshake>=0&&handshake!=fd)shutdown(handshake,SHUT_RDWR);
+            xSemaphoreGive(s_runtime_lock);
+        }
+        int64_t deadline=esp_timer_get_time()+(int64_t)timeout_ms*1000;
+        while(!ib_wifi_companion_released()&&esp_timer_get_time()<deadline)vTaskDelay(pdMS_TO_TICKS(10));
+        if(!ib_wifi_companion_released())return ESP_ERR_TIMEOUT;
+        if(s_mdns_started){mdns_free();s_mdns_started=false;}
+        vTaskDelay(1); //给IDLE回收协作退出任务的栈，之后才允许分配公网TLS。
+        return ESP_OK;
+    }
+    if(!s_available)return ib_wifi_is_configured()?ESP_ERR_INVALID_STATE:ESP_OK;
+    if(!s_mdns_started){
+        esp_err_t error=mdns_init();if(error!=ESP_OK)return error;
+        s_mdns_started=true;char host[32];portENTER_CRITICAL(&s_lock);memcpy(host,s_config.host,sizeof(host));portEXIT_CRITICAL(&s_lock);
+        mdns_hostname_set(host[0]?host:"folobutton");mdns_instance_name_set("FoloButton");
+        error=mdns_service_add(NULL,"_folobutton","_tcp",WIFI_PORT,NULL,0);
+        if(error!=ESP_OK){mdns_free();s_mdns_started=false;return error;}
+    }
+    if(!s_server_task&&xTaskCreate(server_task,"ib_wifi_tls",8192,NULL,4,&s_server_task)!=pdPASS)return ESP_ERR_NO_MEM;
+    int64_t deadline=esp_timer_get_time()+(int64_t)timeout_ms*1000;
+    while(s_server_task&&!s_server_ready&&esp_timer_get_time()<deadline)vTaskDelay(pdMS_TO_TICKS(10));
+    return s_server_ready?ESP_OK:s_server_task?ESP_ERR_TIMEOUT:ESP_ERR_NO_MEM;
+}
 
 static void handshake_timeout(void *arg)
 {
     (void)arg;
     int fd;
     int64_t started;
-    portENTER_CRITICAL(&s_lock);
+    if(!s_runtime_lock||xSemaphoreTake(s_runtime_lock,0)!=pdTRUE)return;
     fd = s_handshake_fd;
     started = s_handshake_started;
-    portEXIT_CRITICAL(&s_lock);
     if (fd >= 0 && started > 0) {
         ESP_LOGW(TAG, "TLS handshake timeout, closing fd=%d", fd);
         shutdown(fd, SHUT_RDWR);
     }
+    xSemaphoreGive(s_runtime_lock);
 }
 
 static void config_task(void *arg)
@@ -700,8 +743,9 @@ esp_err_t ib_wifi_start(ib_wifi_line_cb_t line, ib_wifi_link_cb_t link)
     ib_wifi_store_t store = store_snapshot();
     if (!store.count) return ESP_OK;
     s_events = xEventGroupCreate();
+    s_runtime_lock=xSemaphoreCreateMutex();
     s_config_queue = xQueueCreate(1, sizeof(ib_wifi_network_t));
-    if (!s_events || !s_config_queue) return ESP_ERR_NO_MEM;
+    if (!s_events || !s_config_queue||!s_runtime_lock) return ESP_ERR_NO_MEM;
     esp_err_t error = esp_netif_init(); if (error != ESP_OK) return error;
     error = esp_event_loop_create_default(); if (error != ESP_OK && error != ESP_ERR_INVALID_STATE) return error;
     s_netif = esp_netif_create_default_wifi_sta(); if (!s_netif) return ESP_ERR_NO_MEM;
@@ -712,15 +756,7 @@ esp_err_t ib_wifi_start(ib_wifi_line_cb_t line, ib_wifi_link_cb_t link)
     if ((error = esp_wifi_set_ps(WIFI_PS_NONE)) != ESP_OK) return error;
     esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, network_event, NULL);
     esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, network_event, NULL);
-    if(s_companion_enabled){
-        if ((error = mdns_init()) != ESP_OK) return error;
-        s_mdns_started=true;
-        mdns_hostname_set("folobutton");
-        mdns_instance_name_set("FoloButton");
-        mdns_service_add(NULL, "_folobutton", "_tcp", WIFI_PORT, NULL, 0);
-    }
     if (xTaskCreate(config_task, "ib_wifi_cfg", 4096, NULL, 4, NULL) != pdPASS) return ESP_ERR_NO_MEM;
-    if (s_companion_enabled && xTaskCreate(server_task, "ib_wifi_tls", 8192, NULL, 4, &s_server_task) != pdPASS) return ESP_ERR_NO_MEM;
     const esp_timer_create_args_t timer_args = {
         .callback = handshake_timeout,
         .name = "ib_wifi_hs",
@@ -733,6 +769,7 @@ esp_err_t ib_wifi_start(ib_wifi_line_cb_t line, ib_wifi_link_cb_t link)
     if (esp_timer_create(&reconnect_args, &s_reconnect_timer) != ESP_OK) return ESP_ERR_NO_MEM;
     s_reconnect_delay_ms = 1000;
     s_available = true;
+    if(s_companion_enabled&&(error=ib_wifi_companion_set_wait(true,1000))!=ESP_OK)return error;
     ib_wifi_network_t config;
     if (active_network(&store, &config)) xQueueOverwrite(s_config_queue, &config);
     memset(&config, 0, sizeof(config));

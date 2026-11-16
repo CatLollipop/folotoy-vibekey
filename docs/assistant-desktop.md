@@ -24,7 +24,7 @@ Mac 上的云服务连接参数与原有翻译/润色 LLM 配置独立，不覆�
 
 设备同步：`AssistantStore → key-bearing memory-only wire data → AssistantDeviceSync → DeviceLink request/ack → 固件 inactive bank → commit → status`。
 每个请求带关联ID，只接受当前链路、请求ID、操作、版本和偏移一致的回执。结果未知时不自动重传提交。
-云凭据与宠物设置分开同步，首次凭据同步需要USB，之后支持已配对加密Wi-Fi。设备拒绝繁忙阶段的同步。模式切换若回执 `restarting=1`，Mac 等待新的 boot ID 完成握手，再查询实际模式；重启前回执不冒充已经运行新模式。
+云凭据与宠物设置分开同步，首次凭据同步需要USB，之后支持已配对加密Wi-Fi。设备拒绝繁忙阶段的同步。0.6模式切换先要求hot_mode=1，回执必须restarting=false且actualmode等于目标，之后再查实际状态；旧重启式固件明确要求升级。
 
 ## 取消与历史播放实现
 

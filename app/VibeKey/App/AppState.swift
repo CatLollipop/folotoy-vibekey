@@ -28,6 +28,7 @@ final class AppState {
     let agentHub: AgentHub
     let pet: PetController
     @ObservationIgnored private var assistantCoordinator: AssistantCoordinator?
+    @ObservationIgnored private var notificationCoordinator: AgentNotificationCoordinator?
     let dictation: DictationController
     let subtitles: SubtitleController
     /// 字幕记录的分段总结(字幕记录窗口「总结」页)。
@@ -145,6 +146,11 @@ final class AppState {
         assistantCoordinator = AssistantCoordinator(assistant: assistant, store: assistantStore,
             hub: agentHub, pet: pet, link: deviceLink, sync: assistantSync)
         assistantCoordinator?.start()
+        bridge.forwardsLegacyAgentNotices = false
+        notificationCoordinator = AgentNotificationCoordinator(hub: agentHub, legacy: agent, link: deviceLink)
+        notificationCoordinator?.start()
+        do { try AgentHookInstaller.upgradeCodexIfInstalled() }
+        catch { Log.app.error("owned Codex notification hook upgrade failed") }
         // 引导走到 Passport 一步之前不打开蓝牙,避免一启动就弹出蓝牙权限框。
         updateBluetooth()
         activityToken = ProcessInfo.processInfo.beginActivity(
@@ -217,6 +223,7 @@ final class AppState {
     }
 
     func shutdown() {
+        notificationCoordinator?.stop()
         assistantCoordinator?.stop()
         if let activityToken {
             ProcessInfo.processInfo.endActivity(activityToken)

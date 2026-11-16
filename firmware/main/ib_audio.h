@@ -30,14 +30,23 @@ void ib_audio_mic_stop(void);
 bool ib_audio_mic_active(void);
 ib_link_t ib_audio_mic_link(void);
 
-// 异步播放提示音;正在播放时新的提示音替换排队中的那个。
-void ib_audio_play(ib_sound_t sound);
+// 异步短音；true仅表示成功入队，声音开关由app处理。麦克风/PCM占用或任务分配失败返回false。
+// 正在播放时新短音替换排队中的一个；新PTT会协作取消并立即静音，不混入采音。
+bool ib_audio_play(ib_sound_t sound);
 
 // 独立助手独占 codec：成功后允许同一所有者直接调用 BSP PCM read/write。
-// 不与提示音或伴随麦克风重叠；调用者必须在结束/取消/错误路径释放。
+// 先协作停止短音/伴随麦克风再取独占权；调用者必须在结束/取消/错误路径释放。
 esp_err_t ib_audio_pcm_begin(void);
 void ib_audio_pcm_end(void);
 // 取消时只静音输出，不关闭仍在被worker读写的codec。
 void ib_audio_pcm_interrupt(void);
 
 esp_err_t ib_audio_init_mode(ib_audio_tx_cb_t tx,bool companion);
+// 热切换只改变伴随麦克风许可。任务按次懒创建；禁用时协作停止/等待任务退出，不强删codec使用者。
+esp_err_t ib_audio_set_companion(bool enabled);
+bool ib_audio_companion_enabled(void);
+typedef struct {
+    uint32_t queued,started,completed,cancelled,write_bytes,write_errors,codec_errors,mic_starts,mic_stack_min_bytes,tone_stack_min_bytes;
+} ib_audio_stats_t;
+// 单调运行期计数，accepted/write_bytes不等于扬声器听感；仅用于重传/资源/错误验收。
+void ib_audio_stats(ib_audio_stats_t *);

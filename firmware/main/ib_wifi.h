@@ -34,6 +34,9 @@ bool ib_wifi_network_name(size_t index, char *out, size_t cap);
 // 写入 active 后由调用方延迟重启；返回 false 表示下标非法或 NVS 写入失败。
 bool ib_wifi_select_network(size_t index);
 
-// 独立模式保留STA，释放Mac局域网TLS任务/队列；恢复伴随模式时重新创建。
+// 两种模式空闲都可接收已配对电脑通知；独立云轮前保留STA并释放LAN TLS任务/队列。
 void ib_wifi_set_companion_enabled(bool enabled);
 bool ib_wifi_companion_released(void);
+// 资源门禁：关闭等TLS会话/server/队列释放并停mDNS；启用等监听成功，STA与配对密钥始终保留。
+esp_err_t ib_wifi_companion_set_wait(bool enabled,uint32_t timeout_ms);
+bool ib_wifi_companion_listening(void);
