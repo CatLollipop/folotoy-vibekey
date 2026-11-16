@@ -49,6 +49,9 @@ typedef struct {
     ib_ui_screen_t prev_screen;  // 直切而来时为上一页(页面据此播放变形动画),普通切换为 IB_UI_SCREEN_NONE
     uint32_t now_ms;        // 本帧时刻
     ib_ui_list_t list;      // 列表页内容
+    bool run_mode_menu,run_mode_standalone;
+    uint8_t run_mode_selected;
+    ib_ui_run_mode_notice_t run_mode_notice;
 } ib_ui_ctx_t;
 
 typedef struct {

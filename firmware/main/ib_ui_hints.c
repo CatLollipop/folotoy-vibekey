@@ -1,6 +1,7 @@
-// main/ib_ui_hints.c: 右侧按键提示列实现(见 ib_ui_hints.h)。
+// main/ib_ui_hints.c: 两侧微型按键提示实现(见 ib_ui_hints.h)。
 //
 // 每个键:12 px 图标 + 贴屏幕右边缘、对准实体键的 3 颗竖排小圆点(像按键的"指示灯",与界面的点阵语言一致)。
+// 长按字形与小圆环复用同一个自绘标记控件;左侧电源用一段弧和竖线,不新增字体或位图资源。
 // 按下时 60 ms 冲到白、上下各多出一颗点,再用 240 ms 回落;只 invalidate 图标和标记。
 // 禁用时(PROC 页,上一句还在处理)图标与点画成更暗的禁用色;按下改为"不可用"反馈:点闪红并左右抖动,
 // 让用户知道这次按键没有生效、不会开始新的一句。
@@ -13,11 +14,12 @@
 #define PRESS_PEAK  20          // 前 20% 时间冲到最亮,后 80% 回落
 #define ICON_SIZE   14          // 图标标签的宽高(字形 12 px;屏幕很小,提示只需要能认出来)
 #define ICON_CX     8           // 图标中心(列内坐标;屏幕 x = 226)
-#define MARK_X      14          // 边缘标记控件(列内坐标;屏幕 x 232..237,两侧留出抖动空间)
-#define MARK_W      6
-#define MARK_H      24
+#define MARK_H      42          // 复用点列控件容纳长按字形,不增加每键 LVGL 对象
+#define MARK_CY     12          // 点列中心相对控件顶部,与原先的实体键锚点不变
+#define HOLD_DY     14          // 长按含义在短按字形下方 14 px
+#define HOLD_RING_X 17
 #define DOT         2           // 标记点 2x2,屏幕 x 234..235
-#define DOT_X       2
+#define DOT_X       16
 #define DOT_PITCH   5           // 静止 3 颗:Y-5、Y、Y+5;按下时再加 Y±10
 #define DENY_MS     360         // 不可用反馈时长
 #define DENY_PX     2           // 抖动幅度
@@ -27,6 +29,8 @@
 typedef struct {
     lv_obj_t *icon;
     lv_obj_t *mark;
+    ib_icon_t press_icon;       // 短按 / 长按独立存储,避免设置其中之一误隐藏另一项
+    ib_icon_t hold_icon;
     int32_t flash;              // 0..IB_P_ONE:按下反馈的强度
     int32_t deny;               // 0..IB_P_ONE:"不可用"反馈的强度
     int32_t shake;              // 不可用反馈的水平偏移(px)
@@ -47,7 +51,7 @@ static void mark_draw(lv_event_t *e)
     const hint_t *h = lv_event_get_user_data(e);
     ib_fx_t fx;
     ib_fx_begin(&fx, e);
-    int32_t cy = fx.h / 2;
+    int32_t cy = MARK_CY;
     lv_color_t c = s_disabled ? IB_C(MARK_DISABLED) : ib_gray_lerp(IB_COLOR_MUTE, IB_COLOR_TEXT, h->flash);
     // 不可用反馈:点向错误红过渡(彩色叠在精确灰上,不涉及灰色偏色)。
     if (h->deny > 0) c = lv_color_mix(IB_C(IB_COLOR_ERR), c, (uint8_t)(h->deny * 255 / IB_P_ONE));
@@ -59,6 +63,33 @@ static void mark_draw(lv_event_t *e)
         lv_color_t extra = ib_gray_lerp(IB_COLOR_BG, IB_COLOR_TEXT, h->flash);
         for (int i = -2; i <= 2; i += 4) ib_fx_rect(&fx, DOT_X, cy + i * DOT_PITCH - DOT / 2, DOT, DOT, 0, extra, LV_OPA_COVER);
     }
+    if (h->hold_icon != IB_ICON_NONE) {
+        // 沿用 12 px 字形和按键反馈颜色;小圆环只标识长按,不承载新的交互状态。
+        ib_fx_text(&fx, ICON_CX, cy + HOLD_DY, ib_icon_glyph(h->hold_icon), &ib_icon_font_12,
+                   icon_color(h), LV_OPA_COVER);
+        ib_fx_ring(&fx, HOLD_RING_X, cy + HOLD_DY, 2, 1, c, LV_OPA_COVER);
+    }
+}
+
+// 电源键由硬件管理,这里只画通用识别符;独立于右列以便离线页仍可辨认实体位置。
+static void power_draw(lv_event_t *e)
+{
+    ib_fx_t fx;
+    ib_fx_begin(&fx, e);
+    lv_color_t c = IB_C(IB_COLOR_TEXT_DIM);
+    ib_fx_arc(&fx, 6, 8, 4, 1, 315, 585, c, LV_OPA_COVER);
+    ib_fx_line(&fx, 6, 2, 6, 7, 1, c, LV_OPA_COVER);
+}
+
+// 两种操作均为空才隐藏点列,允许只有长按动作的键保留实体位置提示。
+static void hint_visibility(hint_t *h)
+{
+    if (h->press_icon == IB_ICON_NONE) lv_obj_add_flag(h->icon, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_remove_flag(h->icon, LV_OBJ_FLAG_HIDDEN);
+    if (h->press_icon == IB_ICON_NONE && h->hold_icon == IB_ICON_NONE)
+        lv_obj_add_flag(h->mark, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_remove_flag(h->mark, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_invalidate(h->mark);
 }
 
 // 动画值 0..IB_P_ONE 是时间进度:前 PRESS_PEAK% 以 ease-out 升到 1,其余以 ease-in 回落到 0。
@@ -89,10 +120,12 @@ void ib_hints_create(lv_obj_t *screen)
         lv_obj_set_style_pad_top(h->icon, (ICON_SIZE - lv_font_get_line_height(&ib_icon_font_12)) / 2, 0);
         lv_obj_set_pos(h->icon, ICON_CX - ICON_SIZE / 2, YS[k] - ICON_SIZE / 2);
         lv_label_set_text_static(h->icon, ib_icon_glyph(IB_ICON_NONE));
-        h->mark = ib_fx_create(s_layer, MARK_X, YS[k] - MARK_H / 2, MARK_W, MARK_H, mark_draw, h);
+        h->press_icon = h->hold_icon = IB_ICON_NONE;
+        h->mark = ib_fx_create(s_layer, 0, YS[k] - MARK_CY, IB_HINT_COL_W, MARK_H, mark_draw, h);
         lv_obj_add_flag(h->icon, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(h->mark, LV_OBJ_FLAG_HIDDEN);
     }
+    ib_fx_create(screen, 0, IB_HINT_Y_POWER - 7, 12, 14, power_draw, NULL);
 }
 
 void ib_hints_set_icon(ib_ui_key_t key, ib_icon_t icon)
@@ -100,14 +133,18 @@ void ib_hints_set_icon(ib_ui_key_t key, ib_icon_t icon)
     if ((unsigned)key >= IB_UI_KEY_COUNT) return;
     hint_t *h = &s_hints[key];
     if ((unsigned)icon >= IB_ICON_COUNT) icon = IB_ICON_NONE;
+    h->press_icon = icon;
     lv_label_set_text_static(h->icon, ib_icon_glyph(icon));
-    if (icon == IB_ICON_NONE) {
-        lv_obj_add_flag(h->icon, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(h->mark, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_remove_flag(h->icon, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(h->mark, LV_OBJ_FLAG_HIDDEN);
-    }
+    hint_visibility(h);
+}
+
+void ib_hints_set_hold_icon(ib_ui_key_t key, ib_icon_t icon)
+{
+    if ((unsigned)key >= IB_UI_KEY_COUNT) return;
+    hint_t *h = &s_hints[key];
+    if ((unsigned)icon >= IB_ICON_COUNT) icon = IB_ICON_NONE;
+    h->hold_icon = icon;
+    hint_visibility(h);
 }
 
 // "不可用"反馈:t 为 0..DENY_MS。点 60 ms 内变红,之后回落;同时左右抖动 3 次、幅度衰减。

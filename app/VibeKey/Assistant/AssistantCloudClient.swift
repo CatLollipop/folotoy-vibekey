@@ -9,38 +9,15 @@ nonisolated struct AssistantCompletion: Sendable {
 
 /// 网络入口可替换，测试用假的服务验证取消与轮次隔离，不需要收费 API。
 nonisolated protocol AssistantCloudServing: Sendable {
-    func transcribe(samples: [Float], profile: AssistantProfile, secrets: AssistantSecrets) async throws -> String
     func complete(messages: [AssistantHistory.Message], profile: AssistantProfile, secrets: AssistantSecrets,
                   onText: @Sendable @escaping (String) async -> Void) async throws -> AssistantCompletion
     func speech(text: String, profile: AssistantProfile, secrets: AssistantSecrets) -> AsyncThrowingStream<Data, Error>
 }
 
-/// DeepSeek 与 MiniMax 原生协议各自处理，不能仅替换 OpenAI base URL 冒充兼容。
+/// 只负责DeepSeek对话与MiniMax朗读；实时识别由独立ASRSession在采音期间处理。
 nonisolated struct AssistantCloudClient: AssistantCloudServing {
     let session: URLSession
     init(session: URLSession = .shared) { self.session = session }
-
-    func transcribe(samples: [Float], profile: AssistantProfile, secrets: AssistantSecrets) async throws -> String {
-        guard samples.count >= 4_000 else { throw AssistantError.noSpeech }
-        var form = MultipartForm()
-        form.addFile(name: "file", filename: "speech.wav", mimeType: "audio/wav", data: AudioFormats.wav(samples))
-        form.addField(name: "model", value: profile.asrModel)
-        form.addField(name: "response_format", value: "json")
-        form.addField(name: "stream", value: "false")
-        var request = try Self.request(base: profile.minimaxBaseURL, path: "v1/speech_to_text", key: secrets.minimaxKey)
-        request.setValue(form.contentType, forHTTPHeaderField: "Content-Type")
-        request.httpBody = form.body
-        let (data, response) = try await session.data(for: request)
-        try Self.check(response)
-        guard data.count <= 65_536,
-              let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw AssistantError.responseTooLarge
-        }
-        try Self.checkProvider(object)
-        let text = (object["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { throw AssistantError.noSpeech }
-        return text
-    }
 
     func complete(messages: [AssistantHistory.Message], profile: AssistantProfile, secrets: AssistantSecrets,
                   onText: @Sendable @escaping (String) async -> Void) async throws -> AssistantCompletion {

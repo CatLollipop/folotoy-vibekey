@@ -8,6 +8,7 @@
 #include "es8311_codec.h"
 #include "driver/i2s_std.h"
 #include "esp_log.h"
+#include "esp_attr.h"
 
 static const char *TAG = "bsp_audio";
 
@@ -17,6 +18,11 @@ static i2s_chan_handle_t      s_tx, s_rx;
 static uint32_t s_hz;
 static uint8_t  s_bits, s_ch;
 static bool     s_opened;
+static volatile uint32_t s_rx_overflows;
+static bool IRAM_ATTR rx_overflow(i2s_chan_handle_t channel,i2s_event_data_t *event,void *context){
+    (void)channel;(void)event;(void)context;s_rx_overflows++;return false;
+}
+uint32_t bsp_audio_rx_overflows(void){return s_rx_overflows;}
 
 static esp_err_t i2s_full_duplex_init(void) {
     i2s_chan_config_t chan = {
@@ -63,6 +69,9 @@ static esp_err_t i2s_full_duplex_init(void) {
     if ((e = i2s_channel_init_std_mode(s_rx, &std)) != ESP_OK) {
         ESP_LOGE(TAG, "i2s rx 初始化失败: %s", esp_err_to_name(e)); return e;
     }
+    const i2s_event_callbacks_t callbacks={.on_recv_q_ovf=rx_overflow};
+    if((e=i2s_channel_register_event_callback(s_rx,&callbacks,NULL))!=ESP_OK)return e;
+
     // esp_codec_dev_open 内部重配前会先 i2s_channel_disable,而 disable 要求通道处于
     // RUNNING;刚 init 的通道是 READY,会打一条 "channel has not been enabled yet" 错误日志。
     // 这里先 enable 一次让那次 disable 合法(此时 codec 未配,不出声)。

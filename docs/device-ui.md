@@ -13,7 +13,7 @@
 
 当前开发版在 IDLE、REC、PROC、DONE、ERR 页使用终端式标题和绿色点阵边框；OFFLINE 也使用终端标题和绿色时钟。前三页分别显示 `> READY_`、`> LISTENING`、`> DECODING_`；DICTATE 待机显示 `HOLD OK TO TALK`，录音页根据按键状态提示松开或再按一次 OK。SUB、LIST、USAGE 和 Agent 通知沿用同一套点阵语言。除专用审批页外，核心状态页已实现并通过 46 个 LVGL 主机场景检查；实体屏幕的完整状态巡检仍待验收。
 
-屏幕 ST7789 240×320 竖屏,LVGL 9;状态文本主要为 ASCII,SUB 字幕与 LIST 项目 / 会话名保留 UTF-8(12 px SemiBold 中文字库)。终端标题与主要操作提示使用 Roboto Mono,其余文字仍使用 Montserrat。交互页页脚显示同步时钟,未知时为 `--:--`。**不显示转录内容**,用动画表达状态。
+屏幕 ST7789 240×320 竖屏,LVGL 9;宠物/独立助手状态、错误和离线提示为简体中文，复用Noto Sans SC 12px SemiBold/OFL字库；SUB 字幕与 LIST 项目 / 会话名保留 UTF-8。终端标题与主要操作提示使用 Roboto Mono,其余文字仍使用 Montserrat。交互页页脚显示同步时钟,未知时为 `--:--`。**不显示转录内容**,用动画表达状态。
 
 设计原则(固件 0.1.2 起,「点阵」主线):**一屏只突出一件事**,整个界面的主体只用**一种图元——8 px 网格上的 5×5 圆点**。模式图标、录音声波、处理中的扫描光、完成 / 失败、离线时钟、电量,全由同一批点组成;点阵页面之间切换时点"重排"(morph),听写全过程(模式图标 → 一条线 → 声波 → 一条线 → 图标)是一段连续的粒子动画。终端标题和主要操作提示采用等宽字体。纯黑底,主交互页逐步采用终端绿,录音、失败等保留语义色。
 
@@ -178,8 +178,18 @@ Mac 下发 `agent` 时,在任何页面上方弹出全屏通知层(录音中不�
 
 ## 独立 AI 助手与 Aora Dot
 
-独立模式下，屏幕以Aora Dot宠物显示录音、上传、思考、朗读、完成与错误，配两行中文/ASCII状态或短文本；设备为内置像素点阵，Mac为高清vector/solid。宠物支持44个canonical状态，名单/来源/许可见 [pet-runtime.md](pet-runtime.md)。LIST/USAGE/SUB始终优先于宠物显示，导航信息不被覆盖。
+独立模式下，屏幕以Aora Dot宠物显示录音、上传、思考、朗读、完成与错误，配两行简体中文语义状态与已知机器错误提示；设备为内置像素点阵，Mac为高清vector/solid。宠物支持44个canonical状态，名单/来源/许可见 [pet-runtime.md](pet-runtime.md)。LIST/USAGE/SUB始终优先于宠物显示，导航信息不被覆盖。
 
 独立按键：按住OK录音、松开发送（最长30秒）；处理中/朗读中再次按住OK会打断旧轮并在仍按住时自动开录；▼短按取消，空闲长按▼退出独立模式；空闲短按▲清历史。Flash预擦除显示preparing，准备完成才显示可录音。纯静音、短录音、网络/云端错误均显示错误并保留恢复路径。退出独立后恢复原有Mac相伴交互。完整状态机与真实硬件验收项见 [assistant-device-protocol.md](assistant-device-protocol.md)。
 
 完整刷新结束后才安排下一帧，耗时较大时自然降低实际帧率；fps设置是目标上限。点阵自绘先按DMA clip裁可见行/列，每次callback复用descriptor，避免小DMA缓冲重复扫描整屏。frame timer在REFR_READY后恢复，保证LVGL handler可返回并由port实际delay，让核心任务/IDLE调度；看门狗保持启用。
+
+## 中文助手状态（0.3.1）
+
+宠物下方显示“云端待机/电脑助手、正在准备/聆听/识别/思考/回复/朗读、已完成/已取消”和友好中文错误。状态来自typed phase、目标模式或Aora canonical ID，不匹配英语msg；用户会话名/正文不硬翻。Mac的显式presentation owner防止排队的旧state覆盖精确阶段；旧裸pet_state或全链路断开释放接管。离线连接提示同样由语义枚举生成中文。复用现有OFL Noto字库，新增字体位图0B；字形和≤198×38px尺寸检查、31张真实LVGL host场景见[firmware-chinese-status.md](firmware-chinese-status.md)。
+
+## 本地运行模式与两侧提示（0.3.2候选）
+
+长按上键打开本地“运行模式”，上下选AI助理/连接电脑/返回，确认键确认，长按确认键或30秒超时返回；当前模式以对勾表示，与选择高亮分开。此长上替代前文旧dict/tr/sub切换；独立长下保留无线列表，相伴长下保留原会话/离线网络入口。菜单优先于Mac状态/通知，退出恢复最新缓存。左上只显示硬件电源标识，右侧70/170/270主glyph表示短按、下方glyph+小圆环表示长按；无操作留空。物理核对、缓存/模式检查、截图与资源边界见[device-local-mode.md](device-local-mode.md)。
+
+真实转写接入接口在[transcript-display.md](transcript-display.md)：有实际ASR快照时才显示phase+末两行UTF-8字幕，generation/final/取消隔离；该UI接口不代表实时供应商链路已经验收。

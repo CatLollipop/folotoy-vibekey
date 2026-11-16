@@ -76,7 +76,9 @@ static lv_obj_t *create(lv_obj_t *parent, const ib_ui_ctx_t *ctx)
     lv_obj_set_style_bg_color(root,lv_color_hex(0x17181D),0);
     s_clock = ib_fx_create(root, 0, CLOCK_Y, IB_UI_W, CLOCK_H, clock_draw, NULL);
     s_date = ib_caption_create(root, IB_COLOR_TEXT_MID, ib_font_top(&lv_font_montserrat_12, DATE_CY), IB_UI_W, 2);
-    s_hint = ib_caption_create(root, IB_COLOR_TEXT_MID, ib_font_top(&lv_font_montserrat_12, WAIT_CY), IB_UI_W, 1);
+    // 已内置的Google Noto Sans SC/OFL字库覆盖全部提示；不用新增字体或Apple系统字形。
+    s_hint = ib_label_create(root, &ib_cjk_font_12, IB_COLOR_TEXT_MID,
+                             ib_font_top(&ib_cjk_font_12, WAIT_CY), IB_UI_W);
     return root;
 }
 
@@ -84,7 +86,7 @@ static void update(const ib_ui_ctx_t *ctx)
 {
     lv_snprintf(s_time, sizeof(s_time), "%s", ctx->time[0] ? ctx->time : "--:--");
     lv_label_set_text(s_date, ctx->time[0] ? ctx->date : "");
-    lv_label_set_text_static(s_hint, ctx->offline_hint[0] ? ctx->offline_hint : "WAITING FOR MAC");
+    lv_label_set_text_static(s_hint, ctx->offline_hint[0] ? ctx->offline_hint : ib_ui_connection_label(IB_UI_CONN_WAITING));
     lv_obj_invalidate(s_clock);
 }
 

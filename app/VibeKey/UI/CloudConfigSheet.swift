@@ -22,8 +22,8 @@ struct CloudConfigSheet: View {
     }
 
     @ViewBuilder var body: some View {
-        if provider == .minimax {
-            MiniMaxVoiceConfigSheet(assistant: assistant, cloud: store, onSaved: onSaved)
+        if provider == .volcengine {
+            AssistantVoiceConfigSheet(assistant: assistant, cloud: store, onSaved: onSaved)
         } else { ordinaryForm }
     }
     private var ordinaryForm: some View {

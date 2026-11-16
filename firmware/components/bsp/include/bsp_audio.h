@@ -30,3 +30,6 @@ void bsp_audio_set_volume(uint8_t percent);
 esp_err_t bsp_audio_close(void);
 // 输出静音开关;关闭 codec 前先静音可避免爆音。
 void bsp_audio_mute(bool mute);
+
+// I2S RX驱动队列的真实溢出次数；采音起止差值用于发现Flash/TLS期间丢样。
+uint32_t bsp_audio_rx_overflows(void);

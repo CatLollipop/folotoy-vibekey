@@ -31,15 +31,14 @@ final class CloudASREngine: ASREngine {
         let key = config.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = provider.displayName
         switch provider {
-        case .minimax:
-            return SegmentedSession(decoder: MiniMaxASRDecoder(baseURL: config.baseURL, apiKey: key), options: options)
         case .volcengine:
             return StreamingCloudSession(purpose: options.purpose, serviceName: name) {
-                VolcengineCodec(apiKey: key, resourceID: config.model, options: options)
+                VolcengineCodec(apiKey: key, resourceID: config.model, options: options,
+                    endpointURL: URL(string: config.baseURL).flatMap { $0.scheme == "wss" ? $0 : nil })
             }
         case .bailian:
             return StreamingCloudSession(purpose: options.purpose, serviceName: name) {
-                BailianCodec(apiKey: key, model: config.model, region: config.region, options: options)
+                BailianCodec(apiKey: key, model: config.model, region: config.region, options: options, endpointURL: BailianEndpoint.validated(config.baseURL))
             }
         case .elevenlabs:
             return StreamingCloudSession(purpose: options.purpose, serviceName: name) {
@@ -84,10 +83,6 @@ final class CloudASREngine: ASREngine {
         // 静音里加一点极小的噪声,避免部分服务把纯零数据判为"空音频"错误。
         let noise = (0..<24_000).map { _ in Float.random(in: -0.0005...0.0005) }
         // OpenAI 兼容接口按段请求:直接发一次转写请求验证地址、鉴权和模型名。
-        if provider == .minimax {
-            do { _ = try await MiniMaxASRDecoder(baseURL: config.baseURL, apiKey: config.apiKey).decode(noise, options: options); return nil }
-            catch { return error.localizedDescription }
-        }
         if provider == .openAICompatible {
             do {
                 _ = try await OpenAITranscriptionDecoder(baseURL: config.baseURL, apiKey: config.apiKey, model: config.model)

@@ -47,11 +47,17 @@ static bool https_base(const char *s){
     for(const char *p=s+8;*p;p++)if((unsigned char)*p<=32||*p=='@'||*p=='?'||*p=='#'||*p=='\\')return false;
     return true;
 }
+static bool wss_endpoint(const char *s){
+    if(strncmp(s,"wss://",6)||!s[6]||s[6]=='/')return false;
+    for(const char *p=s+6;*p;p++)if((unsigned char)*p<=32||*p=='@'||*p=='?'||*p=='#'||*p=='\\')return false;
+    return true;
+}
 static bool parse_profile(const char *json, size_t size, uint32_t rev, ib_assistant_profile_t *p) {
     cJSON *o = cJSON_ParseWithLength(json, size); if (!o) return false;
     memset(p, 0, sizeof(*p));
     const cJSON *schema = item(o, "schema"), *revision = item(o, "revision");
-    bool ok = cJSON_IsNumber(schema) && schema->valueint == 1 && cJSON_IsNumber(revision) && revision->valuedouble == rev;
+    bool ok = cJSON_IsNumber(schema) && (schema->valuedouble == 1 || schema->valuedouble == 2) && cJSON_IsNumber(revision) && revision->valuedouble == rev;
+    p->schema=ok?(unsigned)schema->valueint:0;
     ok = ok && string_field(o,"minimax_key",p->minimax_key,sizeof(p->minimax_key),NULL)
         && string_field(o,"deepseek_key",p->deepseek_key,sizeof(p->deepseek_key),NULL)
         && string_field(o,"minimax_base_url",p->minimax_base_url,sizeof(p->minimax_base_url),"https://api.minimax.cn")
@@ -59,6 +65,17 @@ static bool parse_profile(const char *json, size_t size, uint32_t rev, ib_assist
         && string_field(o,"llm_model",p->llm_model,sizeof(p->llm_model),"deepseek-flash")
         && string_field(o,"voice_id",p->voice_id,sizeof(p->voice_id),"male-qn-qingse")
         && string_field(o,"system_prompt",p->system_prompt,sizeof(p->system_prompt),"你是一个友好的随身AI助理。请用简短自然的中文回答，适合朗读。" );
+    if(ok&&p->schema==2){
+        const cJSON *provider=item(o,"asr_provider");
+        ok=cJSON_IsString(provider)&&!strcmp(provider->valuestring,"volcengine_doubao_realtime")
+            &&string_field(o,"asr_key",p->asr_key,sizeof(p->asr_key),NULL)
+            &&string_field(o,"asr_ws_url",p->asr_ws_url,sizeof(p->asr_ws_url),"wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async")
+            &&string_field(o,"asr_model",p->asr_model,sizeof(p->asr_model),"bigmodel")
+            &&string_field(o,"asr_resource_id",p->asr_resource_id,sizeof(p->asr_resource_id),"volc.seedasr.sauc.duration")
+            &&p->asr_key[0]&&p->asr_resource_id[0]&&wss_endpoint(p->asr_ws_url)&&!strcmp(p->asr_model,"bigmodel");
+    }
+    if(ok&&p->schema==2)for(const char *m=p->asr_model;*m;m++)if(!((*m>='a'&&*m<='z')||(*m>='A'&&*m<='Z')||(*m>='0'&&*m<='9')||*m=='-'||*m=='_'))ok=false;
+    if(ok&&p->schema==2)for(const char *r=p->asr_resource_id;*r;r++)if(!((*r>='a'&&*r<='z')||(*r>='A'&&*r<='Z')||(*r>='0'&&*r<='9')||*r=='-'||*r=='_'||*r=='.'))ok=false;
     p->record_limit_seconds = number(o,"record_limit_seconds",30,30);
     p->max_output_tokens = number(o,"max_output_tokens",512,512);
     p->history_bytes = number(o,"history_bytes",8192,8192);
@@ -137,7 +154,8 @@ esp_err_t ib_assistant_store_init(void){
     }
     return load_profile()?ESP_OK:ESP_ERR_INVALID_STATE;
 }
-bool ib_assistant_store_configured(void){return s_profile.minimax_key[0]&&s_profile.deepseek_key[0];}
+// 旧schema1仍是有效存储，不能因此丢掉同bank宠物；只禁止旧ASR继续联网。
+bool ib_assistant_store_configured(void){return s_profile.schema==2&&s_profile.asr_key[0]&&s_profile.minimax_key[0]&&s_profile.deepseek_key[0];}
 bool ib_assistant_store_usb_provisioned(void){return s_header.usb==1;}
 const ib_assistant_profile_t *ib_assistant_profile(void){return &s_profile;}
 uint32_t ib_assistant_store_revision(bool pet){return pet?s_header.pet_rev:s_header.profile_rev;}

@@ -1,0 +1,250 @@
+{
+  "schema": 1,
+  "provenance": "Synthetic protocol contracts based on official documentation; not a live API capture. Text and identifiers are fictional.",
+  "sources": [
+    "https://docs.volcengine.com/docs/doubao-voice/large-model-streaming-automatic-speech-recognition-api-1?lang=en",
+    "https://docs.volcengine.com/docs/doubao-voice/bidirectional-streaming-automatic-speech-recognition-websocket?lang=zh"
+  ],
+  "notes": [
+    "One frame per WebSocket binary message; all integer fields use big-endian.",
+    "Flags bit0 means a signed sequence field is present; bit1 alone marks the final packet. Current live server also emits positive final sequence +13 with flags3. Never infer completion or reject a frame from the sequence sign.",
+    "Compression 0 is valid and the server follows the client compression. Gzip cases are for implementations that negotiated compression 1.",
+    "Resource/model credentials, API audio, trace IDs, log IDs and private device identity are absent."
+  ],
+  "fixtures": [
+    {
+      "name": "raw_flags0_object",
+      "frame_hex": "11901000000000747b22726573756c74223a7b2274657874223a22e4bda0e5a5bdf09f9982222c227574746572616e636573223a5b7b2274657874223a22e4bda0e5a5bdf09f9982222c2273746172745f74696d65223a302c22656e645f74696d65223a3230302c22646566696e697465223a66616c73657d5d7d7d",
+      "expected": {
+        "valid": true,
+        "terminal": false,
+        "partial": "你好🙂"
+      },
+      "decoded_json": {
+        "result": {
+          "text": "你好🙂",
+          "utterances": [
+            {
+              "text": "你好🙂",
+              "start_time": 0,
+              "end_time": 200,
+              "definite": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "raw_flags1_array",
+      "frame_hex": "1191100000000001000000767b22726573756c74223a5b7b2274657874223a22e4bda0e5a5bdf09f9982222c227574746572616e636573223a5b7b2274657874223a22e4bda0e5a5bdf09f9982222c2273746172745f74696d65223a302c22656e645f74696d65223a3230302c22646566696e697465223a66616c73657d5d7d5d7d",
+      "expected": {
+        "valid": true,
+        "terminal": false,
+        "sequence": 1,
+        "partial": "你好🙂"
+      },
+      "decoded_json": {
+        "result": [
+          {
+            "text": "你好🙂",
+            "utterances": [
+              {
+                "text": "你好🙂",
+                "start_time": 0,
+                "end_time": 200,
+                "definite": false
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "raw_flags2_text_only",
+      "frame_hex": "11921000000000237b22726573756c74223a7b2274657874223a22e4bda0e5a5bdf09f9982e38082227d7d",
+      "expected": {
+        "valid": true,
+        "terminal": true,
+        "text": "你好🙂。"
+      },
+      "decoded_json": {
+        "result": {
+          "text": "你好🙂。"
+        }
+      }
+    },
+    {
+      "name": "raw_flags3_negative_sequence",
+      "frame_hex": "11931000fffffffe000000977b22617564696f5f696e666f223a7b226475726174696f6e223a3230307d2c22726573756c74223a7b2274657874223a22e4bda0e5a5bdf09f9982e38082222c227574746572616e636573223a5b7b2274657874223a22e4bda0e5a5bdf09f9982e38082222c2273746172745f74696d65223a302c22656e645f74696d65223a3230302c22646566696e697465223a747275657d5d7d7d",
+      "expected": {
+        "valid": true,
+        "terminal": true,
+        "sequence": -2,
+        "text": "你好🙂。"
+      },
+      "decoded_json": {
+        "audio_info": {
+          "duration": 200
+        },
+        "result": {
+          "text": "你好🙂。",
+          "utterances": [
+            {
+              "text": "你好🙂。",
+              "start_time": 0,
+              "end_time": 200,
+              "definite": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "gzip_flags3_negative_sequence",
+      "frame_hex": "11931100fffffffe0000008a1f8b08000000000002ffab564a2c4dc9cc8fcfcc4bcb57b2aa564a292d4a2cc9cccf53b2323230a8d5512a4a2d2ecd2901c994a4560069a5277b173c5dbaf7c3fc994d8f1b9a9474944a4b4a528b12f392538b95aca271aa2a2e492c2a892fc9cc4d55b232d0514acd4b817280b6e828a5a4a665e6659600b92545a5a9b5b1b5b500718f278e97000000",
+      "expected": {
+        "valid": true,
+        "terminal": true,
+        "sequence": -2,
+        "text": "你好🙂。",
+        "requires_gzip": true
+      },
+      "decoded_json": {
+        "audio_info": {
+          "duration": 200
+        },
+        "result": {
+          "text": "你好🙂。",
+          "utterances": [
+            {
+              "text": "你好🙂。",
+              "start_time": 0,
+              "end_time": 200,
+              "definite": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "raw_server_error",
+      "frame_hex": "11f0100002aea5410000000c66697874757265206f6e6c79",
+      "expected": {
+        "valid": true,
+        "failure": true,
+        "error_code": 45000001
+      }
+    },
+    {
+      "name": "gzip_server_error",
+      "frame_hex": "11f0110002aea541000000201f8b08000000000002ff4bcbac28292d4a55c8cfcba90400d8f3d0180c000000",
+      "expected": {
+        "valid": true,
+        "failure": true,
+        "error_code": 45000001,
+        "requires_gzip": true
+      }
+    },
+    {
+      "name": "raw_flags3_positive_server_sequence",
+      "frame_hex": "1193100000000002000000977b22617564696f5f696e666f223a7b226475726174696f6e223a3230307d2c22726573756c74223a7b2274657874223a22e4bda0e5a5bdf09f9982e38082222c227574746572616e636573223a5b7b2274657874223a22e4bda0e5a5bdf09f9982e38082222c2273746172745f74696d65223a302c22656e645f74696d65223a3230302c22646566696e697465223a747275657d5d7d7d",
+      "expected": {
+        "valid": true,
+        "terminal": true,
+        "sequence": 2,
+        "text": "你好🙂。"
+      },
+      "note": "Current official parser accepts signed sequence metadata independently of terminal flags; body is synthetic."
+    },
+    {
+      "name": "invalid_json_final",
+      "frame_hex": "11921000000000086e6f74206a736f6e",
+      "expected": {
+        "valid": false,
+        "failure": true,
+        "category": "result_payload"
+      }
+    },
+    {
+      "name": "invalid_utf8_final",
+      "frame_hex": "119210000000000c7b2274657874223a22ff227d",
+      "expected": {
+        "valid": false,
+        "failure": true,
+        "category": "result_payload"
+      }
+    },
+    {
+      "name": "invalid_gzip_final",
+      "frame_hex": "119211000000008a008b08000000000002ffab564a2c4dc9cc8fcfcc4bcb57b2aa564a292d4a2cc9cccf53b2323230a8d5512a4a2d2ecd2901c994a4560069a5277b173c5dbaf7c3fc994d8f1b9a9474944a4b4a528b12f392538b95aca271aa2a2e492c2a892fc9cc4d55b232d0514acd4b817280b6e828a5a4a665e6659600b92545a5a9b5b1b5b500718f278e97000000",
+      "expected": {
+        "valid": false,
+        "failure": true,
+        "category": "gzip"
+      }
+    },
+    {
+      "name": "truncated_payload_final",
+      "frame_hex": "11921000000000977b22617564696f5f696e666f223a7b226475726174696f6e223a3230307d2c22726573756c74223a7b2274657874223a22e4bda0e5a5bdf09f9982e38082222c227574746572616e636573223a5b7b2274657874223a22e4bda0e5a5bdf09f9982e38082222c2273746172745f74696d65223a302c22656e645f74696d65223a3230302c22646566696e697465223a747275657d5d7d",
+      "expected": {
+        "valid": false,
+        "failure": true,
+        "category": "payload_length"
+      }
+    },
+    {
+      "name": "zero_header_size",
+      "frame_hex": "10921000000000977b22617564696f5f696e666f223a7b226475726174696f6e223a3230307d2c22726573756c74223a7b2274657874223a22e4bda0e5a5bdf09f9982e38082222c227574746572616e636573223a5b7b2274657874223a22e4bda0e5a5bdf09f9982e38082222c2273746172745f74696d65223a302c22656e645f74696d65223a3230302c22646566696e697465223a747275657d5d7d7d",
+      "expected": {
+        "valid": false,
+        "failure": true,
+        "category": "header_size"
+      }
+    },
+    {
+      "name": "truncated_sequence",
+      "frame_hex": "11931000ffff",
+      "expected": {
+        "valid": false,
+        "failure": true,
+        "category": "sequence_length"
+      }
+    },
+    {
+      "name": "raw_flags3_positive13_live_header_shape",
+      "frame_hex": "119310000000000d000005e47b22726573756c74223a7b2274657874223a22e59088e68890e6b58be8af95f09f9982e38082227d7d202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020",
+      "expected": {
+        "valid": true,
+        "terminal": true,
+        "sequence": 13,
+        "text": "合成测试🙂。"
+      },
+      "observed_header_shape": {
+        "messageType": 9,
+        "flags": 3,
+        "sequence": 13,
+        "compression": 0,
+        "serialization": 1,
+        "declaredPayloadLength": 1508,
+        "frameByteCount": 1520
+      },
+      "note": "Only numeric header shape was observed live. Payload and trailing JSON whitespace are synthetic; no live response body was retained.",
+      "decoded_json": {
+        "result": {
+          "text": "合成测试🙂。"
+        }
+      }
+    },
+    {
+      "name": "raw_flags1_negative_sequence_not_terminal",
+      "frame_hex": "11911000fffffff3000000227b22726573756c74223a7b2274657874223a22e4b8ade997b4e7bb93e69e9c227d7d",
+      "expected": {
+        "valid": true,
+        "terminal": false,
+        "sequence": -13,
+        "partial": "中间结果"
+      },
+      "note": "Synthetic sign/flag independence contract; not claimed to be an observed live server frame."
+    }
+  ]
+}

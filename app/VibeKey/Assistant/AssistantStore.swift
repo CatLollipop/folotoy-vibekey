@@ -6,6 +6,7 @@ import Observation
     var profile: AssistantProfile
     var minimaxKey: String
     var deepseekKey: String
+    var asrKey: String
     var usePassportForAssistant: Bool { didSet { defaults.set(usePassportForAssistant, forKey: "assistant.passport") } }
     var useGlobalShortcut: Bool { didSet { defaults.set(useGlobalShortcut, forKey: "assistant.shortcut") } }
     private(set) var saveError: String?
@@ -17,16 +18,23 @@ import Observation
         self.defaults = defaults
         usePassportForAssistant = defaults.object(forKey: "assistant.passport") as? Bool ?? true
         useGlobalShortcut = defaults.bool(forKey: "assistant.shortcut")
-        profile = defaults.data(forKey: "assistant.profile").flatMap {
+        var restoredProfile = defaults.data(forKey: "assistant.profile").flatMap {
             try? JSONDecoder().decode(AssistantProfile.self, from: $0)
         } ?? AssistantProfile()
+        restoredProfile.asrResourceID = defaults.string(forKey: "cloud.volcengine.model") ?? restoredProfile.asrResourceID
+        if let savedURL = defaults.string(forKey:"cloud.volcengine.baseURL"), URL(string:savedURL)?.scheme == "wss" {
+            restoredProfile.asrWebSocketURL = savedURL
+        }
+        profile = restoredProfile
         minimaxKey = credentials.value(for: "assistant.minimaxKey") ?? ""
         deepseekKey = credentials.value(for: "assistant.deepseekKey") ?? ""
+        asrKey = credentials.value(for: "cloud.volcengine.apiKey") ?? ""
     }
 
     var secrets: AssistantSecrets {
         .init(minimaxKey: minimaxKey.trimmingCharacters(in: .whitespacesAndNewlines),
-              deepseekKey: deepseekKey.trimmingCharacters(in: .whitespacesAndNewlines))
+              deepseekKey: deepseekKey.trimmingCharacters(in: .whitespacesAndNewlines),
+              asrKey: asrKey.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     @discardableResult func save() -> Bool {
@@ -36,6 +44,9 @@ import Observation
             defaults.set(try JSONEncoder().encode(profile), forKey: "assistant.profile")
             credentials.set(secrets.minimaxKey, for: "assistant.minimaxKey")
             credentials.set(secrets.deepseekKey, for: "assistant.deepseekKey")
+            credentials.set(secrets.asrKey, for: "cloud.volcengine.apiKey")
+            defaults.set(profile.asrResourceID, forKey: "cloud.volcengine.model")
+            defaults.set(profile.asrWebSocketURL, forKey: "cloud.volcengine.baseURL")
             saveError = nil
             return true
         } catch { saveError = error.localizedDescription; return false }

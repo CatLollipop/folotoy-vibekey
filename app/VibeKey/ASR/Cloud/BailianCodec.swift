@@ -9,6 +9,7 @@ nonisolated struct BailianCodec: RealtimeCodec {
     let model: String
     let region: CloudRegion
     let options: ASROptions
+    private let endpointURL: URL?
     let taskID = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
 
     let waitsForReady = true
@@ -17,18 +18,16 @@ nonisolated struct BailianCodec: RealtimeCodec {
 
     private var committedBegins: Set<Int> = []
 
-    init(apiKey: String, model: String, region: CloudRegion, options: ASROptions) {
+    init(apiKey: String, model: String, region: CloudRegion, options: ASROptions, endpointURL: URL? = nil) {
         self.apiKey = apiKey
         self.model = model
         self.region = region
         self.options = options
+        self.endpointURL = endpointURL
     }
 
     var endpoint: URL {
-        switch region {
-        case .mainland: URL(string: "wss://dashscope.aliyuncs.com/api-ws/v1/inference")!
-        case .international: URL(string: "wss://dashscope-intl.aliyuncs.com/api-ws/v1/inference")!
-        }
+        endpointURL ?? URL(string: BailianEndpoint.defaultURL(region: region.rawValue))!
     }
 
     func makeRequest() throws -> URLRequest {

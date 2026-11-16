@@ -44,6 +44,8 @@ import Observation
         perform { [self] in
             let capability = try await request([], op: "capabilities")
             guard capability.schema == 1 else { throw AssistantError.upgradeRequired }
+            guard capability.profileSchema >= profile.schema, capability.asrProvider == "doubao-realtime",
+                  capability.supportsTranscript else { throw AssistantError.upgradeRequired }
             supportsAssistant = true
             let data = try profile.deviceData(secrets: secrets)
             try await upload(data: data, kind: "profile", revision: profile.revision, maximum: capability.maximum)
@@ -54,14 +56,26 @@ import Observation
 
     /// 宠物外观包独立于云凭据包；内置 Aora 资源版本由固件校验。
     func syncPet(_ data: Data, revision: UInt32 = 1) {
+        perform { [self] in try await transferPet(data, revision:revision) }
+    }
+
+    /// 导出和传输共享同一busy/取消/错误生命周期，两个设置入口只发同步意图。
+    func syncPet(controller:PetController) {
         perform { [self] in
-            let capability = try await request([], op: "capabilities")
-            guard capability.schema == 1 else { throw AssistantError.upgradeRequired }
-            guard capability.petFormat == "aora-bundle-v2" else { throw AssistantError.upgradeRequired }
-            try await upload(data: data, kind: "pet", revision: revision, maximum: capability.petMaximum)
-            receive(try await request([], op: "status"))
-            guard appliedPetRevision == revision else { throw AssistantError.deliveryUnknown }
+            let revision = UInt32(clamping:Int(Date().timeIntervalSince1970))
+            let data = try await controller.makeDeviceConfiguration(revision:revision)
+            try Task.checkCancellation()
+            try await transferPet(data,revision:revision)
         }
+    }
+
+    private func transferPet(_ data:Data, revision:UInt32) async throws {
+        let capability = try await request([], op:"capabilities")
+        guard capability.schema == 1 else { throw AssistantError.upgradeRequired }
+        guard capability.petFormat == "aora-bundle-v2" else { throw AssistantError.upgradeRequired }
+        try await upload(data:data,kind:"pet",revision:revision,maximum:capability.petMaximum)
+        receive(try await request([],op:"status"))
+        guard appliedPetRevision == revision else { throw AssistantError.deliveryUnknown }
     }
 
     func setMode(_ value: String) { perform { [self] in

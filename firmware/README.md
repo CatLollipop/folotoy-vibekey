@@ -1,6 +1,6 @@
 # VibeKey Passport 固件
 
-FoloToy AI Passport(ESP32-C3、8 MB Flash、ST7789 240×320、三键单 ADC、ES8311 麦克风/扬声器、CW2017 电量计)上的 VibeKey 配套固件。设备支持相伴和独立两种模式：相伴模式上报按键、状态与麦克风音频；独立模式在 Mac 关闭后直接完成 MiniMax ASR → DeepSeek → MiniMax TTS。默认相伴，独立模式须先经USB同步云端凭据并保存Wi-Fi。模式切换回执restarting=1后安全重启，独立启动在RF初始化前只启Wi-Fi、不启LAN TLS；未配网返回wifi_required。
+FoloToy AI Passport(ESP32-C3、8 MB Flash、ST7789 240×320、三键单 ADC、ES8311 麦克风/扬声器、CW2017 电量计)上的 VibeKey 配套固件。设备支持相伴和独立两种模式：相伴模式上报按键、状态与麦克风音频；独立模式在 Mac 关闭后直接完成 豆包实时ASR → DeepSeek → MiniMax TTS。默认相伴，独立模式须先经USB同步云端凭据并保存Wi-Fi。模式切换回执restarting=1后安全重启，独立启动在RF初始化前只启Wi-Fi、不启LAN TLS；未配网返回wifi_required。
 
 当前分支使用 Aora Bot v0.2.0 的 Dot preset，在设备播放24×24核心点阵及装饰动画；宠物通过44个官方状态联动会话。设备使用通用C运动/栅格器，通过≤128KiB的已验证AORAPET2资产支持所选角色/面部/44态表情，Flash mmap零拷贝读取，不加载SVG、旧emotion-ball JSON或远程脚本。列表/字幕/用量页保留专用界面。几何来源、许可和数值比对见 `../docs/pet-runtime.md`。
 
@@ -31,6 +31,10 @@ idf.py build
 tools/validate.sh          # 全部
 tools/validate.sh --host   # 只跑主机测试(不需要 ESP-IDF)
 tools/test-pet.sh          # Aora几何/运动golden与内存检查
+tools/test-ui-labels.sh    # 中文状态逐字形/两行尺寸检查（需已有LVGL组件/sdkconfig）
+tools/test-ui-transcript.sh # generation/真实快照替换/final/UTF-8尾部ASan检查
+tools/test-display-ui.sh   # 模式菜单优先与字幕冻结的真实LVGL像素回归
+tools/test-tts-player.sh   # 生产TTS player的ASan/UBSan、背压/EOF/取消/资源清理
 tools/test-assistant-store.sh # 双bank NOR事务；需要已激活IDF的cJSON源码
 ```
 
@@ -63,7 +67,7 @@ firmware/
 │   ├── ib_audio.*         麦克风上行(IMA ADPCM)+ 本地合成提示音
 │   ├── ib_assistant.*     独立模式、PTT/取消、双槽采音、同步协议
 │   ├── ib_assistant_store.* profile/pet双bank、CRC/字段验证、原子提交
-│   ├── ib_assistant_cloud.* MiniMax ASR、DeepSeek SSE、MiniMax TTS，单公网TLS
+│   ├── ib_assistant_cloud.* DeepSeek SSE、MiniMax TTS（豆包实时ASR见ib_asr_realtime），单公网TLS
 │   ├── ib_cloud_stream.*  流式hex PCM、WAV头、UTF-8边界、静音门限
 │   ├── ib_pet*            Aora资产校验/读取、44态motion与24×24栅格器
 │   ├── ib_adpcm.*         IMA ADPCM 编解码(纯逻辑)
@@ -124,3 +128,16 @@ C3无PSRAM。16 KiB采音环只在录音时分配，转写/回复缓冲分阶段
 独立模式进一步不启mDNS和闲置的ADPCM/提示音两个任务；LCD双DMA缓冲各4行，显示颜色/分辨率不变。宠物缓存直接存RGB565，body mask与float coverage错峰复用，几何仍按原精度计算。公网握手完成并验证后释放peer证书链；LLM/TTS请求使用同一JSON序列化器先计Content-Length再以256B输出，不构建完整请求树/副本。历史在成功轮次后按实际需要增长，TLS cleanup后才扩容。LVGL池仍40KiB，依据真机lvgl_peak再决定是否缩小。
 
 点阵draw按当前DMA clip先裁可见行/列；frame timer在完整REFR_READY后再恢复，避免追帧饥饿，ESP-IDF port解锁后会实际delay。fps为目标上限；保留watchdog并通过真实C3启动/长时间交互验收，不能仅凭host预览判断CPU调度。
+
+## 中文状态提示（0.3.1）
+
+独立和电脑助手的宠物caption使用中文语义阶段，区分识别、回复生成与朗读；错误按机器码显示中文原因。离线连接提示使用typed枚举，保留时钟/日期和用户会话名称。复用现有OFL Noto Sans SC字库，新增字体位图0B；109文案/201独立字符实际字形与两行尺寸检查通过。`SCALE=3 tools/ui-preview/run.sh chinese`生成31张中文专用场景；完整调用链、presentation owner和验证边界见[中文状态说明](../docs/firmware-chinese-status.md)。
+
+## 本地模式/边缘提示与实时转写接口
+
+0.3.2候选提供长上键本地运行模式菜单，AI助理/连接电脑/返回三行，当前check与选择分离；菜单缓存迟到Mac页面与通知，退出后恢复最新值。左边显示硬件电源位置，右边短/长按glyph随模式/阶段更新，不新增字体/位图；交互与验证见[device-local-mode.md](../docs/device-local-mode.md)。
+
+0.4字幕接口只接受实际ASR快照，generation隔离、final冻结、错误/取消优先，有限UTF-8末两行；无真实输入不显示。固定文字host夹具不代表已识别语音，实际豆包实时WSS和Mac接入合同见[transcript-display.md](../docs/transcript-display.md)。
+
+
+实时ASR的WSS传输使用官方 `espressif/esp_websocket_client@1.8.0`（Apache-2.0；[来源提交](https://github.com/espressif/esp-protocols/tree/70bf122fc8bc74622dcf7e15233b5b2af9088df5/components/esp_websocket_client)），由 `dependencies.lock` 固定版本与校验。当前识别为豆包 binary 协议，MiniMax 仅 TTS；供应商字段、帧/事件和验证边界见 [asr-realtime.md](../docs/asr-realtime.md)。

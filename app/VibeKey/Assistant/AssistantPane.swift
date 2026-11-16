@@ -10,8 +10,6 @@ struct AssistantPane: View {
     @State private var testing = false
     @State private var testResult: String?
     @State private var holdingRecord = false
-    @State private var exportingPet = false
-    @State private var petError: String?
 
     var body: some View {
         @Bindable var store = app.assistantStore
@@ -110,26 +108,14 @@ struct AssistantPane: View {
                         Button("电脑助手") { sync.setMode("companion") }
                     }.disabled(sync.busy || app.deviceLink.connection == .disconnected)
                     HStack {
-                        Button("同步宠物设置") {
-                            let revision = UInt32(clamping: Int(Date().timeIntervalSince1970))
-                            exportingPet = true; petError = nil
-                            Task {
-                                defer { exportingPet = false }
-                                do {
-                                    let data = try await app.pet.makeDeviceConfiguration(revision: revision)
-                                    sync.syncPet(data, revision: revision)
-                                } catch { petError = error.localizedDescription }
-                            }
-                        }
-                            .disabled(exportingPet || sync.busy || app.deviceLink.connection == .disconnected)
+                        Button("同步宠物设置") { sync.syncPet(controller:app.pet) }
+                            .disabled(sync.busy || app.deviceLink.connection == .disconnected)
                         Button("清除设备云凭据", role: .destructive) { sync.clearCredentials() }
                             .disabled(sync.busy || app.deviceLink.connection == .disconnected)
                         if sync.busy { Button("取消同步") { sync.cancel() } }
                     }
                     if sync.busy { ProgressView(value: sync.progress) }
                     if sync.restarting { Hint("设备正在重启，等待重新连接并确认模式…") }
-                    if exportingPet { ProgressView("正在生成设备宠物…") }
-                    if let petError { Text(petError).foregroundStyle(.red) }
                     if let error = sync.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
                 }
             }

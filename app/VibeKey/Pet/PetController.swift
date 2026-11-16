@@ -24,7 +24,9 @@ final class PetController {
         loadingCatalog = true
         defer { loadingCatalog = false }
         do {
-            catalog = try await ensureRenderer().catalog()
+            let renderer = ensureRenderer()
+            if catalogError != nil { renderer.reload() }
+            catalog = try await renderer.catalog()
             // 固定目录升级或偏好损坏时恢复有效值，避免UI选择与实际导出角色不一致。
             if !catalog.casts.contains(where: { $0.id == settings.castID }) { chooseCast("dot") }
             if !catalog.faces.contains(where: { $0.id == settings.faceID }) {
@@ -33,6 +35,7 @@ final class PetController {
             if !catalog.colors.contains(where: { $0.id == settings.colorID }) {
                 settings.colorID = catalog.casts.first(where: { $0.id == settings.castID })?.color ?? "cream"
             }
+            if !(catalog.styles ?? []).contains(where: { $0.id == settings.desktopLookID }) { settings.desktopLookID = "vector/solid" }
             catalogError = nil
         } catch { catalogError = error.localizedDescription }
     }
@@ -48,6 +51,10 @@ final class PetController {
         settings.castID = choice.id
         settings.faceID = choice.face
         settings.colorID = choice.color
+    }
+    func chooseStyle(_ id: String) {
+        guard (catalog.styles ?? []).contains(where: { $0.id == id }) else { return }
+        settings.desktopLookID = id
     }
 
     private func ensureRenderer() -> PetWebRenderer {
@@ -137,6 +144,7 @@ final class PetController {
             _ = settings.enabled; _ = settings.size; _ = settings.alwaysOnTop
             _ = settings.clickThrough; _ = settings.reducedMotion
             _ = settings.castID; _ = settings.faceID; _ = settings.colorID
+            _ = settings.desktopLookID
             _ = settings.followConversation; _ = settings.manualState
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in

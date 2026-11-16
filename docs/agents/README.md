@@ -61,3 +61,10 @@ Beta字段以运行版本schema为准。WS订阅要等匹配request ID的成功�
 - OMP拒绝手动和已经修改的草稿，真实回执后才清空仍相同的输入。
 
 另运行 `app/scripts/test-assistant-core.sh` 验证云LLM取消隔离、非成功finish_reason不朗读、关闭朗读仍取消旧操作，以及原应用终态/投递回执/最终回复的先后序：终态早于applied暂存，完成无正文也结束等待，早到正文优先，已播放的最终回复不会被随后completed/stopped/error截断。硬件submit/stop绑定按键当时的原会话身份，异步执行前复核，迟到失败不污染新会话。以上均不能代替实际App版本、AX授权、原插件加载及付费服务和设备的实测。
+
+
+### Mailbox测试就绪条件
+
+`AgentCoreTests`的邮箱原进程fixture使用一次性就绪屏障：peer发布registration后，必须能通过生产`AgentMailbox.registrations`读取并得到完整匹配的会话，桌面正例才开始command。peer启动失败会通过屏障直接抛出，不依赖增加固定sleep。accepted与applied之间的160ms是刻意跨过生产80ms轮询以检验投递语义，仍不等于启动同步。
+
+每个CLI核心case都有独立错误归属；Mailbox正例若在就绪后仍sessionChanged，会报告文件存在/解码/可见注册/身份匹配/租约age计数。不会自动重试、吞错或放宽真实注册安全校验。该fixture只用临时目录和专用文本，不访问私人会话。

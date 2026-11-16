@@ -10,7 +10,7 @@
     state: 'idle', seed: 'passport-dot', entryEffects: true, antics: true,
   });
   let current = 'idle';
-  let look = 'dot/capsule/cream';
+  let look = 'dot/capsule/cream/vector/solid';
   window.petHost = Object.freeze({
     apply(state, reducedMotion, paused, appearance) {
       if (!Aora.isCharacterState(state)) state = 'idle';
@@ -18,17 +18,20 @@
       const selected=Aora.castMember(appearance?.castId)||preset;
       const face=Aora.isFaceStyle(appearance?.faceId)?appearance.faceId:(selected.face||'cute');
       const color=Aora.ALL_COLOR_IDS.includes(appearance?.colorId)?appearance.colorId:selected.color;
-      const key=[selected.id,face,color].join('/');
+      const style=Aora.hasStyle(appearance?.style)?appearance.style:'vector';
+      const variant=Aora.acceptsVariant(Aora.getStyle(style),appearance?.variant)?appearance.variant:Aora.getStyle(style).defaultVariant;
+      const key=[selected.id,face,color,style,variant].join('/');
       if(key!==look){
         for(const key of [...host.style])if(key.startsWith('--aora-'))host.style.removeProperty(key);
         for(const [key,value]of Object.entries(Aora.getInkVars(color)))host.style.setProperty(key,value);
-        pet.update({shape:selected.shape,face,nose:selected.nose||Aora.autoNoseForKey('passport-pet')});look=key;
+        pet.update({shape:selected.shape,face,style,variant,nose:selected.nose||Aora.autoNoseForKey('passport-pet')});look=key;
       }
       pet.update({state, reducedMotion: !!reducedMotion, paused: !!paused});
       if (reducedMotion) pet.settle();
       host.setAttribute('data-state', current);
       host.setAttribute('data-cast',selected.id);
       host.setAttribute('data-face',face);
+      host.setAttribute('data-style',style);host.setAttribute('data-variant',variant);
     },
     exportBundle(options){
       const bytes=AoraPetExport(options);let text='';

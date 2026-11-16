@@ -1,10 +1,13 @@
-// MiniMax 文件 ASR / DeepSeek SSE / MiniMax PCM SSE。请求之间 cleanup，最多一个公网TLS。
+// DeepSeek SSE / MiniMax PCM SSE；实时ASR由独立WSS模块负责。请求之间 cleanup，最多一个公网TLS。
 #include "ib_assistant_cloud.h"
 #include "ib_cloud_stream.h"
+#include "ib_tts_player.h"
 #include "bsp_audio.h"
 #include "cJSON.h"
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
+#include "esp_heap_caps.h"
+#include "esp_log.h"
 #include "esp_netif_sntp.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -50,7 +53,7 @@ static void drop_oldest(void){
     for(unsigned i=1;i<s_turn_count;i++){s_turns[i-1]=s_turns[i];s_turns[i-1].start-=n;s_turns[i-1].user-=n;s_turns[i-1].end-=n;}
     s_turn_count--;
 }
-static bool clock_ready(ib_cloud_cancel_cb cancel){
+bool ib_assistant_cloud_clock_ready(ib_cloud_cancel_cb cancel){
     if(time(NULL)>1735689600)return true;
     esp_sntp_config_t cfg=ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
     if(esp_netif_sntp_init(&cfg)!=ESP_OK)return false;
@@ -100,37 +103,6 @@ static const char *post_stream(esp_http_client_handle_t h,body_fn produce,const 
     http_writer_t out={h,cancel};ib_json_writer_t writer={.output=http_write,.context=&out};
     if(!produce(&writer,context)||writer.total!=count.total)return cancel()?"cancelled":"upload_failed";
     return headers(h);
-}
-const char *ib_assistant_cloud_asr(const ib_assistant_profile_t *p,const esp_partition_t *part,size_t offset,size_t n,char *text,size_t cap,ib_cloud_cancel_cb cancel){
-    text[0]=0;if(!clock_ready(cancel))return cancel()?"cancelled":"clock_sync_failed";
-    char endpoint[320];if(!url(endpoint,sizeof(endpoint),p->minimax_base_url,"/v1/speech_to_text"))return "invalid_endpoint";
-    esp_http_client_handle_t h=client(endpoint,p->minimax_key);if(!h)return "out_of_memory";
-    const char *prefix="--vibekey-assistant\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nasr-1.0\r\n--vibekey-assistant\r\nContent-Disposition: form-data; name=\"response_format\"\r\n\r\njson\r\n--vibekey-assistant\r\nContent-Disposition: form-data; name=\"file\"; filename=\"speech.wav\"\r\nContent-Type: audio/wav\r\n\r\n";
-    const char *suffix="\r\n--vibekey-assistant--\r\n";
-    esp_http_client_set_header(h,"Content-Type","multipart/form-data; boundary=vibekey-assistant");
-    uint8_t wav[44],bytes[1024];ib_wav_header(wav,n);const char *error=NULL;
-    if(esp_http_client_open(h,strlen(prefix)+44+n+strlen(suffix))!=ESP_OK){error="connection_failed";goto done;}
-    esp_http_client_set_timeout_ms(h,15000);
-    if(!write_all(h,prefix,strlen(prefix),cancel)||!write_all(h,wav,44,cancel)){error="upload_failed";goto done;}
-    for(size_t pos=0;pos<n;pos+=sizeof(bytes)){
-        size_t take=n-pos<sizeof(bytes)?n-pos:sizeof(bytes);
-        if(cancel()){error="cancelled";goto done;}
-        if(esp_partition_read(part,offset+pos,bytes,take)!=ESP_OK||!write_all(h,bytes,take,cancel)){error="upload_failed";goto done;}
-    }
-    if(!write_all(h,suffix,strlen(suffix),cancel)){error="upload_failed";goto done;}
-    error=headers(h);if(error)goto done;
-    // ASR响应上限固定，超过上限明确失败，不静默截断用户输入。
-    char *response=malloc(8192);if(!response){error="out_of_memory";goto done;}
-    size_t used=0;int r=0;int64_t deadline=esp_timer_get_time()+60*INT64_C(1000000);
-    while(!cancel()&&(r=read_interruptible(h,response+used,8191-used,cancel,deadline))>0){used+=r;if(used==8191){error="transcript_too_large";break;}}
-    response[used]=0;
-    if(cancel())error="cancelled";else if(r<0)error="network_error";
-    if(!error){cJSON *o=cJSON_Parse(response);cJSON *v=o?cJSON_GetObjectItemCaseSensitive(o,"text"):NULL;
-        if(!cJSON_IsString(v)||!v->valuestring[0])error="no_speech";
-        else if(strlen(v->valuestring)>=cap)error="transcript_too_large";else strcpy(text,v->valuestring);
-        cJSON_Delete(o);}
-    memset(response,0,8192);free(response);
-done:cleanup(h);return cancel()?"cancelled":error;
 }
 typedef struct {const ib_assistant_profile_t *profile;const char *text;} request_t;
 static bool write_message(ib_json_writer_t *w,const char *role,const char *content){
@@ -196,25 +168,39 @@ done:if(h)cleanup(h);return cancel()?"cancelled":error;
 typedef struct {ib_cloud_cancel_cb cancel;bool odd;uint8_t first;size_t samples;} pcm_context_t;
 static bool pcm_output(const uint8_t *bytes,size_t n,void *ctx){
     pcm_context_t *s=ctx;if(s->cancel())return false;
-    if(s->odd&&n){uint8_t pair[2]={s->first,*bytes++};if(bsp_audio_write(pair,2)!=ESP_OK)return false;s->samples++;n--;s->odd=false;}
-    size_t even=n&~(size_t)1;if(even&&bsp_audio_write(bytes,even)!=ESP_OK)return false;s->samples+=even/2;
+    if(s->odd&&n){uint8_t pair[2]={s->first,*bytes++};if(!ib_tts_player_push(pair,2))return false;s->samples++;n--;s->odd=false;}
+    size_t even=n&~(size_t)1;if(even&&!ib_tts_player_push(bytes,even))return false;s->samples+=even/2;
     if(n!=even){s->first=bytes[even];s->odd=true;}return true;
 }
 const char *ib_assistant_cloud_tts(const ib_assistant_profile_t *p,const char *text,ib_cloud_cancel_cb cancel){
     char endpoint[320];if(!url(endpoint,sizeof(endpoint),p->minimax_base_url,"/v1/t2a_v2"))return "invalid_endpoint";
     esp_http_client_handle_t h=client(endpoint,p->minimax_key);if(!h)return "out_of_memory";
+    // 失败诊断仅含数值/稳定类别，绝不记录密钥、音频、trace或对话正文。
+    int last_read=0,tls_error=0,tls_flags=0,http_errno=0;
+    size_t failure_free=0,failure_largest=0,frame_count=0,metadata_bytes=0,audio_bytes=0;
+    ib_audio_json_error_t json_error=IB_AUDIO_JSON_OK;
+    const char *stage="request";
     request_t request={p,text};const char *error=post_stream(h,tts_body,&request,cancel);
+    if(error)goto done;
     ib_audio_json_t *filter=malloc(sizeof(*filter));if(!filter){error="out_of_memory";goto done;}
+    stage="player_start";error=ib_tts_player_start(cancel);if(error){free(filter);goto done;}
     pcm_context_t pcm={.cancel=cancel};ib_audio_json_init(filter,pcm_output,&pcm);
     char prefix[6]={0};size_t prefix_n=0;bool is_data=false,finished=false;uint8_t bytes[512];int64_t start=esp_timer_get_time();
     while(!error&&!finished&&!cancel()){
         if(esp_timer_get_time()-start>180*INT64_C(1000000)){error="playback_timeout";break;}
-        int n=read_interruptible(h,(char *)bytes,sizeof(bytes),cancel,start+180*INT64_C(1000000));if(n<=0){if(n<0)error="network_error";break;}
-        for(int j=0;j<n&&!error;j++){
+        int64_t waiting=esp_timer_get_time();
+        stage="read";
+        int n=read_interruptible(h,(char *)bytes,sizeof(bytes),cancel,start+180*INT64_C(1000000));last_read=n;
+        ib_tts_player_network_wait((esp_timer_get_time()-waiting)/1000);if(n<=0){if(n<0)error="network_error";break;}
+        // 终态后不能再解析同一次read里的尾帧，否则成功会被随后data/DONE改成解析错误。
+        stage="json_feed";
+        for(int j=0;j<n&&!error&&!finished;j++){
             char c=bytes[j];if(c=='\r')continue;
             if(c=='\n'){
                 if(is_data&&filter->used){
+                    stage="json_finish";
                     if(!ib_audio_json_finish(filter)){error="invalid_audio";break;}
+                    stage="event";frame_count++;
                     cJSON *event=cJSON_Parse(filter->metadata),*base=event?cJSON_GetObjectItemCaseSensitive(event,"base_resp"):NULL,*code=base?cJSON_GetObjectItemCaseSensitive(base,"status_code"):NULL;
                     if(!event||(cJSON_IsNumber(code)&&code->valueint!=0))error="synthesis_failed";
                     cJSON *data=event?cJSON_GetObjectItemCaseSensitive(event,"data"):NULL,*status=data?cJSON_GetObjectItemCaseSensitive(data,"status"):NULL;
@@ -224,10 +210,27 @@ const char *ib_assistant_cloud_tts(const ib_assistant_profile_t *p,const char *t
                 prefix_n=0;is_data=false;ib_audio_json_init(filter,pcm_output,&pcm);continue;
             }
             if(prefix_n<5){prefix[prefix_n++]=c;if(prefix_n==5)is_data=!memcmp(prefix,"data:",5);continue;}
-            if(is_data&&!ib_audio_json_feed(filter,c))error=cancel()?"cancelled":"invalid_audio";
+            if(is_data){stage="json_feed";if(!ib_audio_json_feed(filter,c))error=cancel()?"cancelled":"invalid_audio";}
         }
     }
-    if(!error&&(!finished||pcm.odd||!pcm.samples))error="incomplete_audio";
+    if(!error&&(!finished||pcm.odd||!pcm.samples)){stage="incomplete";error="incomplete_audio";}
+    if(error){
+        failure_free=heap_caps_get_free_size(MALLOC_CAP_8BIT);failure_largest=heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+        json_error=filter->error;metadata_bytes=filter->used;audio_bytes=filter->audio_bytes;
+        http_errno=esp_http_client_get_errno(h);esp_http_client_get_and_clear_last_tls_error(h,&tls_error,&tls_flags);
+    }
     free(filter);
-done:cleanup(h);return cancel()?"cancelled":error;
+    cleanup(h);h=NULL;
+    const char *playback_error=ib_tts_player_finish(!error&&!cancel());
+    if(playback_error&&(!error||!strcmp(error,"invalid_audio"))){stage="playback";error=playback_error;}
+done:
+    if(error&&!cancel()){
+        if(!failure_free){failure_free=heap_caps_get_free_size(MALLOC_CAP_8BIT);failure_largest=heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);}
+        if(h){http_errno=esp_http_client_get_errno(h);esp_http_client_get_and_clear_last_tls_error(h,&tls_error,&tls_flags);}
+        ESP_LOGW("ib_tts","failed=%s stage=%s read=%d errno=%d tls=%d flags=%d free=%u largest=%u frames=%u json=%d meta=%u audio=%u",
+            error,stage,last_read,http_errno,tls_error,tls_flags,(unsigned)failure_free,(unsigned)failure_largest,
+            (unsigned)frame_count,(int)json_error,(unsigned)metadata_bytes,(unsigned)audio_bytes);
+    }
+    if(h)cleanup(h);
+    return cancel()?"cancelled":error;
 }

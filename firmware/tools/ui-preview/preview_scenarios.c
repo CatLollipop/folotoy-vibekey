@@ -98,10 +98,10 @@ int preview_run_scenarios(const char *out_dir, int scale, const char *filter)
     ib_ui_set_link(IB_UI_LINK_USB, false);
     ib_ui_set_battery(87, false);
     ib_ui_set_clock("23:41", "THU 10/15");
-    ib_ui_set_offline_hint("PRESS OK TO RECONNECT");
+    ib_ui_set_connection_hint(IB_UI_CONN_RECONNECT);
     preview_advance(1500);
     shot("offline_clock");
-    ib_ui_set_offline_hint("CONNECTING...");
+    ib_ui_set_connection_hint(IB_UI_CONN_CONNECTING);
     preview_advance(200);
     shot("offline_connecting");
 
@@ -382,18 +382,18 @@ int preview_run_scenarios(const char *out_dir, int scale, const char *filter)
     ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");
     keys(IB_ICON_NONE,IB_ICON_NONE,IB_ICON_MIC);
     static const char *const pet_states[]={"idle","listening","thinking","composing","celebrate","alerting","sleeping"};
-    static const char *const pet_labels[]={"Hold OK to talk","Listening...","Thinking...","Replying...","Done","Cloud connection failed","Sleeping"};
+    static const ib_ui_assistant_phase_t pet_phases[]={IB_UI_ASSIST_IDLE,IB_UI_ASSIST_LISTENING,IB_UI_ASSIST_THINKING,IB_UI_ASSIST_REPLYING,IB_UI_ASSIST_DONE,IB_UI_ASSIST_ERROR,IB_UI_ASSIST_COUNT};
     for(unsigned i=0;i<sizeof(pet_states)/sizeof(pet_states[0]);i++){
-        ib_ui_pet_state(pet_states[i],pet_labels[i],true);
+        ib_ui_pet_assistant_state(pet_states[i],pet_phases[i],true,i==5?"connection_failed":NULL);
         preview_advance(i==4?170:1200);
         char name[80];snprintf(name,sizeof(name),"aora_standalone_%s",pet_states[i]);shot(name);
     }
-    ib_ui_pet_state("idle","Hold OK to talk",true);
+    ib_ui_pet_assistant_state("idle",IB_UI_ASSIST_IDLE,true,NULL);
     preview_advance(900);
     ib_ui_show(IB_UI_LIST,IB_UI_MODE_DICT,"");
     preview_advance(300);
     shot("aora_standalone_navigation_overlay");
-    ib_ui_pet_state("idle","Desktop connected",false);
+    ib_ui_pet_assistant_state("idle",IB_UI_ASSIST_IDLE,false,NULL);
     preview_advance(300);
     shot("aora_desktop_navigation_keeps_list");
 
@@ -408,7 +408,7 @@ int preview_run_scenarios(const char *out_dir, int scale, const char *filter)
             fclose(f);free(bundle);s_failures++;continue;
         }
         fclose(f);
-        ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");ib_ui_pet_state("happy","Selected pet · offline ready",true);preview_advance(900);
+        ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");ib_ui_pet_assistant_state("happy",IB_UI_ASSIST_DONE,true,NULL);preview_advance(900);
         char name[96];snprintf(name,sizeof(name),"aora_selected_%s",assets[i]);shot(name);
         ib_ui_show(IB_UI_OFFLINE,IB_UI_MODE_DICT,"");preview_advance(1100);
         snprintf(name,sizeof(name),"aora_offline_%s",assets[i]);shot(name);
@@ -416,6 +416,77 @@ int preview_run_scenarios(const char *out_dir, int scale, const char *filter)
         if(!ib_ui_pet_load(NULL,0))s_failures++;
         free(bundle);
     }
+
+    // 中文业务状态/错误/离线提示：同一真实UI接口与OFL字体，不模拟绘制文字。
+    static const char *const status_names[]={"idle","preparing","listening","transcribing","thinking","replying","done","error","stopped","speaking"};
+    static const char *const status_pets[]={"idle","loading","listening","uploading","thinking","composing","celebrate","alerting","powering-down","humming"};
+    ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");
+    for(unsigned i=0;i<IB_UI_ASSIST_COUNT;i++){
+        ib_ui_set_assistant_key_hints(true,(ib_ui_assistant_phase_t)i);
+        ib_ui_pet_assistant_state(status_pets[i],(ib_ui_assistant_phase_t)i,true,NULL);preview_advance(420);
+        char name[96];snprintf(name,sizeof(name),"chinese_cloud_%s",status_names[i]);shot(name);
+    }
+    ib_ui_pet_assistant_state("idle",IB_UI_ASSIST_IDLE,false,NULL);preview_advance(400);shot("chinese_desktop_assistant");
+    ib_ui_pet_assistant_state("alerting",IB_UI_ASSIST_ERROR,false,"check_mac");preview_advance(400);shot("chinese_desktop_check_mac");
+    ib_ui_pet_assistant_state("alerting",IB_UI_ASSIST_ERROR,true,"authentication_failed");preview_advance(400);shot("chinese_cloud_auth_error");
+    ib_ui_pet_assistant_state("alerting",IB_UI_ASSIST_ERROR,true,"recording_overflow");preview_advance(400);shot("chinese_cloud_recording_error");
+    ib_ui_pet_assistant_state("working",IB_UI_ASSIST_COUNT,false,NULL);preview_advance(400);shot("chinese_canonical_working");
+    ib_ui_pet_assistant_state("searching",IB_UI_ASSIST_COUNT,false,NULL);preview_advance(400);shot("chinese_canonical_searching");
+    ib_ui_show(IB_UI_OFFLINE,IB_UI_MODE_DICT,"");
+    for(unsigned i=0;i<IB_UI_CONN_COUNT;i++){
+        ib_ui_set_connection_hint((ib_ui_connection_hint_t)i);preview_advance(200);
+        char name[96];snprintf(name,sizeof(name),"chinese_offline_%02u",i);shot(name);
+    }
+
+    // 本地运行模式菜单：当前check与高亮选择独立，网络迟到状态/数据不能覆盖。
+    ib_ui_agent_hide();ib_ui_set_assistant_key_hints(false,IB_UI_ASSIST_IDLE);
+    ib_ui_run_mode_menu(false,0,IB_UI_RUN_MODE_NOTICE_NONE);preview_advance(600);shot("run_mode_companion_select_assistant");
+    ib_ui_list_t late={0};snprintf(late.title,sizeof(late.title),"LATEST SESSION");late.rows=late.n=1;
+    snprintf(late.items[0],sizeof(late.items[0]),"最新会话");
+    ib_ui_set_list(&late);ib_ui_show(IB_UI_REC,IB_UI_MODE_TR,"LATE MAC STATE");
+    keys(IB_ICON_SEND,IB_ICON_STOP,IB_ICON_MIC);
+    ib_ui_set_caption("真正的会话正文保持原样","Original session text is preserved","Test App",true);
+    ib_ui_agent_show(IB_UI_AGENT_INPUT,"LATE AGENT");
+    preview_advance(600);shot("run_mode_survives_remote_updates");
+    for(unsigned i=IB_UI_RUN_MODE_NOTICE_BUSY;i<IB_UI_RUN_MODE_NOTICE_COUNT;i++){
+        ib_ui_run_mode_menu(false,0,(ib_ui_run_mode_notice_t)i);preview_advance(300);
+        char name[96];snprintf(name,sizeof(name),"run_mode_notice_%02u",i);shot(name);
+    }
+    ib_ui_run_mode_menu(true,1,IB_UI_RUN_MODE_NOTICE_NONE);preview_advance(400);shot("run_mode_assistant_select_computer");
+    ib_ui_run_mode_menu(true,2,IB_UI_RUN_MODE_NOTICE_NONE);preview_advance(400);shot("run_mode_return_selected");
+    ib_ui_run_mode_menu_hide();ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");preview_advance(600);shot("run_mode_closed_latest_agent");
+    ib_ui_agent_hide();preview_advance(300);ib_ui_show(IB_UI_LIST,IB_UI_MODE_DICT,"");preview_advance(400);shot("run_mode_closed_latest_list");
+    ib_ui_show(IB_UI_SUB,IB_UI_MODE_SUB,"");preview_advance(400);shot("run_mode_closed_latest_caption");
+    ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");
+    ib_ui_set_assistant_key_hints(true,IB_UI_ASSIST_IDLE);ib_ui_pet_assistant_state("idle",IB_UI_ASSIST_IDLE,true,NULL);preview_advance(500);shot("edge_hints_standalone_idle");
+    ib_ui_set_assistant_key_hints(true,IB_UI_ASSIST_LISTENING);ib_ui_pet_assistant_state("listening",IB_UI_ASSIST_LISTENING,true,NULL);preview_advance(500);shot("edge_hints_recording");
+    ib_ui_set_assistant_key_hints(true,IB_UI_ASSIST_SPEAKING);ib_ui_pet_assistant_state("humming",IB_UI_ASSIST_SPEAKING,true,NULL);preview_advance(500);shot("edge_hints_playback");
+    ib_ui_set_assistant_key_hints(false,IB_UI_ASSIST_IDLE);keys(IB_ICON_SEND,IB_ICON_STOP,IB_ICON_MIC);
+    ib_ui_pet_assistant_state("idle",IB_UI_ASSIST_IDLE,false,NULL);preview_advance(500);shot("edge_hints_companion_idle");
+    ib_ui_show(IB_UI_OFFLINE,IB_UI_MODE_DICT,"");preview_advance(500);shot("edge_hints_offline");
+
+    // 只验证真实增量接口的固定文字夹具；不是ASR识别结果或计时模拟字幕。
+    ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");
+    ib_ui_set_assistant_key_hints(true,IB_UI_ASSIST_LISTENING);
+    ib_ui_pet_assistant_state("listening",IB_UI_ASSIST_LISTENING,true,NULL);
+    ib_ui_transcript_begin(100);ib_ui_transcript_update(100,"这是用于验证字幕显示区域的固定测试文字，不代表实际语音识别结果。",false);
+    preview_advance(500);shot("transcript_fixture_two_line_tail");
+    // 比较字幕不变时暂停背景宠物帧，避免眨眼/弹簧差异干扰像素断言。
+    ib_ui_set_awake(false);
+    ib_ui_transcript_update(100,"固定测试最终文本：第二行完整显示，阶段和按钮提示仍清晰可见。",true);
+    preview_advance(400);shot("transcript_fixture_final_frozen");
+    ib_ui_transcript_update(100,"迟到partial不应该覆盖最终文本",false);
+    preview_advance(400);shot("transcript_fixture_late_partial_ignored");
+    ib_ui_set_awake(true);
+    ib_ui_pet_assistant_state("alerting",IB_UI_ASSIST_ERROR,true,"authentication_failed");
+    preview_advance(400);ib_ui_set_awake(false);shot("transcript_fixture_error_overrides");
+    ib_ui_transcript_update(100,"错误后迟到的文本",true);
+    preview_advance(400);shot("transcript_fixture_error_rejects_late");
+    ib_ui_set_awake(true);
+    ib_ui_transcript_begin(101);ib_ui_pet_assistant_state("listening",IB_UI_ASSIST_LISTENING,true,NULL);
+    ib_ui_transcript_update(101,"新一轮固定布局测试文字。",false);
+    ib_ui_pet_assistant_state("powering-down",IB_UI_ASSIST_STOPPED,true,NULL);
+    preview_advance(400);shot("transcript_fixture_cancel_clears");
 
     return s_failures;
 }

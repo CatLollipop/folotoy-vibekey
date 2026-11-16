@@ -1,10 +1,10 @@
 # AI 助理 · FoloVibe Key Fork
 
 本个人 Fork 增加 Mac 云端语音助手、Passport 独立云对话、应用会话双向桥接与 Aora Bot 球球。
-**默认球球；支持完整新版宠物外观、脸型和表情选择，Mac 高清矢量渲染，设备点阵渲染。不使用旧 JSON / NX 旧版兼容层。**
+**默认球球；支持完整新版宠物外观、脸型和表情选择，Mac 支持29种画风，设备固定点阵渲染。不使用旧 JSON / NX 旧版兼容层。**
 
-新增使用入口：设置 → **AI 助理 / 识别模型 / 智能体 / 宠物**。在「识别模型」的 MiniMax 卡片统一配置 ASR、TTS、音色、录音上限和自动朗读，听写、字幕和助手共用一个 MiniMax Key；在「AI 助理」配置 DeepSeek 对话。保存后可分别测试语音和对话服务；Passport 首次通过 USB 同步云配置，再切换独立模式。
-设备按住 OK 说话、松开上传识别；MiniMax ASR 是文件转写，默认单句最长30秒。
+新增使用入口：设置 → **AI 助理 / 识别模型 / 智能体 / 宠物**。在「识别模型」的豆包卡片统一配置实时 ASR、MiniMax TTS、音色、录音上限和自动朗读；豆包识别 Key 与听写、字幕共用，MiniMax Key 只负责朗读。在「AI 助理」配置 DeepSeek 对话。Passport 首次通过 USB 同步云配置，再切换独立模式。
+设备按住 OK 说话，底部实时显示转写；松开后等待识别终态，再发起对话，单句最长30秒。设备固件必须支持 profile schema2 和豆包实时字幕；旧固件会提示升级，不会误报同步成功。长按 ▲ 可在「AI 助理 / 连接电脑」之间选择运行模式。
 电脑助手接管开启时，长按下键打开云对话 / 原应用会话菜单，上下键选择、OK 确认。短按上键只提交当前 Hub 会话中由助手写入且未被修改的草稿；短按下键停止当前任务。关闭接管后才恢复下文原 Codex 设备行为。
 
 ```bash
@@ -112,7 +112,7 @@ FoloVibe Key 基于 [InputBetter](https://github.com/racall/InputBetter) 提交 
 
 ## 编译运行
 
-官网源码已改为 VibeKey,当前线上仍部署在 <https://input.0os.io>(域名未迁移;按 `docs/website.md` 重新部署后生效)。安装包由 `app/scripts/release.sh` 生成并公证(macOS 26+,Apple 芯片)。也可以自行编译;上游要求 Xcode 27,本分支在 Xcode 26.2 与 XcodeGen 下构建通过。
+官网源码已改为 VibeKey,当前线上仍部署在 <https://input.0os.io>(域名未迁移;按 `docs/website.md` 重新部署后生效)。安装包由 `app/scripts/release.sh` 生成并公证(macOS 26+,Apple 芯片)。也可以自行编译;上游要求 Xcode 27,本分支使用 Xcode 26.2 Command Line Tools 与 SwiftPM 构建开发版，完整 Xcode 工程尚未在本机验证。
 
 默认 ad-hoc 签名。想让重新编译后辅助功能权限不失效,可以新建 `app/Config/Signing.local.xcconfig`(已在 .gitignore 中)填入自己的开发证书:
 

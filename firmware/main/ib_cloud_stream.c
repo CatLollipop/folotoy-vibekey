@@ -10,13 +10,16 @@ static int hex(char c) {
 void ib_audio_json_init(ib_audio_json_t *s, ib_stream_bytes_cb cb, void *ctx) {
     memset(s, 0, sizeof(*s)); s->nibble = -1; s->output = cb; s->context = ctx;
 }
+static bool fail(ib_audio_json_t *s,ib_audio_json_error_t error){
+    s->failed=true;s->error=error;return false;
+}
 static bool append(ib_audio_json_t *s, char c) {
-    if (s->used + 1 >= sizeof(s->metadata)) { s->failed = true; return false; }
+    if (s->used + 1 >= sizeof(s->metadata)) return fail(s,IB_AUDIO_JSON_METADATA_FULL);
     s->metadata[s->used++] = c; s->metadata[s->used] = 0; return true;
 }
 static bool flush(ib_audio_json_t *s) {
     if (s->byte_count && s->output && !s->output(s->bytes, s->byte_count, s->context)) {
-        s->failed = true; return false;
+        return fail(s,IB_AUDIO_JSON_OUTPUT_FAILED);
     }
     s->byte_count = 0; return true;
 }
@@ -24,12 +27,13 @@ bool ib_audio_json_feed(ib_audio_json_t *s, char c) {
     if (s->failed) return false;
     if (s->audio) {
         if (c == '"') {
-            if (s->nibble >= 0 || !flush(s)) { s->failed = true; return false; }
+            if (s->nibble >= 0) return fail(s,IB_AUDIO_JSON_ODD_HEX);
+            if (!flush(s)) return false;
             s->audio = s->in_string = false; s->after_colon = s->key_audio = false;
             return append(s, c);
         }
         int n = hex(c);
-        if (n < 0) { s->failed = true; return false; }
+        if (n < 0) return fail(s,IB_AUDIO_JSON_INVALID_HEX);
         if (s->nibble < 0) s->nibble = n;
         else {
             s->bytes[s->byte_count++] = (uint8_t)((s->nibble << 4) | n);
@@ -59,7 +63,9 @@ bool ib_audio_json_feed(ib_audio_json_t *s, char c) {
     return true;
 }
 bool ib_audio_json_finish(ib_audio_json_t *s) {
-    return !s->failed && !s->audio && !s->in_string && s->nibble < 0 && flush(s);
+    if(s->failed)return false;
+    if(s->audio||s->in_string||s->nibble>=0)return fail(s,IB_AUDIO_JSON_INCOMPLETE);
+    return flush(s);
 }
 static void le16(uint8_t *p, uint16_t v) { p[0] = v; p[1] = v >> 8; }
 static void le32(uint8_t *p, uint32_t v) { for (int i = 0; i < 4; i++) p[i] = (uint8_t)(v >> (8 * i)); }

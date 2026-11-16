@@ -27,14 +27,18 @@ nonisolated final class AgentMockURLProtocol: URLProtocol, @unchecked Sendable {
 
 @main struct AgentCoreTests {
     @MainActor static func main() async throws {
-        try testFiltering()
-        try testKimiConversation()
-        try testDeviceAssistantProtocol()
-        try testAssistantHardware()
-        try testSharedVoiceConfiguration()
-        try await testKimiAPI()
-        try await testMailboxReceipts()
-        print("Agent core tests passed: event scope, Kimi official REST/WS, mailbox receipts, isolated hardware gestures, shared MiniMax voice")
+        try await run("filtering") { try testFiltering() }
+        try await run("kimi-conversation") { try testKimiConversation() }
+        try await run("device-protocol") { try testDeviceAssistantProtocol() }
+        try await run("assistant-hardware") { try testAssistantHardware() }
+        try await run("shared-voice-config") { try testSharedVoiceConfiguration() }
+        try await run("kimi-api") { try await testKimiAPI() }
+        try await run("mailbox-receipts") { try await testMailboxReceipts() }
+        print("Agent core tests passed: event scope, Kimi official REST/WS, mailbox receipts, isolated hardware gestures, shared Doubao voice")
+    }
+    @MainActor static func run(_ name:String,_ operation:() async throws -> Void) async throws {
+        do { try await operation() }
+        catch { throw NSError(domain:"AgentCoreTests.\(name)",code:1,userInfo:[NSLocalizedDescriptionKey:"\(name): \(String(reflecting:error))"]) }
     }
     static func check(_ value: @autoclosure () -> Bool, _ message: String) throws {
         if !value() { throw NSError(domain: "AgentCoreTests", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) }
@@ -70,23 +74,23 @@ nonisolated final class AgentMockURLProtocol: URLProtocol, @unchecked Sendable {
         let credentials = CredentialStore(url: folder.appendingPathComponent("credentials.json"))
         let assistant = AssistantStore(credentials: credentials, defaults: defaults)
         assistant.profile.minimaxBaseURL = "https://speech.example.invalid"
-        assistant.minimaxKey = "test-shared-voice-key"
+        assistant.asrKey = "test-shared-voice-key"
         try check(assistant.save(), "Assistant voice config did not save")
         let cloud = CloudASRStore(defaults: defaults, credentials: credentials)
-        try check(cloud.config(.minimax).apiKey == assistant.minimaxKey && cloud.config(.minimax).baseURL == assistant.profile.minimaxBaseURL, "MiniMax initial config did not reuse assistant credential/base")
-        try check(ModelCatalog.model("cloud-minimax")?.cloudProvider == .minimax && !CloudProvider.minimax.isStreaming, "Native MiniMax ASR missing from selectable model catalog")
-        var config = cloud.config(.minimax)
-        try check(config.isComplete(for:.minimax), "Valid MiniMax native config rejected")
-        config.baseURL = "https://speech.example.invalid?key=never-query"
-        try check(!config.isComplete(for:.minimax), "Credential query accepted in MiniMax base")
-        config = cloud.config(.minimax); config.model = "speech-2.8-turbo"
-        try check(!config.isComplete(for:.minimax), "TTS model accepted as selectable ASR")
-        config = cloud.config(.minimax); config.apiKey = "updated-shared-key"; cloud.update(.minimax,config)
+        try check(cloud.config(.volcengine).apiKey == assistant.asrKey && cloud.config(.volcengine).baseURL == assistant.profile.asrWebSocketURL, "Doubao did not reuse assistant credential/endpoint")
+        try check(ModelCatalog.model("cloud-minimax") == nil && ModelCatalog.model("cloud-volcengine")?.cloudProvider == .volcengine && CloudProvider.volcengine.isStreaming, "Cancelled MiniMax ASR still selectable or Doubao is not streaming")
+        var config = cloud.config(.volcengine)
+        try check(config.isComplete(for:.volcengine), "Valid Doubao config rejected")
+        config.baseURL = "wss://speech.example.invalid?key=never-query"
+        try check(!config.isComplete(for:.volcengine), "Credential query accepted in Doubao endpoint")
+        config = cloud.config(.volcengine); config.model = "speech-2.8-turbo"
+        try check(!config.isComplete(for:.volcengine), "TTS model accepted as ASR")
+        config = cloud.config(.volcengine); config.apiKey = "updated-shared-key"; cloud.update(.volcengine,config)
         let reloaded = AssistantStore(credentials:credentials,defaults:defaults)
-        try check(reloaded.minimaxKey == "updated-shared-key", "Voice and assistant used different credentials")
-        try check(credentials.value(for:"cloud.minimax.apiKey") == nil, "Second MiniMax credential was stored")
-        cloud.remove(.minimax)
-        try check(credentials.value(for:"assistant.minimaxKey") == nil, "MiniMax removal left shared credential active")
+        try check(reloaded.asrKey == "updated-shared-key", "ASR and assistant used different credentials")
+        try check(credentials.value(for:"assistant.asrKey") == nil, "Second ASR credential was stored")
+        cloud.remove(.volcengine)
+        try check(credentials.value(for:"cloud.volcengine.apiKey") == nil, "ASR removal left shared credential active")
     }
     static func event(instance: String = "one", session: String = "one", turn: String = "one", id: String = "one", sequence: UInt64 = 1) -> ConversationEvent {
         ConversationEvent(applicationID: "test", instanceID: instance, sessionID: session, turnID: turn, eventID: id,
@@ -136,6 +140,28 @@ nonisolated final class AgentMockURLProtocol: URLProtocol, @unchecked Sendable {
         try check(reducer.apply(pending,sessionID:"session_test")?.state == .waitingInput, "real approval not represented")
     }
     static func testDeviceAssistantProtocol() throws {
+        let longText = String(repeating: "实时字幕🙂", count: 30) + "最后两个字"
+        let subtitle = try DeviceAssistantProtocol.encodeTranscript(.update, generation: UInt32.max, text: longText, final: true)
+        let subtitleValue = try JSONSerialization.jsonObject(with: subtitle) as! [String: Any]
+        let tail = subtitleValue["text"] as! String
+        try check(subtitle.count <= 512 && tail.utf8.count <= 192 && longText.hasSuffix(tail) && subtitleValue["final"] as? Int == 1, "UTF-8 transcript tail or generation/final wire invalid")
+        let controls = try DeviceAssistantProtocol.encodeTranscript(.update, generation: 1, text: String(repeating: "\u{0001}", count: 192))
+        try check(controls.count <= 512, "Transcript JSON escaping bypassed frame limit")
+        do { _ = try DeviceAssistantProtocol.encodeTranscript(.begin, generation: 0); throw AgentAdapterError.invalidResponse }
+        catch AssistantError.invalidProfile { }
+        let capabilityFrame = #"{"t":"assistant","op":"capabilities","ok":1,"rid":9,"schema":1,"profile_schema":2,"asr":"doubao-realtime","transcript":1}"#
+        guard case .assistant(let modern)? = DeviceMessage.parse(capabilityFrame) else { throw AgentAdapterError.invalidResponse }
+        try check(modern.profileSchema == 2 && modern.asrProvider == "doubao-realtime" && modern.supportsTranscript, "New streaming firmware capability lost")
+        let presentation = DeviceAssistantPresentation(target: .application, phase: .failed, error: .checkMac)
+        let packet = try DeviceAssistantProtocol.encodePetState("alerting", presentation: presentation)
+        let value = try JSONSerialization.jsonObject(with: packet) as! [String: Any]
+        try check(value["value"] as? String == "alerting" && value["target"] as? String == "application" && value["phase"] as? String == "failed" && value["error"] as? String == "check_mac", "Typed presentation lost or localized display text entered wire")
+        let working = try JSONSerialization.jsonObject(with: DeviceAssistantProtocol.encodePetState("working", presentation: .init(target: .application, phase: nil))) as! [String: Any]
+        try check(working["phase"] == nil && working["target"] as? String == "application", "Hub work was overwritten by an idle phase")
+        let oldPacket = try JSONSerialization.jsonObject(with: DeviceAssistantProtocol.encodePetState("idle", presentation: nil)) as! [String: Any]
+        try check(oldPacket["target"] == nil && oldPacket["phase"] == nil, "Legacy animation packet gained unintended caption metadata")
+        do { _ = try DeviceAssistantProtocol.encodePetState("用户正文", presentation: nil); throw AgentAdapterError.invalidResponse }
+        catch AssistantError.invalidProfile { }
         guard case .assistant(let mode)? = DeviceMessage.parse(#"{"t":"assistant","op":"mode","ok":1,"rid":9,"mode":"standalone","restarting":1}"#) else { throw AgentAdapterError.invalidResponse }
         try check(mode.restarting && mode.mode == "standalone", "Mode restart acknowledgement lost")
         guard case .assistant(let legacy)? = DeviceMessage.parse(#"{"t":"assistant","op":"mode","ok":1,"rid":9,"mode":"companion"}"#) else { throw AgentAdapterError.invalidResponse }
@@ -180,30 +206,70 @@ nonisolated final class AgentMockURLProtocol: URLProtocol, @unchecked Sendable {
         let instance = root.appendingPathComponent("instances/test-instance")
         try FileManager.default.createDirectory(at:instance,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
         let session = AssistantAgentSession(applicationID:"test",instanceID:"test-instance",sessionID:"existing",name:"Test only")
-        let descriptor = AgentMailbox.Registration(protocolVersion:1,adapterID:"test",instanceID:"test-instance",name:"Test",capabilities:[.submit],sessions:[session],updatedAt:Date(),processID:nil,terminalTTY:nil)
-        try mailbox.write(descriptor,to:instance.appendingPathComponent("registration.json"))
+        let ready = AgentMailboxFixtureReady()
         let peer = Task { @MainActor in
-            let requests = instance.appendingPathComponent("requests")
-            var command: AgentMailbox.Command?
-            for _ in 0..<100 {
-                if let file = try? FileManager.default.contentsOfDirectory(at:requests,includingPropertiesForKeys:nil).first {
-                    command = mailbox.read(file); if command != nil { break }
+            do {
+                // 原进程先发布注册并用真实读取路径核对；显式就绪后才允许桌面侧发命令。
+                let descriptor = AgentMailbox.Registration(protocolVersion:1,adapterID:"test",instanceID:"test-instance",name:"Test",capabilities:[.submit],sessions:[session],updatedAt:Date(),processID:nil,terminalTTY:nil)
+                try mailbox.write(descriptor,to:instance.appendingPathComponent("registration.json"))
+                guard let registered = mailbox.registrations(for:"test").flatMap(\.sessions).first(where:{$0 == session}) else {
+                    throw NSError(domain:"AgentMailboxFixture",code:1,userInfo:[NSLocalizedDescriptionKey:"Peer registration was not visible through the actual mailbox reader"])
                 }
-                try await Task.sleep(for:.milliseconds(10))
+                ready.complete(.success(registered))
+                let requests = instance.appendingPathComponent("requests")
+                var command: AgentMailbox.Command?
+                for _ in 0..<100 {
+                    try Task.checkCancellation()
+                    if let file = try? FileManager.default.contentsOfDirectory(at:requests,includingPropertiesForKeys:nil).first {
+                        command = mailbox.read(file); if command != nil { break }
+                    }
+                    try await Task.sleep(for:.milliseconds(10))
+                }
+                guard let command else { throw AgentAdapterError.invalidResponse }
+                try check(command.sessionID == "existing" && command.text == "dedicated test prompt", "wrong original session targeted")
+                let response = instance.appendingPathComponent("responses/"+command.requestID+".json")
+                try mailbox.write(AgentMailbox.Receipt(requestID:command.requestID,status:"accepted",error:nil),to:response)
+                // 有意跨过产品80ms轮询以验证accepted不等于applied；这不是启动同步等待。
+                try await Task.sleep(for:.milliseconds(160))
+                try mailbox.write(AgentMailbox.Receipt(requestID:command.requestID,status:"applied",error:nil),to:response)
+            } catch {
+                ready.complete(.failure(error))
+                throw error
             }
-            guard let command else { throw AgentAdapterError.invalidResponse }
-            try check(command.sessionID == "existing" && command.text == "dedicated test prompt", "wrong original session targeted")
-            let response = instance.appendingPathComponent("responses/"+command.requestID+".json")
-            try mailbox.write(AgentMailbox.Receipt(requestID:command.requestID,status:"accepted",error:nil),to:response)
-            try await Task.sleep(for:.milliseconds(160))
-            try mailbox.write(AgentMailbox.Receipt(requestID:command.requestID,status:"applied",error:nil),to:response)
         }
+        defer { peer.cancel() }
+        let registeredSession = try await ready.wait()
         let start = ContinuousClock.now
-        try await mailbox.command("sendPrompt",text:"dedicated test prompt",session:session)
+        do { try await mailbox.command("sendPrompt",text:"dedicated test prompt",session:registeredSession) }
+        catch AgentAdapterError.sessionChanged {
+            // 仍然失败，不重试/吞错；保留下一次偶发失败所需的脱敏fixture身份诊断。
+            let path=instance.appendingPathComponent("registration.json")
+            let disk:AgentMailbox.Registration?=mailbox.read(path)
+            let listed=mailbox.registrations(for:"test")
+            let age=disk.map{Int(Date().timeIntervalSince($0.updatedAt)*1000)} ?? -1
+            let details="Mailbox positive command lost a ready fixture: exists=\(FileManager.default.fileExists(atPath:path.path)), decoded=\(disk != nil), visible=\(listed.count), matches=\(listed.contains(where:{$0.sessions.contains(registeredSession)})), age_ms=\(age)"
+            throw NSError(domain:"AgentMailboxFixture",code:2,userInfo:[NSLocalizedDescriptionKey:details])
+        }
         try check(ContinuousClock.now-start >= .milliseconds(150), "accepted was confused with applied")
         try await peer.value
         let badSession = AssistantAgentSession(applicationID:"test",instanceID:"../escape",sessionID:"existing",name:"bad")
         do { try await mailbox.command("sendPrompt",text:"never write",session:badSession); throw AgentAdapterError.invalidResponse }
         catch AgentAdapterError.sessionChanged { }
+    }
+}
+
+/// 一次性就绪屏障：成功包含真实读取的会话，启动错误也会唤醒调用方，不靠固定sleep猜就绪。
+@MainActor private final class AgentMailboxFixtureReady {
+    private var outcome:Result<AssistantAgentSession,Error>?
+    private var waiters:[CheckedContinuation<AssistantAgentSession,Error>]=[]
+    func wait() async throws -> AssistantAgentSession {
+        if let outcome { return try outcome.get() }
+        return try await withCheckedThrowingContinuation { waiters.append($0) }
+    }
+    func complete(_ result:Result<AssistantAgentSession,Error>) {
+        guard outcome == nil else { return }
+        outcome=result
+        for waiter in waiters { waiter.resume(with:result) }
+        waiters.removeAll()
     }
 }

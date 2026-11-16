@@ -6,9 +6,9 @@
 
 `AppState → PetController.start → NSPanel → PetWebRenderer → AoraPet.bundle/index.html → 安装全部主题 → createCharacter`。
 
-业务发布 `PetController.setState(PetState, caption:)`，只传语义状态。Mac 固定 `vector/solid` 高清渲染。`PetSettingsView` 从引擎读取目录，提供外观搜索（支持中英角色名、主题名和 ID）、外观、脸型、配色、44 种表情独立选择与实时预览。改变外观先采用该角色的官方脸型和配色，之后仍可独立改选。选择表情会关闭“跟随会话状态”，固定显示该表情；重新打开跟随可恢复最新会话状态。选择进入持久偏好，桌面挂件和设备导出使用同一份设置，不是仅修改预览。
+业务发布 `PetController.setState(PetState, caption:)`，只传语义状态。Mac 默认 `vector/solid`，可选择实际安装的全部 29 种官方画风：24 种 vector、3 种 pixel 与 2 种 kaomoji。`PetSettingsView → PetVisualSelector` 以用户参考图为依据，提供暗色中央实时预览、左侧画风栏、右侧颜色/脸型缩略图、下方四类 44 种表情及可搜索的全部 193 种外观横条；搜索支持中英角色名、主题名与 ID。画风偏好单独持久保存，仅影响桌面挂件；Passport 始终导出所选角色的 `pixel/dot`。改变外观先采用该角色的官方脸型和配色，之后仍可独立改选。选择表情会关闭“跟随会话状态”，固定显示该表情；重新打开跟随可恢复最新会话状态。选择进入持久偏好，桌面挂件和设备导出使用同一份角色/脸型/颜色/状态设置，不是仅修改预览。桌面显示、大小、置顶、穿透、减少动画以及设备显示、FPS/亮度保留原生控件；设置页的“同步到 Passport”复用 `AssistantDeviceSync.syncPet`，是否成功以事务 ACK/设备回读为准，未连接或正在同步时禁用。
 
-挂件是透明、不抢焦点的原生 `NSPanel`，支持显示、大小、置顶、鼠标穿透、减少动画、位置恢复。位置由 macOS 自动保存；隐藏、系统休眠或退出会暂停动画。WebView 是非持久数据容器，只加载随应用打包的资源；没有消息处理器、对话正文或 API 密钥。CSP 的 `connect-src 'none'` 阻止网页联网。
+挂件是透明、不抢焦点的原生 `NSPanel`，支持显示、大小、置顶、鼠标穿透、减少动画、位置恢复。位置由 macOS 自动保存；隐藏、系统休眠或退出会暂停动画。挂件 WebView 是非持久数据容器，只加载随应用打包的资源，没有消息处理器。设置选择器使用独立的非持久 WKWebView，以严格白名单消息提交 cast/face/color/style/state/follow 六种选择意图；原生校验主 frame、本地页面 URL、键集合、字段类型/长度及目录 ID。只有中央角色持续播放；其余缩略图通过官方 `renderStaticSvgDataUrl` 静态生成，外观惰性加载，缓存最多 192 项。页面不接收对话正文、API 密钥或设备同步对象；两者 CSP 的 `connect-src 'none'` 均阻止联网。设置页关闭时销毁动画、观察器和消息 handler，拒绝外部导航，资源失败提供重新加载。选择舞台高 600px；低于 650px 的宿主启用紧凑行高和缩略图，在默认原生设置窗口首屏同时提供预览、表情和外观横条，其余原生配置在下方滚动。
 
 ## 设备调用链
 
@@ -37,6 +37,7 @@
 python3 scripts/vendor-aora.py       # 指定npm/源码快照，校验npm SHA-512，全部主题离线打包
 node scripts/generate-aora-pet.mjs  # 内置Dot几何/参数和独立官方测试golden
 node scripts/test-pet-catalog.mjs --full # 全193×16组合与43配色，写构建目录report
+node scripts/test-pet-selector.mjs # 29种真实静态画风与设备dot导出不变性
 bash firmware/tools/test-pet.sh    # 官方golden与真实导出资产端到端ASan/UBSan
 SCALE=3 bash firmware/tools/ui-preview/run.sh aora # 同份固件LVGL截图，含选中角色/离线
 ```
@@ -47,7 +48,9 @@ SCALE=3 bash firmware/tools/ui-preview/run.sh aora # 同份固件LVGL截图，�
 
 Host 覆盖内置 44 态、132 组官方 motion 黄金值（误差<`1e-4`）、限帧、亮度、时钟回绕和四类装饰。内置核心点阵与官方独立 rasterise 比较，41 态逐格一致，剩余共 5 格 Q6 阈值差异，单态≤`2/784` 格。动态资产测试加载 37 个真实导出包（含最大样本）×44 态，检查可见性、实时运动、固定表情、错误段/索引拒绝、失败保留活动资产、恢复内置后释放旧内存无悬空访问；ASan/UBSan 通过。
 
-Mac 通过 Swift 6 类型检查；实际离线 WKWebView 读取全目录、切换 Dot/capsule、Miso/shades、Christmas tree/sparkle、Goat/screen 的角色/脸型/状态并成功导出完整包，15–81 KiB 导出耗时37–82 ms（本机一次测量）。整页浅深主题截图使用真实窗口背景，小说明使用 `Color.primary.opacity(0.72)`，保留已验证的≥4.5:1对比度。固件同份 LVGL/C 主机预览验证七个内置状态、导航叠层和五个动态角色的在线/离线外观；主机64位 LVGL 池峰值36936 B，仅作参考。整机屏幕、音频与并发内存仍需真实设备验收。
+2026-11-16 宠物选择器通过 Swift 6 类型检查和离线 WKWebView 的 527px 中文 / 840px 英文交互回归：角色、脸型、画风、固定表情、搜索均更新真实原生偏好；畸形/越权意图拒绝。29 种官方静态画风各不同，切换全部画风后设备样本包 29364 B 逐字节不变。机械 detector 无发现；暗色舞台说明文字对背景对比度为 8.38–9.15:1。证据为 `work/pet-qa/selector-527-zh-Hans.png`、`selector-840-en.png` 与 `selector-qa.json`；最终原生设置窗口与打包应用检查由主集成流程完成。
+
+此前实际离线 WKWebView 读取全目录、切换 Dot/capsule、Miso/shades、Christmas tree/sparkle、Goat/screen 的角色/脸型/状态并成功导出完整包，15–81 KiB 导出耗时37–82 ms（本机一次测量）。整页浅深主题截图使用真实窗口背景，小说明使用 `Color.primary.opacity(0.72)`，保留已验证的≥4.5:1对比度。固件同份 LVGL/C 主机预览验证七个内置状态、导航叠层和五个动态角色的在线/离线外观；主机64位 LVGL 池峰值36936 B，仅作参考。整机屏幕、音频与并发内存仍需真实设备验收。
 
 ## 第三方许可
 

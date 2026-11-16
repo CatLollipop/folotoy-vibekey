@@ -45,7 +45,8 @@ nonisolated enum Gzip {
                 }
                 output.append(contentsOf: buffer.prefix(produced))
                 if output.count > maxOutput { throw Failure.tooLarge }
-                if decompress, status == Z_OK, stream.avail_in == 0, produced == 0 { break }
+                // 输入耗尽不是gzip结束：截断头可能返回Z_OK且0输出，仍须确认Z_STREAM_END。
+                // 继续inflate会以Z_BUF_ERROR失败，避免把半包当作完整payload。
             } while status != Z_STREAM_END
         }
         return output

@@ -20,6 +20,8 @@ import Foundation
     private var selectionTask: Task<Void, Never>?
     private var selectionGeneration = UUID()
     private var hardwareError: String?
+    private var devicePhase: DeviceAssistantPresentation.Phase?
+    private var transcriptGeneration: UInt32 = UInt32.random(in: 1...UInt32.max)
 
     init(assistant: AssistantController, store: AssistantStore, hub: AgentHub,
          pet: PetController, link: DeviceLink, sync: AssistantDeviceSync) {
@@ -34,7 +36,16 @@ import Foundation
         }
         assistant.onPhase = { [weak self] phase in
             guard let self else { return }
-            self.apply(Self.petState(phase))
+            self.apply(Self.petState(phase), phase: .init(rawValue: phase.rawValue))
+            if store.usePassportForAssistant, sync.mode != "standalone" {
+                if phase == .recording {
+                    transcriptGeneration = transcriptGeneration == UInt32.max ? 1 : transcriptGeneration + 1
+                    link.sendAssistantTranscript(.clear, generation: 0)
+                    link.sendAssistantTranscript(.begin, generation: transcriptGeneration)
+                } else if phase == .stopped || phase == .failed {
+                    link.sendAssistantTranscript(.clear, generation: transcriptGeneration)
+                }
+            }
             if [.recording, .transcribing, .stopped, .failed].contains(phase) { self.pendingApplicationReply = nil }
             if phase == .replying, self.assistant.destination == .application,
                let reply = self.pendingApplicationReply, self.hub.selectedSession?.id == reply.session.id {
@@ -42,9 +53,15 @@ import Foundation
                 self.assistant.speakApplicationReply(reply.text)
             }
         }
+        assistant.onTranscript = { [weak self] text, final in
+            guard let self, store.usePassportForAssistant, sync.mode != "standalone" else { return }
+            link.sendAssistantTranscript(.update, generation: transcriptGeneration, text: text, final: final)
+        }
         hub.onSelectionChange = { [weak self] session in
-            self?.pendingApplicationReply = nil; self?.assistant.cancel(); self?.apply(.idle)
+            self?.pendingApplicationReply = nil; self?.hardwareError = nil
+            if let self, store.usePassportForAssistant, sync.mode != "standalone" { link.sendAssistantTranscript(.clear, generation: 0) }
             self?.assistant.destination = session == nil ? .cloud : .application
+            self?.assistant.cancel(); self?.apply(.idle, phase: .idle)
         }
         hub.onEvent = { [weak self] event in
             guard let self, assistant.destination == .application || !assistant.isBusy,
@@ -92,16 +109,22 @@ import Foundation
             originalConnection?(connection)
             hardware.reset(); closeMenu(); cancelSelection()
             if connection == .disconnected { assistant.cancel() }
-            else if connection == .usb || connection == .wifi { sync.refresh() }
+            else if connection == .usb || connection == .wifi {
+                sync.refresh(); link.sendAssistantTranscript(.clear, generation: 0); apply(pet.state, phase: devicePhase)
+            }
         }
         pet.start()
         hub.start()
         observeChanges({ [weak self] in _ = self?.store.usePassportForAssistant }) { [weak self] in
             self?.hardware.reset(); self?.closeMenu(); self?.cancelSelection(); self?.assistant.cancel()
+            if let self, !store.usePassportForAssistant, sync.mode != "standalone" {
+                link.sendPetState("idle"); link.sendAssistantTranscript(.clear, generation: 0)
+            }
         }
         observeChanges({ [weak self] in _ = self?.assistant.destination }) { [weak self] in
             guard let self else { return }
             if assistant.destination == .cloud, hub.selectedSession != nil { hub.clearSelection() }
+            apply(pet.state, phase: assistant.isBusy ? .init(rawValue: assistant.phase.rawValue) : (devicePhase == nil ? nil : .idle))
         }
     }
 
@@ -127,7 +150,7 @@ import Foundation
             Task {
                 guard assistant.destination == .application, hub.selectedSession == session else { return }
                 do { try await hub.submit() }
-                catch { if hub.selectedSession == session { hardwareError = error.localizedDescription; apply(.alerting) } }
+                catch { if hub.selectedSession == session { hardwareError = error.localizedDescription; apply(.alerting, phase: .failed) } }
             }
         case .stopTask:
             let session = hub.selectedSession
@@ -136,7 +159,7 @@ import Foundation
                 Task {
                     guard assistant.destination == .application, hub.selectedSession == session else { return }
                     do { try await hub.stop() }
-                    catch { if hub.selectedSession == session { hardwareError = error.localizedDescription; apply(.alerting) } }
+                    catch { if hub.selectedSession == session { hardwareError = error.localizedDescription; apply(.alerting, phase: .failed) } }
                 }
             }
         case .openMenu: openMenu()
@@ -184,18 +207,30 @@ import Foundation
         guard choices.indices.contains(index) else { return }
         guard let session = choices[index] else { hub.clearSelection(); assistant.destination = .cloud; return }
         let token = UUID(); selectionGeneration = token
+        apply(.loading, phase: .preparing, target: .application)
         selectionTask = Task {
-            defer { if token == selectionGeneration { selectionTask = nil } }
+            defer {
+                if token == selectionGeneration {
+                    selectionTask = nil
+                    if hardwareError == nil { apply(.idle, phase: .idle) }
+                }
+            }
             do { try await hub.select(session); assistant.destination = .application }
-            catch { if !Task.isCancelled { hardwareError = error.localizedDescription; apply(.alerting) } }
+            catch { if !Task.isCancelled { hardwareError = error.localizedDescription; apply(.alerting, phase: .failed) } }
         }
     }
     private func cancelSelection() { selectionGeneration = UUID(); selectionTask?.cancel(); selectionTask = nil }
     private func closeMenu() { menuGeneration = UUID(); menuVisible = false; menuTimeout?.cancel(); menuTimeout = nil }
 
-    private func apply(_ state: PetState) {
+    private func apply(_ state: PetState, phase: DeviceAssistantPresentation.Phase? = nil,
+                       target: DeviceAssistantPresentation.Target? = nil) {
         pet.setState(state)
-        if sync.mode != "standalone" { link.sendPetState(state.rawValue) }
+        devicePhase = phase
+        if store.usePassportForAssistant, sync.mode != "standalone" {
+            link.sendPetState(state.rawValue, presentation: .init(
+                target: target ?? (assistant.destination == .cloud ? .cloud : .application), phase: phase,
+                error: phase == .failed && hardwareError != nil ? .checkMac : nil))
+        }
     }
 
     private static func petState(_ phase: AssistantPhase) -> PetState {

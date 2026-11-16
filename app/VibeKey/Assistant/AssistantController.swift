@@ -20,15 +20,24 @@ nonisolated enum AssistantPhase: String, Sendable {
     var isRecording: Bool { phase == .recording }
     var isBusy: Bool { ![.idle, .completed, .stopped, .failed].contains(phase) }
     @ObservationIgnored var onPhase: ((AssistantPhase) -> Void)?
+    /// 句final仍是录音中的增量；只有finish和事件流完整收敛才发final=true。
+    @ObservationIgnored var onTranscript: ((String, Bool) -> Void)?
     @ObservationIgnored var willRecord: (() -> Void)?
     @ObservationIgnored var sendToApplication: ((String) async throws -> Void)?
     @ObservationIgnored private let store: AssistantStore
     @ObservationIgnored private let service: any AssistantCloudServing
     @ObservationIgnored private let makeSource: () -> any AudioSource
+    @ObservationIgnored private let makeRecognition: (AssistantProfile, AssistantSecrets) throws -> any ASRSession
     @ObservationIgnored private let player: any AssistantAudioPlaying
     @ObservationIgnored private var source: (any AudioSource)?
-    @ObservationIgnored private var capture: AssistantCaptureBuffer?
-    @ObservationIgnored private var captureDestination: Destination?
+    @ObservationIgnored private var capture: AssistantCaptureGate?
+    @ObservationIgnored private var captureContext: (AssistantProfile, AssistantSecrets, Destination)?
+    @ObservationIgnored private var recognition: (any ASRSession)?
+    @ObservationIgnored private var recognitionEvents: Task<Void, Never>?
+    @ObservationIgnored private var recognitionFailure: String?
+    @ObservationIgnored private var recognitionFinals: [String] = []
+    @ObservationIgnored private var recognitionPartial = ""
+    @ObservationIgnored private var recognitionTextLimit = 8_192
     @ObservationIgnored private var operation: Task<Void, Never>?
     @ObservationIgnored private var timer: Task<Void, Never>?
     @ObservationIgnored private var generation = UUID()
@@ -39,22 +48,43 @@ nonisolated enum AssistantPhase: String, Sendable {
 
     init(store: AssistantStore, service: any AssistantCloudServing = AssistantCloudClient(),
          player: any AssistantAudioPlaying = AssistantPCMPlayer(),
+         makeRecognition: @escaping (AssistantProfile, AssistantSecrets) throws -> any ASRSession,
          makeSource: @escaping () -> any AudioSource) {
         self.store = store; self.service = service; self.player = player; self.makeSource = makeSource
+        self.makeRecognition = makeRecognition
     }
 
     func beginRecording(using override: (any AudioSource)? = nil) {
         cancel()
         do {
             willRecord?()
-            try store.profile.validate()
-            guard !store.secrets.minimaxKey.isEmpty else { throw AssistantError.missingKey }
+            let profile = store.profile, secrets = store.secrets
+            try profile.validate(); try secrets.validateASR()
+            let session = try makeRecognition(profile, secrets)
             transcript = ""; reply = ""; error = nil; truncated = false
             let token = generation
-            let buffer = AssistantCaptureBuffer(limit: store.profile.recordLimitSeconds * 16_000)
+            let buffer = AssistantCaptureGate(limit: profile.recordLimitSeconds * 16_000)
+            recognition = session; recognitionFailure = nil
+            recognitionFinals = []; recognitionPartial = ""; recognitionTextLimit = profile.historyBytes
+            recognitionEvents = Task { [weak self] in
+                for await event in session.events {
+                    guard !Task.isCancelled, let self, generation == token,
+                          phase == .recording || phase == .transcribing else { return }
+                    switch event {
+                    case .partial(let text): recognitionPartial = text
+                    case .final(let text): recognitionFinals.append(text); recognitionPartial = ""
+                    case .failure(let message):
+                        recognitionFailure = message
+                        fail(AssistantRecognitionFailure(message: message)); return
+                    }
+                    let text = TranscriptText.join(recognitionFinals + [recognitionPartial])
+                    guard text.utf8.count <= recognitionTextLimit else { fail(AssistantError.responseTooLarge); return }
+                    transcript = text; onTranscript?(text, false)
+                }
+            }
             let source = override ?? makeSource()
             source.onSamples = { [weak self] samples in
-                if buffer.append(samples) {
+                if buffer.feed(samples, into: session) {
                     Task { @MainActor in
                         guard let self, self.generation == token, self.isRecording else { return }
                         self.endRecording()
@@ -62,11 +92,13 @@ nonisolated enum AssistantPhase: String, Sendable {
                 }
             }
             self.capture = buffer; self.source = source
-            captureDestination = destination
+            captureContext = (profile, secrets, destination)
             try source.start()
             setPhase(.recording)
+            onTranscript?("", false)
+            guard generation == token, isRecording else { return }
             timer = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(self?.store.profile.recordLimitSeconds ?? 30))
+                try? await Task.sleep(for: .seconds(profile.recordLimitSeconds))
                 guard !Task.isCancelled, let self, self.generation == token else { return }
                 self.endRecording()
             }
@@ -76,23 +108,31 @@ nonisolated enum AssistantPhase: String, Sendable {
     func endRecording() {
         guard isRecording else { return }
         timer?.cancel(); timer = nil
+        let heardSpeech = capture?.seal() ?? false
         source?.stop(); source = nil
-        let samples = capture?.take() ?? []
         capture = nil
-        guard samples.count >= 4_000,
-              samples.contains(where: { abs($0) > 0.003 }) else { fail(AssistantError.noSpeech); return }
+        guard heardSpeech else { fail(AssistantError.noSpeech); return }
+        guard let session = recognition, let events = recognitionEvents,
+              let (profile, secrets, destination) = captureContext else { fail(AssistantError.noSpeech); return }
         let token = generation
-        let profile = store.profile
-        let secrets = store.secrets
-        let destination = captureDestination ?? self.destination
-        captureDestination = nil
         setPhase(.transcribing)
+        guard generation == token, phase == .transcribing else { return }
         operation = Task { [weak self] in
             guard let self else { return }
             do {
-                let text = try await service.transcribe(samples: samples, profile: profile, secrets: secrets)
                 try check(token)
-                transcript = text
+                let result = await session.finish()
+                // finish关闭events后，仍须等已排队句final/failure在主线程消费完。
+                await events.value
+                try check(token)
+                if let message = recognitionFailure { throw AssistantRecognitionFailure(message: message) }
+                guard phase == .transcribing else { return }
+                let text = result.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { throw AssistantError.noSpeech }
+                guard text.utf8.count <= recognitionTextLimit else { throw AssistantError.responseTooLarge }
+                recognition = nil; recognitionEvents = nil; captureContext = nil
+                transcript = text; onTranscript?(text, true)
+                try check(token)
                 try await route(text, destination: destination, profile: profile, secrets: secrets, token: token)
             } catch { if generation == token, !Task.isCancelled { fail(error) } }
         }
@@ -117,10 +157,12 @@ nonisolated enum AssistantPhase: String, Sendable {
     }
 
     private func route(_ text: String, destination: Destination, profile: AssistantProfile, secrets: AssistantSecrets, token: UUID) async throws {
+        try check(token)
         if destination == .application {
             guard let sendToApplication else { throw AssistantError.device("application_not_selected") }
             applicationWaiting = true; awaitingApplicationReceipt = true
             setPhase(.thinking)
+            try check(token)
             try await sendToApplication(text)
             try check(token)
             awaitingApplicationReceipt = false
@@ -133,6 +175,7 @@ nonisolated enum AssistantPhase: String, Sendable {
         try secrets.validate()
         let messages = try history.messages(system: profile.systemPrompt, user: text, limit: profile.historyBytes)
         setPhase(.thinking)
+        try check(token)
         let result = try await service.complete(messages: messages, profile: profile, secrets: secrets) { [weak self] text in
             await self?.updateReply(text, token: token)
         }
@@ -142,6 +185,7 @@ nonisolated enum AssistantPhase: String, Sendable {
         history.append(user: text, assistant: result.text)
         if profile.autoSpeakReplies {
             setPhase(.speaking)
+            try check(token)
             try await player.play(service.speech(text: result.text, profile: profile, secrets: secrets))
             try check(token)
         }
@@ -174,8 +218,10 @@ nonisolated enum AssistantPhase: String, Sendable {
         operation = Task { [weak self] in
             guard let self else { return }
             do {
+                try check(token)
                 guard text.utf8.count <= 32_768 else { throw AssistantError.responseTooLarge }
                 setPhase(.speaking)
+                try check(token)
                 try await player.play(service.speech(text: text, profile: profile, secrets: secrets))
                 try check(token)
                 setPhase(.completed)
@@ -187,7 +233,9 @@ nonisolated enum AssistantPhase: String, Sendable {
         generation = UUID()
         operation?.cancel(); operation = nil
         timer?.cancel(); timer = nil
-        source?.stop(); source = nil; capture = nil; captureDestination = nil
+        _ = capture?.seal(); source?.stop(); source = nil; capture = nil; captureContext = nil
+        recognition?.cancel(); recognition = nil; recognitionEvents?.cancel(); recognitionEvents = nil
+        recognitionFailure = nil; recognitionFinals = []; recognitionPartial = ""
         player.stop()
         applicationWaiting = false; awaitingApplicationReceipt = false; pendingApplicationOutcome = nil
         if isBusy { setPhase(.stopped) }
@@ -200,27 +248,40 @@ nonisolated enum AssistantPhase: String, Sendable {
     private func updateReply(_ text: String, token: UUID) { guard generation == token else { return }; reply = text; setPhase(.replying) }
     private func setPhase(_ phase: AssistantPhase) { self.phase = phase; onPhase?(phase) }
     private func fail(_ error: Error) {
-        source?.stop(); source = nil; capture = nil
+        timer?.cancel(); timer = nil
+        _ = capture?.seal(); source?.stop(); source = nil; capture = nil; captureContext = nil
+        recognition?.cancel(); recognition = nil; recognitionEvents?.cancel(); recognitionEvents = nil
         applicationWaiting = false; awaitingApplicationReceipt = false; pendingApplicationOutcome = nil
         self.error = error.localizedDescription; setPhase(.failed)
     }
 }
 
-/// 音频回调只写有界数组，主线程停止后一次取走；不在实时线程执行网络请求。
-nonisolated private final class AssistantCaptureBuffer: @unchecked Sendable {
+/// 音频线程只把有界样本送入ASR inbox并统计静音，不缓存整段，也不执行网络I/O。
+nonisolated private final class AssistantCaptureGate: @unchecked Sendable {
     private let lock = NSLock()
     private let limit: Int
-    private var samples: [Float] = []
+    private var sampleCount = 0
+    private var heardSpeech = false
+    private var closed = false
     private var fullReported = false
-    init(limit: Int) { self.limit = limit; samples.reserveCapacity(limit) }
-    func append(_ chunk: [Float]) -> Bool {
+    init(limit: Int) { self.limit = limit }
+    func feed(_ chunk: [Float], into session: any ASRSession) -> Bool {
         lock.withLock {
-            let remaining = max(0, limit - samples.count)
-            samples.append(contentsOf: chunk.prefix(remaining))
-            guard samples.count >= limit, !fullReported else { return false }
+            guard !closed else { return false }
+            let accepted = Array(chunk.prefix(max(0, limit - sampleCount)))
+            sampleCount += accepted.count
+            heardSpeech = heardSpeech || accepted.contains(where: { abs($0) > 0.003 })
+            // feed只入非阻塞队列；和seal共用锁，避免末块在finish之后才进入会话。
+            if !accepted.isEmpty { session.feed(accepted) }
+            guard sampleCount >= limit, !fullReported else { return false }
             fullReported = true
             return true
         }
     }
-    func take() -> [Float] { lock.withLock { let out = samples; samples = []; return out } }
+    func seal() -> Bool { lock.withLock { closed = true; return sampleCount >= 4_000 && heardSpeech } }
+}
+
+nonisolated private struct AssistantRecognitionFailure: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
 }

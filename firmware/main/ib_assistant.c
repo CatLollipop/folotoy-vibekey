@@ -1,9 +1,12 @@
 #include "ib_assistant.h"
 #include "ib_assistant_store.h"
 #include "ib_assistant_cloud.h"
+#include "ib_asr_realtime.h"
 #include "ib_audio.h"
 #include "ib_pet.h"
 #include "ib_ui.h"
+#include "ib_tts_player.h"
+#include "ib_run_menu.h"
 #include "ib_app.h"
 #include "ib_ble.h"
 #include "ib_cloud_stream.h"
@@ -24,14 +27,19 @@
 #include <string.h>
 #define SLOT_SIZE 0x100000u
 #define PCM_BLOCK 640u
-#define RECORD_BUFFER 16384u
+#define RECORD_BUFFER 6144u
 static const esp_partition_t *s_scratch;
 static ib_assistant_status_cb s_status;
 static void *s_context;
 static SemaphoreHandle_t s_control;
 static TaskHandle_t s_worker,s_reader;
 static StreamBufferHandle_t s_samples;
+static volatile bool s_capture_done;
 static bool s_available;
+static bool s_comp_cloud,s_comp_has_phase,s_comp_owner;
+static const char *s_comp_error="";
+static char s_last_error[48];
+static portMUX_TYPE s_error_lock=portMUX_INITIALIZER_UNLOCKED;
 static volatile bool s_restart_requested;
 static volatile bool s_mode,s_busy,s_cancel,s_stop,s_record,s_record_error,s_prepared;
 static volatile bool s_press_pending,s_forget,s_button_held,s_server_change,s_prepare_failed,s_restart_while_held;
@@ -40,65 +48,107 @@ static volatile ib_assistant_state_t s_state=IB_ASSIST_IDLE;
 static unsigned s_slot;
 static ib_link_t s_upload_link=IB_LINK_COUNT;
 static volatile size_t s_captured;
-static volatile uint32_t s_capture_overflows,s_flash_write_max_us,s_ring_peak;
+static void state(ib_assistant_state_t,const char *);
+static volatile uint32_t s_capture_overflows,s_flash_write_max_us,s_ring_peak,s_capture_stack_min_bytes,s_writer_stack_min_bytes,s_record_ring_overflows;
+static portMUX_TYPE s_transcript_lock=portMUX_INITIALIZER_UNLOCKED;
+static ib_transcript_view_t s_transcript;
+static uint32_t s_transcript_revision,s_transcript_generation;
+void ib_assistant_transcript_snapshot(ib_transcript_view_t *view,uint32_t *revision){portENTER_CRITICAL(&s_transcript_lock);*view=s_transcript;*revision=s_transcript_revision;portEXIT_CRITICAL(&s_transcript_lock);}
+static bool transcript_begin(uint32_t generation){portENTER_CRITICAL(&s_transcript_lock);bool ok=ib_transcript_view_begin(&s_transcript,generation);if(ok)s_transcript_revision++;portEXIT_CRITICAL(&s_transcript_lock);return ok;}
+static bool transcript_update(uint32_t generation,const char *text,bool final){portENTER_CRITICAL(&s_transcript_lock);bool ok=ib_transcript_view_update(&s_transcript,generation,text,final);if(ok)s_transcript_revision++;portEXIT_CRITICAL(&s_transcript_lock);return ok;}
+static void transcript_clear(uint32_t generation){portENTER_CRITICAL(&s_transcript_lock);ib_transcript_view_clear(&s_transcript,generation);s_transcript_revision++;portEXIT_CRITICAL(&s_transcript_lock);}
+static void asr_transcript(const char *text,bool final){(void)transcript_update(s_transcript_generation,text,final);}
+static void asr_transcribing(void){state(IB_ASSIST_TRANSCRIBING,"RECOGNIZING...");}
 static void worker(void *);
 static bool start_worker(void){return s_worker || xTaskCreate(worker,"ib_assistant",10240,NULL,4,&s_worker)==pdPASS;}
-static const char *STATES[]={"idle","preparing","listening","transcribing","thinking","replying","done","error","stopped"};
+static const char *STATES[]={"idle","preparing","listening","transcribing","thinking","replying","done","error","stopped","speaking"};
 const char *ib_assistant_state_name(ib_assistant_state_t s){return (unsigned)s<sizeof(STATES)/sizeof(STATES[0])?STATES[s]:"error";}
 static void reply_to(ib_link_t link,const char *text){size_t n=strlen(text);if(link==IB_LINK_USB)ib_usb_send(text,n);else if(link==IB_LINK_WIFI)ib_wifi_send((const uint8_t *)text,n);}
+static void last_error_copy(char out[48]){portENTER_CRITICAL(&s_error_lock);memcpy(out,s_last_error,sizeof(s_last_error));portEXIT_CRITICAL(&s_error_lock);}
+static void last_error_set(const char *code){
+    char value[48]={0};bool valid=code&&code[0]&&strlen(code)<sizeof(value);
+    if(valid)for(const char *p=code;*p;p++)if(!((*p>='a'&&*p<='z')||(*p>='0'&&*p<='9')||*p=='_'))valid=false;
+    snprintf(value,sizeof(value),"%s",valid?code:"assistant_failed");
+    portENTER_CRITICAL(&s_error_lock);memcpy(s_last_error,value,sizeof(value));portEXIT_CRITICAL(&s_error_lock);
+}
+static void last_error_clear(void){portENTER_CRITICAL(&s_error_lock);s_last_error[0]=0;portEXIT_CRITICAL(&s_error_lock);}
 static void report_state(void){
-    char line[256];snprintf(line,sizeof(line),"{\"t\":\"assistant\",\"op\":\"state\",\"mode\":\"%s\",\"state\":\"%s\",\"configured\":%d,\"rev\":%lu}\n",s_mode?"standalone":"companion",ib_assistant_state_name(s_state),ib_assistant_store_configured(),(unsigned long)ib_assistant_store_revision(false));
+    char error_code[48];last_error_copy(error_code);
+    char line[256];snprintf(line,sizeof(line),"{\"t\":\"assistant\",\"op\":\"state\",\"mode\":\"%s\",\"state\":\"%s\",\"configured\":%d,\"rev\":%lu,\"error_code\":\"%s\"}\n",s_mode?"standalone":"companion",ib_assistant_state_name(s_state),ib_assistant_store_configured(),(unsigned long)ib_assistant_store_revision(false),s_state==IB_ASSIST_ERROR?error_code:"");
     ib_usb_send(line,strlen(line));if(!s_mode)ib_wifi_send((const uint8_t *)line,strlen(line));
 }
-static void state(ib_assistant_state_t st,const char *text){s_state=st;if(s_status)s_status(st,text?text:"",s_context);report_state();}
+static void state(ib_assistant_state_t st,const char *text){if(st==IB_ASSIST_ERROR)last_error_set(text);s_state=st;if(s_status)s_status(st,text?text:"",s_context);report_state();}
 bool ib_assistant_standalone(void){return s_mode;}
 bool ib_assistant_busy(void){return s_busy;}
 ib_assistant_state_t ib_assistant_state(void){return s_state;}
 static bool cancelled(void){return s_cancel||!s_mode;}
-static void text_update(const char *text){if(s_status)s_status(IB_ASSIST_THINKING,text,s_context);}
+static void text_update(const char *text){if(s_state!=IB_ASSIST_REPLYING)state(IB_ASSIST_REPLYING,text);else if(s_status)s_status(IB_ASSIST_REPLYING,text,s_context);}
+// 采音与Flash写入分任务：6KiB预分配队列约192ms，加I2S DMA90ms覆盖实测140ms写延迟。
+// 只允许单producer/consumer；所有退出等写者drain后才释放队列/codec。
 static void reader(void *unused){
-    (void)unused;int16_t pcm[PCM_BLOCK/2];
-    size_t max=ib_assistant_profile()->record_limit_seconds*32000u;s_captured=0;s_record_error=false;memset(&s_voice,0,sizeof(s_voice));
-        while(s_record&&!s_stop&&!cancelled()&&s_captured<max){
-            if(bsp_audio_read(pcm,sizeof(pcm))!=ESP_OK){s_record_error=true;break;}
-            size_t n=max-s_captured<sizeof(pcm)?max-s_captured:sizeof(pcm);
-            ib_voice_analyze(&s_voice,pcm,n/2);
-            if(xStreamBufferSend(s_samples,pcm,n,0)!=n){s_capture_overflows++;s_record_error=true;break;}
-            size_t queued=xStreamBufferBytesAvailable(s_samples);if(queued>s_ring_peak)s_ring_peak=queued;
-            s_captured+=n;
-        }s_record=false;s_reader=NULL;xTaskNotifyGive(s_worker);vTaskDelete(NULL);
+    (void)unused;int16_t pcm[PCM_BLOCK/2];size_t captured=0;
+    size_t max=ib_assistant_profile()->record_limit_seconds*32000u;
+    uint32_t overflow_start=bsp_audio_rx_overflows();
+    while(!s_stop&&!cancelled()&&captured<max){
+        if(bsp_audio_read(pcm,sizeof(pcm))!=ESP_OK){s_record_error=true;break;}
+        size_t n=max-captured<sizeof(pcm)?max-captured:sizeof(pcm);
+        ib_voice_analyze(&s_voice,pcm,n/2);
+        if(xStreamBufferSend(s_samples,pcm,n,0)!=n){s_record_ring_overflows++;s_record_error=true;break;}
+        size_t queued=xStreamBufferBytesAvailable(s_samples);if(queued>s_ring_peak)s_ring_peak=queued;
+        captured+=n;s_capture_overflows=bsp_audio_rx_overflows()-overflow_start;
+        if(s_capture_overflows){s_record_error=true;break;}
+    }
+    s_capture_overflows=bsp_audio_rx_overflows()-overflow_start;if(s_capture_overflows)s_record_error=true;
+    s_capture_stack_min_bytes=uxTaskGetStackHighWaterMark(NULL);
+    s_reader=NULL;__atomic_store_n(&s_capture_done,true,__ATOMIC_RELEASE);vTaskDelete(NULL);
+}
+static void flash_writer(void *unused){
+    (void)unused;uint8_t bytes[1024];size_t written=0;
+    while(!__atomic_load_n(&s_capture_done,__ATOMIC_ACQUIRE)||xStreamBufferBytesAvailable(s_samples)){
+        size_t n=xStreamBufferReceive(s_samples,bytes,sizeof(bytes),pdMS_TO_TICKS(20));
+        if(n&&!s_record_error){
+            int64_t started=esp_timer_get_time();
+            if(written+n>30u*32000u||esp_partition_write(s_scratch,s_slot*SLOT_SIZE+written,bytes,n)!=ESP_OK){s_record_error=true;s_stop=true;}
+            else{written+=n;__atomic_store_n(&s_captured,written,__ATOMIC_RELEASE);}
+            uint32_t elapsed=esp_timer_get_time()-started;if(elapsed>s_flash_write_max_us)s_flash_write_max_us=elapsed;
+        }
+    }
+    s_writer_stack_min_bytes=uxTaskGetStackHighWaterMark(NULL);
+    __atomic_store_n(&s_record,false,__ATOMIC_RELEASE);xTaskNotifyGive(s_worker);vTaskDelete(NULL);
 }
 static bool prepare_slot(void){
     state(IB_ASSIST_PREPARING,"PREPARING RECORDING");
     if(esp_partition_erase_range(s_scratch,s_slot*SLOT_SIZE,SLOT_SIZE)!=ESP_OK){state(IB_ASSIST_ERROR,"flash_erase_failed");s_prepare_failed=true;return false;}
     s_prepared=true;return true;
 }
-static const char *record_audio(size_t *written){
-    *written=0;s_stop=!s_button_held;s_record_error=false;s_capture_overflows=s_flash_write_max_us=s_ring_peak=0;
+static size_t capture_available(void){return __atomic_load_n(&s_captured,__ATOMIC_ACQUIRE);}
+static bool capture_recording(void){return __atomic_load_n(&s_record,__ATOMIC_ACQUIRE);}
+static bool capture_error(void){return s_record_error;}
+static const char *record_realtime(const ib_assistant_profile_t *profile,char *text,size_t cap){
+    s_stop=!s_button_held;s_record_error=false;s_capture_overflows=s_flash_write_max_us=s_ring_peak=s_capture_stack_min_bytes=s_writer_stack_min_bytes=s_record_ring_overflows=0;s_captured=0;memset(&s_voice,0,sizeof(s_voice));
     if(!s_prepared)return "recording_not_ready";
-    // 提示音任务可能刚好还在输出，给它一个有界的结束机会。
     esp_err_t e=ESP_FAIL;for(int i=0;i<20&&!cancelled();i++){e=ib_audio_pcm_begin();if(e==ESP_OK)break;vTaskDelay(pdMS_TO_TICKS(20));}
     if(e!=ESP_OK)return "audio_busy";
     s_samples=xStreamBufferCreate(RECORD_BUFFER,PCM_BLOCK);
     if(!s_samples){ib_audio_pcm_end();return "out_of_memory";}
-    s_record=true;s_prepared=false;
-    state(IB_ASSIST_LISTENING,"RELEASE OK TO SEND");
-    if(xTaskCreate(reader,"ib_asr_capture",3072,NULL,6,&s_reader)!=pdPASS){s_record=false;vStreamBufferDelete(s_samples);s_samples=NULL;ib_audio_pcm_end();return "out_of_memory";}
-    uint8_t data[2048];
-    while(s_record||xStreamBufferBytesAvailable(s_samples)){
-        size_t n=xStreamBufferReceive(s_samples,data,sizeof(data),pdMS_TO_TICKS(25));
-        if(n){int64_t started=esp_timer_get_time();
-            if(esp_partition_write(s_scratch,s_slot*SLOT_SIZE+*written,data,n)!=ESP_OK){s_record_error=true;s_stop=true;}
-            uint32_t elapsed=esp_timer_get_time()-started;if(elapsed>s_flash_write_max_us)s_flash_write_max_us=elapsed;*written+=n;}
-        if(*written>30u*32000u){s_record_error=true;s_stop=true;}
+    s_record=true;s_capture_done=false;s_prepared=false;
+    if(xTaskCreate(flash_writer,"ib_asr_flash",2560,NULL,5,NULL)!=pdPASS){s_record=false;vStreamBufferDelete(s_samples);s_samples=NULL;ib_audio_pcm_end();return "out_of_memory";}
+    if(xTaskCreate(reader,"ib_asr_capture",3072,NULL,6,&s_reader)!=pdPASS){
+        s_capture_done=true;while(capture_recording())vTaskDelay(pdMS_TO_TICKS(10));
+        vStreamBufferDelete(s_samples);s_samples=NULL;ib_audio_pcm_end();return "out_of_memory";
     }
-    ib_audio_pcm_end();
-    vStreamBufferDelete(s_samples);s_samples=NULL;
+    if(++s_transcript_generation==0)++s_transcript_generation;
+    (void)transcript_begin(s_transcript_generation);state(IB_ASSIST_LISTENING,"RELEASE OK TO SEND");
+    const ib_asr_source_t source={capture_available,capture_recording,capture_error,asr_transcribing,asr_transcript};
+    const char *error=ib_asr_realtime_run(profile,s_scratch,s_slot*SLOT_SIZE,&source,text,cap,cancelled);
+    s_stop=true;while(capture_recording())vTaskDelay(pdMS_TO_TICKS(10));
+    vStreamBufferDelete(s_samples);s_samples=NULL;ib_audio_pcm_end();vTaskDelay(1);
     if(cancelled())return "cancelled";
     if(s_record_error)return "recording_overflow";
-    if(*written<8000)return "recording_too_short";
+    if(error)return error;
+    if(s_captured<8000)return "recording_too_short";
     if(!ib_voice_present(&s_voice))return "no_speech";
-    return NULL;
+    return error;
 }
 static void worker(void *unused){
     (void)unused;
@@ -120,30 +170,31 @@ static void worker(void *unused){
         s_press_pending=false;
         xSemaphoreTake(s_control,portMAX_DELAY);
         if(!s_mode||s_busy||ib_assistant_store_uploading()){xSemaphoreGive(s_control);continue;}
-        if(!ib_assistant_store_configured()){state(IB_ASSIST_ERROR,"CONFIGURE ON MAC");xSemaphoreGive(s_control);continue;}
-        if(!s_prepared){state(IB_ASSIST_ERROR,"RECORDING NOT READY");xSemaphoreGive(s_control);continue;}
-        s_busy=true;xSemaphoreGive(s_control);size_t n=0;const char *error=NULL;char *transcript=NULL,*reply=NULL;
+        if(!ib_assistant_store_configured()){state(IB_ASSIST_ERROR,"profile_required");xSemaphoreGive(s_control);continue;}
+        if(!s_prepared){state(IB_ASSIST_ERROR,"recording_not_ready");xSemaphoreGive(s_control);continue;}
+        s_busy=true;last_error_clear();xSemaphoreGive(s_control);const char *error=NULL;char *transcript=NULL,*reply=NULL;size_t reply_capacity=4097;
         if(!ib_wifi_is_ready())error="wifi_unavailable";
         if(!error && !ib_wifi_companion_released()) {
             ib_wifi_set_companion_enabled(false);
             for(int i=0;i<100&&!ib_wifi_companion_released();i++)vTaskDelay(pdMS_TO_TICKS(20));
             if(!ib_wifi_companion_released())error="companion_busy";
         }
-        if(!error)error=record_audio(&n);
         const ib_assistant_profile_t *p=ib_assistant_profile();
         if(!error){transcript=calloc(1,4096);if(!transcript)error="out_of_memory";}
-        if(!error){state(IB_ASSIST_TRANSCRIBING,"RECOGNIZING...");error=ib_assistant_cloud_asr(p,s_scratch,s_slot*SLOT_SIZE,n,transcript,4096,cancelled);}
+        if(!error)error=record_realtime(p,transcript,4096);
         if(!error){reply=calloc(1,4097);if(!reply)error="out_of_memory";}
         if(!error){state(IB_ASSIST_THINKING,transcript);error=ib_assistant_cloud_reply(p,transcript,reply,4097,cancelled,text_update);}
         if(transcript){memset(transcript,0,4096);free(transcript);transcript=NULL;}
         if(!error){
-            state(IB_ASSIST_REPLYING,reply);
+            size_t needed=strlen(reply)+1;char *smaller=realloc(reply,needed);
+            if(smaller){reply=smaller;reply_capacity=needed;}
+            state(IB_ASSIST_SPEAKING,reply);
             if(ib_audio_pcm_begin()!=ESP_OK)error="audio_busy";
-            else{error=ib_assistant_cloud_tts(p,reply,cancelled);vTaskDelay(pdMS_TO_TICKS(120));ib_audio_pcm_end();}
+            else{error=ib_assistant_cloud_tts(p,reply,cancelled);ib_audio_pcm_end();}
         }
         s_slot=1-s_slot;s_prepared=false;s_busy=false;s_record=false;
-        if(reply){memset(reply,0,4097);free(reply);}
-        if(error)state(!strcmp(error,"cancelled")?IB_ASSIST_STOPPED:IB_ASSIST_ERROR,error);
+        if(reply){memset(reply,0,reply_capacity);free(reply);}
+        if(error){transcript_clear(0);state(!strcmp(error,"cancelled")?IB_ASSIST_STOPPED:IB_ASSIST_ERROR,error);}
         else state(IB_ASSIST_DONE,"DONE");
         if(!(s_restart_while_held&&s_button_held))ulTaskNotifyTake(pdTRUE,pdMS_TO_TICKS(1200));
         // 下一槽预擦除在录音之前执行，绝不在采音时擦除Flash。
@@ -152,14 +203,15 @@ static void worker(void *unused){
 }
 void ib_assistant_press(void){
     s_button_held=true;if(!s_mode)return;
-    if(s_busy){s_restart_while_held=true;s_cancel=s_stop=true;ib_audio_pcm_interrupt();ib_assistant_cloud_cancel();return;}
+    if(!ib_assistant_store_configured()){state(IB_ASSIST_ERROR,"profile_required");return;}
+    if(s_busy){s_restart_while_held=true;s_cancel=s_stop=true;ib_audio_pcm_interrupt();ib_assistant_cloud_cancel();ib_asr_realtime_cancel();return;}
     if(!s_prepared){s_restart_while_held=true;s_prepare_failed=false;if(s_worker)xTaskNotifyGive(s_worker);return;}
     s_cancel=false;s_press_pending=true;if(s_worker)xTaskNotifyGive(s_worker);
 }
 void ib_assistant_release(void){s_button_held=false;s_stop=true;}
-void ib_assistant_cancel(void){s_restart_while_held=false;s_cancel=s_stop=true;ib_audio_pcm_interrupt();ib_assistant_cloud_cancel();}
+void ib_assistant_cancel(void){s_restart_while_held=false;s_cancel=s_stop=true;ib_audio_pcm_interrupt();ib_assistant_cloud_cancel();ib_asr_realtime_cancel();transcript_clear(0);}
 void ib_assistant_clear_history(void){s_forget=true;if(s_worker)xTaskNotifyGive(s_worker);}
-void ib_assistant_companion_state(const char *name){
+static void companion_present(const char *name,bool has_phase,ib_assistant_state_t phase){
     if(s_mode||s_busy||!s_status)return;
     ib_assistant_state_t st=IB_ASSIST_IDLE;
     if(!strcmp(name,"listening"))st=IB_ASSIST_LISTENING;
@@ -168,10 +220,39 @@ void ib_assistant_companion_state(const char *name){
     else if(!strcmp(name,"done")||!strcmp(name,"celebrate"))st=IB_ASSIST_DONE;
     else if(!strcmp(name,"error")||!strcmp(name,"alerting"))st=IB_ASSIST_ERROR;
     else if(!strcmp(name,"loading"))st=IB_ASSIST_PREPARING;
+    else if(!strcmp(name,"uploading"))st=IB_ASSIST_TRANSCRIBING;
+    else if(!strcmp(name,"humming"))st=IB_ASSIST_SPEAKING;
     else if(!strcmp(name,"stopped")||!strcmp(name,"powering-down"))st=IB_ASSIST_STOPPED;
-    s_status(st,name,s_context);
+    s_comp_has_phase=has_phase;s_state=has_phase?phase:st;s_status(s_state,name,s_context);
 }
+void ib_assistant_companion_state(const char *name){if(!s_comp_owner)companion_present(name,false,IB_ASSIST_IDLE);}
+void ib_assistant_companion_release(void){
+    bool changed=s_comp_owner||s_comp_cloud||s_comp_has_phase||s_comp_error[0];
+    s_comp_owner=s_comp_cloud=s_comp_has_phase=false;s_comp_error="";if(changed)transcript_clear(0);
+    if(changed&&!s_mode&&!s_busy){s_state=IB_ASSIST_IDLE;if(s_status)s_status(s_state,"idle",s_context);}
+}
+bool ib_assistant_companion_cloud_target(void){return s_comp_cloud;}
+bool ib_assistant_companion_owned(void){return s_comp_owner;}
+bool ib_assistant_companion_has_phase(void){return s_comp_has_phase;}
+const char *ib_assistant_companion_error(void){return s_comp_error;}
 static bool uint_field(const cJSON *o,const char *key,uint32_t *v){const cJSON *x=cJSON_GetObjectItemCaseSensitive(o,key);if(!cJSON_IsNumber(x)||x->valuedouble<0||x->valuedouble>4294967295.0||x->valuedouble!=(uint32_t)x->valuedouble)return false;*v=(uint32_t)x->valuedouble;return true;}
+bool ib_assistant_mode_busy(void){
+    bool active=s_state==IB_ASSIST_PREPARING||s_state==IB_ASSIST_LISTENING||s_state==IB_ASSIST_TRANSCRIBING||s_state==IB_ASSIST_THINKING||s_state==IB_ASSIST_REPLYING||s_state==IB_ASSIST_SPEAKING;
+    return s_busy||ib_audio_mic_active()||(!s_mode&&s_comp_owner&&active);
+}
+static const char *mode_request_locked(bool standalone){
+    static const char *const errors[]={NULL,"unavailable","busy","upload_active","wifi_required","profile_required","restarting"};
+    ib_run_mode_check_t check=ib_run_mode_check(s_mode,standalone,s_available,ib_assistant_mode_busy(),ib_assistant_store_uploading(),ib_wifi_is_configured(),ib_assistant_store_configured(),s_restart_requested);
+    if(check!=IB_RUN_READY)return errors[check];
+    if(s_mode==standalone)return NULL;
+    if(ib_assistant_mode_save(standalone)!=ESP_OK)return "save_failed";
+    s_mode=standalone;s_cancel=s_stop=true;s_restart_requested=true;state(IB_ASSIST_PREPARING,"RESTARTING...");return NULL;
+}
+const char *ib_assistant_request_mode(bool standalone){
+    if(!s_control)return "unavailable";
+    if(xSemaphoreTake(s_control,pdMS_TO_TICKS(50))!=pdTRUE)return "busy";
+    const char *error=mode_request_locked(standalone);xSemaphoreGive(s_control);if(s_worker)xTaskNotifyGive(s_worker);return error;
+}
 bool ib_assistant_handle_line(ib_link_t link,const char *line,size_t length){
     if(!line||length>511)return false;
     cJSON *o=cJSON_ParseWithLength(line,length);if(!o)return false;
@@ -184,6 +265,24 @@ bool ib_assistant_handle_line(ib_link_t link,const char *line,size_t length){
     if(link==IB_LINK_BLE){cJSON_Delete(o);return true;}
     if(!s_control){cJSON_Delete(o);return true;}
     if(xSemaphoreTake(s_control,pdMS_TO_TICKS(50))!=pdTRUE){error="busy";goto respond;}
+    if(!strcmp(op,"asr_diagnostics")){
+        ib_asr_diagnostics_t d;ib_asr_realtime_diagnostics(&d);
+        snprintf(response,sizeof(response),"{\"t\":\"assistant\",\"op\":\"asr_diagnostics\",\"rid\":%lu,\"ok\":1,\"port\":%d,\"connect_result\":%d,\"connect_errno\":%d,\"tls_error\":%d,\"tls_stack\":%d,\"tls_flags\":%d,\"http_code\":%d,\"error_type\":%d,\"ws_error\":%d,\"ws_stack\":%d,\"ws_flags\":%d,\"socket_errno\":%d,\"io_stage\":%d,\"io_result\":%d,\"io_errno\":%d}\n",
+            (unsigned long)rid,d.connect_port,d.connect_result,d.connect_errno,d.tls_error,d.tls_stack,d.tls_flags,d.http_code,d.error_type,d.ws_error,d.ws_stack,d.ws_flags,d.socket_errno,d.io_stage,d.io_result,d.io_errno);
+        xSemaphoreGive(s_control);reply_to(link,response);cJSON_Delete(o);return true;
+    }
+    if(!strcmp(op,"asr_status")){
+        ib_asr_stats_t stats;ib_asr_realtime_stats(&stats);
+        snprintf(response,sizeof(response),"{\"t\":\"assistant\",\"op\":\"asr_status\",\"rid\":%lu,\"ok\":1,\"sent\":%lu,\"messages\":%lu,\"partials\":%lu,\"finals\":%lu,\"connect_ms\":%lu,\"first_partial_ms\":%lu,\"heap_min\":%lu,\"largest_min\":%lu,\"ws_stack_min_bytes\":%lu,\"send_max_ms\":%lu,\"task_started\":%d,\"task_finished\":%d,\"dma_overflows\":%lu,\"capture_stack_min_bytes\":%lu,\"writer_stack_min_bytes\":%lu,\"capture_capacity\":6144,\"ring_overflows\":%lu}\n",
+            (unsigned long)rid,(unsigned long)stats.sent_bytes,(unsigned long)stats.messages,(unsigned long)stats.partials,(unsigned long)stats.sentences,(unsigned long)stats.connect_ms,(unsigned long)stats.first_partial_ms,(unsigned long)stats.heap_min,(unsigned long)stats.largest_min,(unsigned long)stats.ws_stack_min_bytes,(unsigned long)stats.send_max_ms,stats.task_started,stats.task_finished,(unsigned long)s_capture_overflows,(unsigned long)s_capture_stack_min_bytes,(unsigned long)s_writer_stack_min_bytes,(unsigned long)s_record_ring_overflows);
+        xSemaphoreGive(s_control);reply_to(link,response);cJSON_Delete(o);return true;
+    }
+    if(!strcmp(op,"audio_status")){
+        ib_tts_stats_t stats;ib_tts_player_stats(&stats);
+        snprintf(response,sizeof(response),"{\"t\":\"assistant\",\"op\":\"audio_status\",\"rid\":%lu,\"ok\":1,\"capacity\":4096,\"prebuffer\":3072,\"dma_ms\":90,\"received\":%lu,\"written\":%lu,\"q_peak\":%lu,\"q_low\":%lu,\"startup_ms\":%lu,\"net_wait_ms\":%lu,\"write_gap_ms\":%lu,\"write_ms\":%lu,\"starves\":%lu,\"starve_ms\":%lu,\"write_errors\":%lu,\"cancelled\":%lu,\"stack_min_bytes\":%lu}\n",
+            (unsigned long)rid,(unsigned long)stats.received_bytes,(unsigned long)stats.written_bytes,(unsigned long)stats.queue_peak,(unsigned long)stats.queue_low,(unsigned long)stats.startup_ms,(unsigned long)stats.net_wait_max_ms,(unsigned long)stats.write_gap_max_ms,(unsigned long)stats.write_max_ms,(unsigned long)stats.starves,(unsigned long)stats.starve_ms,(unsigned long)stats.write_errors,(unsigned long)stats.cancelled,(unsigned long)stats.consumer_stack_min_bytes);
+        xSemaphoreGive(s_control);reply_to(link,response);cJSON_Delete(o);return true;
+    }
     if(!strcmp(op,"status")){
         snprintf(response,sizeof(response),"{\"t\":\"assistant\",\"op\":\"status\",\"rid\":%lu,\"ok\":1,\"mode\":\"%s\",\"state\":\"%s\",\"configured\":%d,\"rev\":%lu,\"pet_rev\":%lu,\"heap\":%u,\"min_free\":%u,\"largest\":%u,\"record_bytes\":%u,\"record_error\":%d,\"overflows\":%lu,\"ring_peak\":%lu,\"flash_write_max_us\":%lu,\"voice_blocks\":%lu,\"voice_peak\":%u,\"pet_ms\":%lu,\"app_ready\":%d,\"wifi_configured\":%d,\"wifi_ready\":%d,\"ble\":%d,\"buttons\":%d,\"pet_last_ms\":%lu,\"lvgl_peak\":%lu}\n",
             (unsigned long)rid,s_mode?"standalone":"companion",ib_assistant_state_name(s_state),ib_assistant_store_configured(),
@@ -193,15 +292,38 @@ bool ib_assistant_handle_line(ib_link_t link,const char *line,size_t length){
         xSemaphoreGive(s_control);reply_to(link,response);cJSON_Delete(o);return true;
     }
     if(!strcmp(op,"capabilities")){
-        snprintf(response,sizeof(response),"{\"t\":\"assistant\",\"op\":\"%s\",\"rid\":%lu,\"ok\":1,\"schema\":1,\"max\":16384,\"pet_max\":131072,\"pet_format\":\"aora-bundle-v2\",\"chunk\":288,\"profile\":1,\"pet\":1,\"standalone\":%d,\"mode\":\"%s\",\"state\":\"%s\",\"configured\":%d,\"rev\":%lu,\"pet_rev\":%lu}\n",op,(unsigned long)rid,s_available,s_mode?"standalone":"companion",ib_assistant_state_name(s_state),ib_assistant_store_configured(),(unsigned long)ib_assistant_store_revision(false),(unsigned long)ib_assistant_store_revision(true));
+        char last_error[48];last_error_copy(last_error);
+        snprintf(response,sizeof(response),"{\"t\":\"assistant\",\"op\":\"%s\",\"rid\":%lu,\"ok\":1,\"schema\":1,\"profile_schema\":2,\"asr\":\"doubao-realtime\",\"transcript\":1,\"max\":16384,\"pet_max\":131072,\"pet_format\":\"aora-bundle-v2\",\"chunk\":288,\"profile\":1,\"pet\":1,\"standalone\":%d,\"run_menu\":1,\"owner\":%d,\"mode\":\"%s\",\"state\":\"%s\",\"configured\":%d,\"rev\":%lu,\"pet_rev\":%lu,\"last_error\":\"%s\"}\n",op,(unsigned long)rid,s_available,s_comp_owner,s_mode?"standalone":"companion",ib_assistant_state_name(s_state),ib_assistant_store_configured(),(unsigned long)ib_assistant_store_revision(false),(unsigned long)ib_assistant_store_revision(true),last_error);
         xSemaphoreGive(s_control);reply_to(link,response);cJSON_Delete(o);return true;
     }
     if(!s_available)error="unavailable";
     else if(!strcmp(op,"pet_state")){
-        cJSON *value=cJSON_GetObjectItemCaseSensitive(o,"value");
-        if(s_mode||s_busy)error="busy";else if(!cJSON_IsString(value))error="invalid_state";else {
-            bool known=ib_pet_state_is_valid(value->valuestring);
-            if(!known)error="invalid_state";else ib_assistant_companion_state(value->valuestring);
+        cJSON *value=cJSON_GetObjectItemCaseSensitive(o,"value"),*target=cJSON_GetObjectItemCaseSensitive(o,"target"),*phase=cJSON_GetObjectItemCaseSensitive(o,"phase"),*detail=cJSON_GetObjectItemCaseSensitive(o,"error");
+        static const char *const phases[]={"idle","preparing","recording","transcribing","thinking","replying","completed","failed","stopped","speaking"};
+        int selected=-1;if(cJSON_IsString(phase))for(unsigned i=0;i<sizeof(phases)/sizeof(phases[0]);i++)if(!strcmp(phase->valuestring,phases[i]))selected=i;
+        if(s_mode||s_busy)error="busy";
+        else if(!cJSON_IsString(value)||!ib_pet_state_is_valid(value->valuestring))error="invalid_state";
+        else if(target&&(!cJSON_IsString(target)||(strcmp(target->valuestring,"cloud")&&strcmp(target->valuestring,"application"))))error="invalid_target";
+        else if(phase&&selected<0)error="invalid_phase";
+        else if(detail&&(!cJSON_IsString(detail)||(detail->valuestring[0]&&strcmp(detail->valuestring,"check_mac"))))error="invalid_error";
+        else{
+            s_comp_owner=target!=NULL;s_comp_cloud=target&&!strcmp(target->valuestring,"cloud");
+            s_comp_error=detail&&detail->valuestring[0]?"check_mac":"";
+            if(selected==IB_ASSIST_ERROR||selected==IB_ASSIST_STOPPED)transcript_clear(0);
+            companion_present(value->valuestring,phase!=NULL,selected>=0?(ib_assistant_state_t)selected:IB_ASSIST_IDLE);
+        }
+
+    }else if(!strcmp(op,"transcript_begin")||!strcmp(op,"transcript_update")||!strcmp(op,"transcript_clear")){
+        uint32_t generation=0;
+        if(s_mode||s_busy)error="busy";
+        else if(!uint_field(o,"generation",&generation)||(!generation&&strcmp(op,"transcript_clear")))error="invalid_generation";
+        else if(!strcmp(op,"transcript_begin")){if(!transcript_begin(generation))error="stale_generation";}
+        else if(!strcmp(op,"transcript_clear"))transcript_clear(generation);
+        else{
+            cJSON *value=cJSON_GetObjectItemCaseSensitive(o,"text"),*final=cJSON_GetObjectItemCaseSensitive(o,"final");uint32_t numeric=0;
+            bool valid_final=cJSON_IsBool(final)||uint_field(o,"final",&numeric);
+            if(!cJSON_IsString(value)||strlen(value->valuestring)>IB_TRANSCRIPT_VIEW_BYTES||!valid_final||(!cJSON_IsBool(final)&&numeric>1))error="invalid_transcript";
+            else if(!transcript_update(generation,value->valuestring,cJSON_IsBool(final)?cJSON_IsTrue(final):numeric==1))error="stale_generation";
         }
     }else if(s_busy || ib_audio_mic_active())error="busy";
     else if(!strcmp(op,"begin")){
@@ -223,37 +345,27 @@ bool ib_assistant_handle_line(ib_link_t link,const char *line,size_t length){
     }else if(!strcmp(op,"mode")){
         cJSON *v=cJSON_GetObjectItemCaseSensitive(o,"value");
         if(!cJSON_IsString(v)||(strcmp(v->valuestring,"standalone")&&strcmp(v->valuestring,"companion")))error="invalid_mode";
-        else if(ib_assistant_store_uploading())error="upload_active";
-        else if(!strcmp(v->valuestring,"standalone")&&!ib_wifi_is_configured())error="wifi_required";
-        else if(!strcmp(v->valuestring,"standalone")&&!ib_assistant_store_configured())error="profile_required";
-        else if(s_mode==!strcmp(v->valuestring,"standalone")){}
-        else if(ib_assistant_mode_save(!strcmp(v->valuestring,"standalone"))!=ESP_OK)error="save_failed";
-        else{s_mode=!strcmp(v->valuestring,"standalone");s_cancel=s_stop=true;s_restart_requested=true;
-            state(IB_ASSIST_PREPARING,"RESTARTING...");}
+        else error=mode_request_locked(!strcmp(v->valuestring,"standalone"));
 
     }else error="unknown_operation";
     xSemaphoreGive(s_control);
 respond:
     bool upload_op=!strcmp(op,"begin")||!strcmp(op,"chunk")||!strcmp(op,"commit");
-    snprintf(response,sizeof(response),"{\"t\":\"assistant\",\"op\":\"%s\",\"rid\":%lu,\"ok\":%d,\"mode\":\"%s\",\"configured\":%d,\"rev\":%lu,\"pet_rev\":%lu,\"off\":%u,\"restarting\":%d,\"error\":\"%s\"}\n",strlen(op)<24?op:"invalid",(unsigned long)rid,error?0:1,s_mode?"standalone":"companion",ib_assistant_store_configured(),(unsigned long)(upload_op?ib_assistant_store_upload_revision():ib_assistant_store_revision(false)),(unsigned long)ib_assistant_store_revision(true),(unsigned)ib_assistant_store_offset(),s_restart_requested,error?error:"");
+    snprintf(response,sizeof(response),"{\"t\":\"assistant\",\"op\":\"%s\",\"rid\":%lu,\"ok\":%d,\"mode\":\"%s\",\"configured\":%d,\"rev\":%lu,\"pet_rev\":%lu,\"off\":%u,\"restarting\":%d,\"owner\":%d,\"error\":\"%s\"}\n",strlen(op)<24?op:"invalid",(unsigned long)rid,error?0:1,s_mode?"standalone":"companion",ib_assistant_store_configured(),(unsigned long)(upload_op?ib_assistant_store_upload_revision():ib_assistant_store_revision(false)),(unsigned long)ib_assistant_store_revision(true),(unsigned)ib_assistant_store_offset(),s_restart_requested,s_comp_owner,error?error:"");
     reply_to(link,response);cJSON_Delete(o);if(s_worker)xTaskNotifyGive(s_worker);return true;
 }
 esp_err_t ib_assistant_init(ib_assistant_status_cb cb,void *context){
-    ib_assistant_cloud_init();
+    ib_assistant_cloud_init();ib_asr_realtime_init();
     s_status=cb;s_context=context;s_control=xSemaphoreCreateMutex();if(!s_control)return ESP_ERR_NO_MEM;
     esp_err_t e=ib_assistant_store_init();if(e!=ESP_OK)return e;
     s_scratch=esp_partition_find_first(ESP_PARTITION_TYPE_DATA,0x42,"audio_scratch");
     if(!s_scratch||s_scratch->size!=2*SLOT_SIZE||s_scratch->address<0x35A000)return ESP_ERR_INVALID_SIZE;
     s_available=true;s_mode=ib_assistant_mode_load();ib_wifi_set_companion_enabled(!s_mode);
     if(s_mode&&!start_worker()){s_available=false;s_mode=false;ib_wifi_set_companion_enabled(true);return ESP_ERR_NO_MEM;}
+    if(s_mode&&!ib_assistant_store_configured())state(IB_ASSIST_ERROR,"profile_required");
     return ESP_OK;
 }
 
-void ib_assistant_leave_standalone(void){
-    if(!s_control)return;
-    if(xSemaphoreTake(s_control,pdMS_TO_TICKS(50))!=pdTRUE)return;
-    if(!s_busy&&!ib_assistant_store_uploading()&&ib_assistant_mode_save(false)==ESP_OK){s_mode=false;s_restart_requested=true;s_stop=s_cancel=true;state(IB_ASSIST_PREPARING,"RESTARTING...");}
-    xSemaphoreGive(s_control);if(s_worker)xTaskNotifyGive(s_worker);
-}
+void ib_assistant_leave_standalone(void){(void)ib_assistant_request_mode(false);}
 
 bool ib_assistant_take_restart_request(void){return s_restart_requested;}

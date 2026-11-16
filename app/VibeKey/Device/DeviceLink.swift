@@ -1114,11 +1114,14 @@ import Security
     }
 
     /// 宠物语义事件不携带正文和密钥，不参与有回执的配置事务。
-    func sendPetState(_ state: String) {
-        guard let active else { return }
-        let line = FlatJSON.encode([("cmd", .string("assistant")), ("op", .string("pet_state")),
-                                    ("value", .string(String(state.prefix(32))))])
-        sendRaw(Data((line + "\n").utf8), via: active)
+    func sendPetState(_ state: String, presentation: DeviceAssistantPresentation? = nil) {
+        guard let active, let packet = try? DeviceAssistantProtocol.encodePetState(state, presentation: presentation) else { return }
+        sendRaw(packet, via: active)
+    }
+    func sendAssistantTranscript(_ action: DeviceAssistantProtocol.TranscriptAction, generation: UInt32,
+                                 text: String = "", final: Bool = false) {
+        guard let active, let packet = try? DeviceAssistantProtocol.encodeTranscript(action, generation: generation, text: text, final: final) else { return }
+        sendRaw(packet, via: active)
     }
 
     private func failAssistantRequest() {

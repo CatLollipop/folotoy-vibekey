@@ -11,6 +11,7 @@
 #include "ib_ui_page.h"
 
 #include <ctype.h>
+#include <string.h>
 
 #define ROW_X       14
 #define ROW_W       192
@@ -36,6 +37,8 @@ static uint16_t s_n, s_top;
 static int32_t s_target = -1;       // 选中行在可见区内的序号,-1 表示不在可见区
 static int32_t s_lead = 0;          // 胶囊前沿 / 后沿的行顶纵坐标(x16,控件坐标)
 static int32_t s_trail = 0;
+static bool s_run_mode_menu,s_run_mode_standalone;
+static ib_ui_run_mode_notice_t s_run_mode_notice;
 
 static int32_t row_y(int32_t row)
 {
@@ -86,6 +89,18 @@ static void fx_draw(lv_event_t *e)
         bool on = overlap * 2 > ROW_H;
         const lv_font_t *row_font = s_row_cjk[i] ? &ib_cjk_font_12 : font;
         ib_fx_text_left(&fx, ROW_X + ROW_PAD, y + ROW_H / 2, s_rows[i], row_font, on ? black : idle, LV_OPA_COVER);
+        if(s_run_mode_menu&&i==(s_run_mode_standalone?0:1)){
+            ib_fx_text(&fx,ROW_X+ROW_W-ROW_PAD,y+ROW_H/2,ib_icon_glyph(IB_ICON_CHECK),&ib_icon_font_12,on?black:idle,LV_OPA_COVER);
+        }
+    }
+    if(s_run_mode_menu){
+        lv_color_t color=IB_C(s_run_mode_notice==IB_UI_RUN_MODE_NOTICE_NONE?IB_COLOR_TEXT_MID:
+            s_run_mode_notice==IB_UI_RUN_MODE_NOTICE_RESTARTING?IB_COLOR_DONE:IB_COLOR_ERR);
+        /* 说明最多两行，不能用给小图标设计的120px×单行ib_fx_text区域。 */
+        lv_draw_label_dsc_t d;lv_draw_label_dsc_init(&d);
+        d.text=ib_ui_run_mode_notice(s_run_mode_notice);d.font=&ib_cjk_font_12;d.color=color;d.opa=fx.opa;d.align=LV_TEXT_ALIGN_CENTER;
+        lv_area_t area={fx.ox+ROW_X,fx.oy+row_y(3)+10,fx.ox+ROW_X+ROW_W-1,fx.oy+row_y(3)+10+35};
+        lv_draw_label(fx.layer,&d,&area);
     }
 }
 
@@ -104,6 +119,15 @@ static lv_obj_t *create(lv_obj_t *parent, const ib_ui_ctx_t *ctx)
 static void update(const ib_ui_ctx_t *ctx)
 {
     const ib_ui_list_t *l = &ctx->list;
+    s_run_mode_menu=ctx->run_mode_menu;s_run_mode_standalone=ctx->run_mode_standalone;s_run_mode_notice=ctx->run_mode_notice;
+    /* local菜单不改ctx.list，Mac最后一份会话列表始终完整缓存，退出可立即恢复。 */
+    ib_ui_list_t local;
+    if(s_run_mode_menu){
+        memset(&local,0,sizeof(local));
+        lv_snprintf(local.title,sizeof(local.title),"%s",ib_ui_run_mode_title());
+        for(unsigned i=0;i<3;i++)lv_snprintf(local.items[i],sizeof(local.items[i]),"%s",ib_ui_run_mode_item(i));
+        local.rows=local.n=3;local.sel=ctx->run_mode_selected;l=&local;
+    }
     size_t n = 0;
     for (; l->title[n] && n + 1 < sizeof(s_title_text); n++) {
         unsigned char ch = (unsigned char)l->title[n];

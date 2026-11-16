@@ -33,7 +33,7 @@ esp_err_t nvs_get_u8(nvs_handle_t n,const char *k,uint8_t *v){(void)n;(void)k;*v
 esp_err_t nvs_set_u8(nvs_handle_t n,const char *k,uint8_t v){(void)n;(void)k;mode=v;return ESP_OK;}
 esp_err_t nvs_commit(nvs_handle_t n){(void)n;return ESP_OK;}
 void nvs_close(nvs_handle_t n){(void)n;}
-static const char profile[]="{\"schema\":1,\"revision\":1,\"minimax_key\":\"fictional-test-key\",\"deepseek_key\":\"fictional-test-key\",\"llm_model\":\"deepseek-flash\"}";
+static const char profile[]="{\"schema\":2,\"asr_provider\":\"volcengine_doubao_realtime\",\"asr_model\":\"bigmodel\",\"asr_key\":\"fictional-asr-key\",\"revision\":1,\"minimax_key\":\"fictional-test-key\",\"deepseek_key\":\"fictional-test-key\",\"llm_model\":\"deepseek-flash\"}";
 static const char pet[]="{\"schema\":1,\"revision\":2,\"enabled\":true,\"fps\":12,\"brightness\":80,\"color\":\"#EADBB9\"}";
 static const char *upload(bool is_pet,unsigned rev,const char *s,bool usb){size_t n=strlen(s);const char *e=ib_assistant_store_begin(is_pet,rev,n,ib_crc32(s,n),usb);if(e)return e;for(size_t off=0;off<n;off+=40){size_t take=n-off<40?n-off:40;e=ib_assistant_store_chunk(off,s+off,take);if(e)return e;}return ib_assistant_store_commit();}
 static void test_expanded_store(void);
@@ -43,6 +43,12 @@ int main(void){
     CHECK(upload(false,1,profile,true)==NULL);CHECK(ib_assistant_store_configured());CHECK(ib_assistant_store_usb_provisioned());
     CHECK(upload(true,2,pet,false)==NULL);CHECK(ib_assistant_store_revision(false)==1);CHECK(ib_assistant_store_revision(true)==2);
     CHECK(ib_assistant_store_init()==ESP_OK);CHECK(ib_assistant_store_configured());char actual[512];CHECK(ib_assistant_pet_config(actual,sizeof(actual)));CHECK_STR(actual,pet);
+    // schema1保留有效bank/pet/revision，但已取消的MiniMax ASR绝不再被视为已配置。
+    const char legacy_profile[]="{\"schema\":1,\"revision\":1,\"minimax_key\":\"old-fictional-key\",\"deepseek_key\":\"old-fictional-key\"}";
+    CHECK(upload(false,1,legacy_profile,true)==NULL);CHECK(ib_assistant_store_init()==ESP_OK);
+    CHECK(!ib_assistant_store_configured());CHECK(ib_assistant_store_revision(false)==1);CHECK(ib_assistant_store_revision(true)==2);
+    CHECK(ib_assistant_pet_config(actual,sizeof(actual)));CHECK_STR(actual,pet);
+    CHECK(upload(false,1,profile,true)==NULL);CHECK(ib_assistant_store_configured());
     // 半次上传后重启，旧profile与pet都还在。
     CHECK(ib_assistant_store_begin(false,3,strlen(profile),ib_crc32(profile,strlen(profile)),false)==NULL);
     CHECK(ib_assistant_store_chunk(0,profile,20)==NULL);ib_assistant_store_abort();CHECK(ib_assistant_store_init()==ESP_OK);

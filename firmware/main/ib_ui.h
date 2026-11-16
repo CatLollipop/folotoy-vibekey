@@ -8,6 +8,7 @@
 
 #include "esp_err.h"
 #include "ib_icons.h"
+#include "ib_ui_labels.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -50,7 +51,7 @@ typedef enum {
 #define IB_UI_LIST_TEXT_MAX 48
 #define IB_UI_CAPTION_MAX 192
 #define IB_UI_CAPTION_APP_MAX 64
-#define IB_UI_OFFLINE_HINT_MAX 32
+#define IB_UI_OFFLINE_HINT_MAX 64
 typedef struct {
     char title[IB_UI_LIST_TEXT_MAX];
     char items[IB_UI_LIST_ROWS][IB_UI_LIST_TEXT_MAX];
@@ -120,8 +121,9 @@ void ib_ui_set_battery(int soc, bool charging);
 
 // OFFLINE 时钟:time 形如 "23:41",date 形如 "THU 10/15";time 为空串表示未知(显示 --:--)。
 void ib_ui_set_clock(const char *time, const char *date);
-// OFFLINE 页底部提示(ASCII,如 "PRESS OK TO RECONNECT");空串恢复 "WAITING FOR MAC"。
+// OFFLINE 页底部UTF-8提示；业务使用下面的语义枚举，不按显示文案判断状态。
 void ib_ui_set_offline_hint(const char *text);
+void ib_ui_set_connection_hint(ib_ui_connection_hint_t hint);
 
 // IDLE 页底部的引擎名(ASCII,最长 23 字节)。
 void ib_ui_set_engine(const char *engine);
@@ -131,6 +133,18 @@ void ib_ui_key_press(ib_ui_key_t key);
 
 // 右侧按键提示图标;IB_ICON_NONE 隐藏该键提示。
 void ib_ui_set_key_icon(ib_ui_key_t key, ib_icon_t icon);
+// 当前实际助手手势；COUNT表示未接管，保留Mac原keys/PROC禁用行为。
+void ib_ui_set_assistant_key_hints(bool standalone,ib_ui_assistant_phase_t phase);
+
+// 本地菜单只复用LIST现有对象；期间网络页面/数据/通知继续缓存但不覆盖菜单。
+void ib_ui_run_mode_menu(bool standalone,unsigned selected,ib_ui_run_mode_notice_t notice);
+void ib_ui_run_mode_menu_hide(void);
+bool ib_ui_run_mode_menu_visible(void);
+// 实际ASR快照：generation非零且单boot递增，text为当前完整快照而非追加片段。
+bool ib_ui_transcript_begin(uint32_t generation);
+bool ib_ui_transcript_update(uint32_t generation,const char *utf8,bool final);
+// generation=0强制清理（断连/切目标）；已取消/已final轮次拒绝迟到partial。
+void ib_ui_transcript_clear(uint32_t generation);
 
 // 更新列表页内容(列表页可见时选中高亮平滑滑动到新位置)。
 void ib_ui_set_list(const ib_ui_list_t *list);
@@ -147,8 +161,12 @@ void ib_ui_agent_hide(void);
 // 屏幕是否点亮。熄屏时暂停逐帧动画以省电,点亮时恢复。
 void ib_ui_set_awake(bool awake);
 
-// 宠物由同一个LVGL任务执行；名称为Aora canonical状态，body显示UTF-8两行摘要。
+// 通用宠物入口保留明确传入的自定义UTF-8正文；正文不用于业务状态或翻译判断。
 bool ib_ui_pet_state(const char *state, const char *body, bool standalone);
+// 助手专用原子入口：phase==COUNT时只用canonical状态；业务状态与动画在同一UI锁内更新。
+bool ib_ui_pet_assistant_state(const char *state,ib_ui_assistant_phase_t phase,bool cloud_target,const char *error_code);
+// cloud_target表示云端目的地（含Mac代连）；error_code只接稳定机器错误码，正文不参与判断。
+void ib_ui_pet_assistant_status(ib_ui_assistant_phase_t phase,bool cloud_target,const char *error_code);
 void ib_ui_pet_config(bool enabled, uint8_t fps, uint8_t brightness, uint32_t rgb888);
 
 /* 已提交Flash资产，调用者保证指针直到下一次成功load前有效；NULL恢复内置Dot。 */

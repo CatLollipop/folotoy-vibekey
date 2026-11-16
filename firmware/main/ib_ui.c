@@ -11,6 +11,7 @@
 // 图层顺序(由下到上):页面层 → 状态栏 → 右侧按键提示列 → Agent 通知层。
 #include "ib_ui.h"
 #include "ib_pet.h"
+#include "ib_transcript_view.h"
 
 #include "bsp_display.h"
 #include "ib_ui_agent.h"
@@ -22,6 +23,7 @@
 #include "esp_log.h"
 
 #include <string.h>
+#include <stdio.h>
 
 static const char *TAG = "ib_ui";
 
@@ -55,6 +57,36 @@ static lv_timer_t *s_frame_timer;
 static bool s_ready;
 static bool s_awake = true;
 static bool s_waiting_refresh;
+static ib_icon_t s_key_icons[IB_UI_KEY_COUNT];
+static bool s_hint_standalone;
+static ib_ui_assistant_phase_t s_hint_phase=IB_UI_ASSIST_COUNT;
+static struct {bool visible;ib_ui_agent_t kind;char source[64];} s_agent_latest;
+static ib_transcript_view_t s_transcript;
+static const char *s_pet_status;
+static bool s_caption_blocks_transcript;
+static char s_caption_text[256];
+
+/* 物理键仍为右侧UP/DOWN/OK；左侧仅电源标识，不把长按含义画成左侧虚构按键。 */
+static void apply_key_hints(void)
+{
+    bool busy=s_hint_phase!=IB_UI_ASSIST_IDLE&&s_hint_phase!=IB_UI_ASSIST_DONE&&
+        s_hint_phase!=IB_UI_ASSIST_ERROR&&s_hint_phase!=IB_UI_ASSIST_STOPPED&&s_hint_phase!=IB_UI_ASSIST_COUNT;
+    for(unsigned key=0;key<IB_UI_KEY_COUNT;key++){
+        ib_icon_t icon=s_key_icons[key],hold=key==IB_UI_KEY_UP?IB_ICON_MODE:key==IB_UI_KEY_DOWN?IB_ICON_APPS:IB_ICON_NONE;
+        if(s_ctx.run_mode_menu){
+            icon=key==IB_UI_KEY_UP?IB_ICON_UP:key==IB_UI_KEY_DOWN?IB_ICON_DOWN:IB_ICON_CHECK;
+            hold=key==IB_UI_KEY_OK?IB_ICON_ESC:IB_ICON_NONE;
+        }else if(s_hint_standalone){
+            icon=key==IB_UI_KEY_UP?(busy?IB_ICON_NONE:IB_ICON_DEL):key==IB_UI_KEY_DOWN?(busy?IB_ICON_STOP:IB_ICON_NONE):IB_ICON_MIC;
+        }else if(s_screen==IB_UI_OFFLINE){
+            icon=key==IB_UI_KEY_OK?IB_ICON_REPEAT:IB_ICON_NONE;
+        }
+        ib_hints_set_icon((ib_ui_key_t)key,icon);
+        ib_hints_set_hold_icon((ib_ui_key_t)key,hold);
+    }
+    ib_hints_set_disabled(!s_ctx.run_mode_menu&&!s_hint_standalone&&s_hint_phase==IB_UI_ASSIST_COUNT&&s_screen==IB_UI_PROC);
+    ib_hints_set_visible(true);
+}
 
 static void copy_text(char *dst, size_t cap, const char *src)
 {
@@ -80,6 +112,38 @@ static void copy_utf8(char *dst, size_t cap, const char *src)
         n += len;
     }
     dst[n] = '\0';
+}
+
+/* 从尾部按真实字宽取一行，ASR新快照只局部覆盖字幕label，不按时间伪造滚字。 */
+static size_t transcript_line_start(const char *text,size_t end)
+{
+    size_t start=end;unsigned width=0;
+    while(start){
+        size_t previous=start-1;while(previous&&((unsigned char)text[previous]&0xc0)==0x80)previous--;
+        const unsigned char *p=(const unsigned char *)text+previous;uint32_t c=*p;
+        if(c>=0xf0)c=((c&7u)<<18)|((p[1]&63u)<<12)|((p[2]&63u)<<6)|(p[3]&63u);
+        else if(c>=0xe0)c=((c&15u)<<12)|((p[1]&63u)<<6)|(p[2]&63u);
+        else if(c>=0xc0)c=((c&31u)<<6)|(p[1]&63u);
+        lv_font_glyph_dsc_t glyph;unsigned advance=lv_font_get_glyph_dsc(&ib_cjk_font_12,&glyph,c,0)?glyph.adv_w:12;
+        if(width+advance>198&&width)break;
+        width+=advance;start=previous;
+    }
+    return start;
+}
+static bool transcript_visible(void){return !s_caption_blocks_transcript&&s_transcript.active&&s_transcript.text[0]&&!s_transcript.closed;}
+static void render_pet_caption(void)
+{
+    const char *status=s_pet_status?s_pet_status:ib_ui_assistant_label(IB_UI_ASSIST_IDLE,false,NULL);
+    if(transcript_visible()){
+        size_t end=strlen(s_transcript.text),split=transcript_line_start(s_transcript.text,end);
+        size_t start=split?transcript_line_start(s_transcript.text,split):0;
+        int header=(int)strcspn(status,"\n");
+        if(split)snprintf(s_caption_text,sizeof(s_caption_text),"%.*s\n%.*s\n%s",header,status,(int)(split-start),s_transcript.text+start,s_transcript.text+split);
+        else snprintf(s_caption_text,sizeof(s_caption_text),"%.*s\n%s",header,status,s_transcript.text);
+        lv_obj_set_height(s_pet_label,48);lv_label_set_text_static(s_pet_label,s_caption_text);
+    }else{
+        lv_obj_set_height(s_pet_label,38);lv_label_set_text_static(s_pet_label,status);
+    }
 }
 
 // 点阵绘制只读缓存；模拟在frame_cb运行，避免LVGL重绘时被fps限流清空。
@@ -112,7 +176,7 @@ static void pet_visibility(void)
     if(!s_pet_root)return;
     bool offline=s_screen==IB_UI_OFFLINE;
     bool show=(offline||ib_pet_enabled())&&s_screen!=IB_UI_LIST&&s_screen!=IB_UI_USAGE&&s_screen!=IB_UI_SUB;
-    lv_obj_set_size(s_pet_root,offline?IB_UI_W:218,offline?208:250);
+    lv_obj_set_size(s_pet_root,offline?IB_UI_W:218,offline?208:transcript_visible()?258:250);
     if(offline)lv_obj_add_flag(s_pet_label,LV_OBJ_FLAG_HIDDEN);else lv_obj_remove_flag(s_pet_label,LV_OBJ_FLAG_HIDDEN);
     if(show)lv_obj_remove_flag(s_pet_root,LV_OBJ_FLAG_HIDDEN);else lv_obj_add_flag(s_pet_root,LV_OBJ_FLAG_HIDDEN);
 }
@@ -207,6 +271,7 @@ static void switch_to(ib_ui_screen_t screen)
         ib_hints_set_disabled(screen == IB_UI_PROC);
         ib_agent_set_banner(screen == IB_UI_REC, now);
         PAGES[screen]->enter(&s_ctx);
+        apply_key_hints();
         pet_visibility();lv_obj_invalidate(neu);
         return;
     }
@@ -237,6 +302,7 @@ static void switch_to(ib_ui_screen_t screen)
     // 录音中通知只显示横幅,离开录音后恢复全屏。
     ib_agent_set_banner(screen == IB_UI_REC, now);
     PAGES[screen]->enter(&s_ctx);
+    apply_key_hints();
 }
 
 static void refresh_ready(lv_event_t *event)
@@ -316,11 +382,12 @@ esp_err_t ib_ui_init(void)
     s_pet_label=ib_label_create(s_pet_root,&ib_cjk_font_12,0xE0E0E0,209,198);
     lv_obj_set_x(s_pet_label,10);lv_obj_set_height(s_pet_label,38);
     lv_label_set_long_mode(s_pet_label,LV_LABEL_LONG_DOT);
-    lv_label_set_text(s_pet_label,"AI 助理");
+    s_pet_status=ib_ui_assistant_label(IB_UI_ASSIST_IDLE,false,NULL);render_pet_caption();
     ib_bar_create(scr);     // 后建,位于页面之上
     ib_hints_create(scr);
     ib_hints_set_visible(false);
     ib_agent_create(scr);   // 最上层
+    apply_key_hints();
 
     s_screen = IB_UI_OFFLINE;
     lv_obj_remove_flag(s_roots[s_screen], LV_OBJ_FLAG_HIDDEN);
@@ -344,6 +411,7 @@ bool ib_ui_show(ib_ui_screen_t screen, ib_ui_mode_t mode, const char *msg)
     bool changed = s_ctx.mode != mode || strncmp(s_ctx.msg, msg ? msg : "", sizeof(s_ctx.msg)) != 0;
     s_ctx.mode = mode;
     copy_text(s_ctx.msg, sizeof(s_ctx.msg), msg);
+    if(s_ctx.run_mode_menu){bsp_lvgl_unlock();return true;}
     if (screen != s_screen) {
         switch_to(screen);
     } else if (changed) {
@@ -420,12 +488,17 @@ void ib_ui_set_offline_hint(const char *text)
 {
     if (!s_ready) return;
     char hint[IB_UI_OFFLINE_HINT_MAX];
-    copy_text(hint, sizeof(hint), text);
+    copy_utf8(hint, sizeof(hint), text);
     if (strncmp(s_ctx.offline_hint, hint, sizeof(hint)) == 0) return;
     if (!bsp_lvgl_lock(LOCK_TIMEOUT_MS)) return;
     memcpy(s_ctx.offline_hint, hint, sizeof(hint));
     if (s_screen == IB_UI_OFFLINE) PAGES[IB_UI_OFFLINE]->update(&s_ctx);
     bsp_lvgl_unlock();
+}
+
+void ib_ui_set_connection_hint(ib_ui_connection_hint_t hint)
+{
+    ib_ui_set_offline_hint(ib_ui_connection_label(hint));
 }
 
 void ib_ui_set_engine(const char *engine)
@@ -446,9 +519,60 @@ void ib_ui_key_press(ib_ui_key_t key)
 
 void ib_ui_set_key_icon(ib_ui_key_t key, ib_icon_t icon)
 {
-    if (!s_ready || !bsp_lvgl_lock(LOCK_TIMEOUT_MS)) return;
-    ib_hints_set_icon(key, icon);
+    if (!s_ready || (unsigned)key>=IB_UI_KEY_COUNT || !bsp_lvgl_lock(LOCK_TIMEOUT_MS)) return;
+    s_key_icons[key]=(unsigned)icon<IB_ICON_COUNT?icon:IB_ICON_NONE;
+    apply_key_hints();
     bsp_lvgl_unlock();
+}
+void ib_ui_set_assistant_key_hints(bool standalone,ib_ui_assistant_phase_t phase)
+{
+    if(!s_ready||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return;
+    s_hint_standalone=standalone;s_hint_phase=phase;
+    apply_key_hints();bsp_lvgl_unlock();
+}
+void ib_ui_run_mode_menu(bool standalone,unsigned selected,ib_ui_run_mode_notice_t notice)
+{
+    if(!s_ready||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return;
+    bool opening=!s_ctx.run_mode_menu;
+    s_ctx.run_mode_menu=true;s_ctx.run_mode_standalone=standalone;
+    s_ctx.run_mode_selected=selected<3?(uint8_t)selected:2;
+    s_ctx.run_mode_notice=(unsigned)notice<IB_UI_RUN_MODE_NOTICE_COUNT?notice:IB_UI_RUN_MODE_NOTICE_NONE;
+    ib_agent_set_suspended(true);
+    if(opening&&s_screen!=IB_UI_LIST)switch_to(IB_UI_LIST);
+    else PAGES[IB_UI_LIST]->update(&s_ctx);
+    apply_key_hints();pet_visibility();
+    bsp_lvgl_unlock();
+}
+void ib_ui_run_mode_menu_hide(void)
+{
+    if(!s_ready||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return;
+    s_ctx.run_mode_menu=false;
+    if(s_screen==IB_UI_LIST)PAGES[IB_UI_LIST]->update(&s_ctx);
+    if(s_agent_latest.visible)ib_agent_show(s_agent_latest.kind,s_agent_latest.source,s_screen==IB_UI_REC,lv_tick_get());
+    else ib_agent_hide();
+    ib_agent_set_suspended(false);
+    apply_key_hints();bsp_lvgl_unlock();
+}
+bool ib_ui_run_mode_menu_visible(void){return s_ctx.run_mode_menu;}
+bool ib_ui_transcript_begin(uint32_t generation)
+{
+    if(!s_ready||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return false;
+    bool ok=ib_transcript_view_begin(&s_transcript,generation);
+    if(ok){render_pet_caption();pet_visibility();}
+    bsp_lvgl_unlock();return ok;
+}
+bool ib_ui_transcript_update(uint32_t generation,const char *text,bool final)
+{
+    if(!s_ready||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return false;
+    bool ok=ib_transcript_view_update(&s_transcript,generation,text,final);
+    if(ok){render_pet_caption();pet_visibility();}
+    bsp_lvgl_unlock();return ok;
+}
+void ib_ui_transcript_clear(uint32_t generation)
+{
+    if(!s_ready||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return;
+    ib_transcript_view_clear(&s_transcript,generation);memset(s_caption_text,0,sizeof(s_caption_text));
+    render_pet_caption();pet_visibility();bsp_lvgl_unlock();
 }
 
 void ib_ui_set_list(const ib_ui_list_t *list)
@@ -483,14 +607,16 @@ void ib_ui_set_usage(const ib_ui_usage_t *usage)
 void ib_ui_agent_show(ib_ui_agent_t kind, const char *source)
 {
     if (!s_ready || !bsp_lvgl_lock(LOCK_TIMEOUT_MS)) return;
-    ib_agent_show(kind, source, s_screen == IB_UI_REC, lv_tick_get());
+    s_agent_latest.visible=true;s_agent_latest.kind=kind;copy_text(s_agent_latest.source,sizeof(s_agent_latest.source),source);
+    if(!s_ctx.run_mode_menu)ib_agent_show(kind, source, s_screen == IB_UI_REC, lv_tick_get());
     bsp_lvgl_unlock();
 }
 
 void ib_ui_agent_hide(void)
 {
     if (!s_ready || !bsp_lvgl_lock(LOCK_TIMEOUT_MS)) return;
-    ib_agent_hide();
+    s_agent_latest.visible=false;
+    if(!s_ctx.run_mode_menu)ib_agent_hide();
     bsp_lvgl_unlock();
 }
 
@@ -509,9 +635,36 @@ void ib_ui_set_awake(bool awake)
 bool ib_ui_pet_state(const char *name,const char *body,bool standalone)
 {
     if(!s_ready||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return false;
-    (void)standalone;bool ok=ib_pet_set_state_name(name,lv_tick_get());
-    if(body&&body[0]){char text[192];copy_utf8(text,sizeof(text),body);lv_label_set_text(s_pet_label,text);}
+    bool ok=ib_pet_set_state_name(name,lv_tick_get());
+    if(ok){
+        if(body&&body[0]){char text[192];copy_utf8(text,sizeof(text),body);lv_label_set_text(s_pet_label,text);}
+        else lv_label_set_text_static(s_pet_label,ib_ui_pet_label(name,standalone));
+    }
     pet_visibility();bsp_lvgl_unlock();return ok;
+}
+bool ib_ui_pet_assistant_state(const char *name,ib_ui_assistant_phase_t phase,bool cloud_target,const char *error_code)
+{
+    if(!s_ready||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return false;
+    bool ok=ib_pet_set_state_name(name,lv_tick_get());
+    if(ok){
+        const char *label=phase==IB_UI_ASSIST_COUNT?ib_ui_pet_label(name,cloud_target):ib_ui_assistant_label(phase,cloud_target,error_code);
+        s_pet_status=label;
+        s_caption_blocks_transcript=phase==IB_UI_ASSIST_ERROR||phase==IB_UI_ASSIST_STOPPED||
+            (phase==IB_UI_ASSIST_COUNT&&(!strcmp(name,"alerting")||!strcmp(name,"powering-down")));
+        if(s_caption_blocks_transcript)ib_transcript_view_clear(&s_transcript,0);
+        render_pet_caption();
+    }
+    pet_visibility();bsp_lvgl_unlock();return ok;
+}
+void ib_ui_pet_assistant_status(ib_ui_assistant_phase_t phase,bool cloud_target,const char *error_code)
+{
+    if(!s_ready||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return;
+    /* 文案为只读常量，无逐帧分配；保留原协议/日志机器码供排查。 */
+    s_pet_status=ib_ui_assistant_label(phase,cloud_target,error_code);
+    s_caption_blocks_transcript=phase==IB_UI_ASSIST_ERROR||phase==IB_UI_ASSIST_STOPPED;
+    if(s_caption_blocks_transcript)ib_transcript_view_clear(&s_transcript,0);
+    render_pet_caption();pet_visibility();
+    bsp_lvgl_unlock();
 }
 void ib_ui_pet_config(bool enabled,uint8_t fps,uint8_t brightness,uint32_t rgb)
 {

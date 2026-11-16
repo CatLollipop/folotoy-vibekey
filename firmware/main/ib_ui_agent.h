@@ -22,3 +22,5 @@ void ib_agent_hide(void);
 void ib_agent_frame(uint32_t now_ms);
 // 是否正以全屏不透明方式盖住下面的页面(此时页面不必逐帧重绘)。
 bool ib_agent_covering(void);
+// 本地菜单临时遮蔽通知层；不改变已缓存通知，不启动新对象或大缓冲。
+void ib_agent_set_suspended(bool suspended);

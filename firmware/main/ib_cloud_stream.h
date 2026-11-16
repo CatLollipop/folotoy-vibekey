@@ -5,6 +5,11 @@
 #include <stdint.h>
 
 typedef bool (*ib_stream_bytes_cb)(const uint8_t *, size_t, void *);
+// 只记录失败类别，不保留PCM/服务响应；实机可据此区分解析与播放器拒绝。
+typedef enum {
+    IB_AUDIO_JSON_OK=0, IB_AUDIO_JSON_METADATA_FULL, IB_AUDIO_JSON_INVALID_HEX,
+    IB_AUDIO_JSON_ODD_HEX, IB_AUDIO_JSON_OUTPUT_FAILED, IB_AUDIO_JSON_INCOMPLETE
+} ib_audio_json_error_t;
 // 将 SSE JSON 的 audio 字符串替换成空串，并在收到每两个 hex 字符时输出字节。
 // metadata 仅保存非音频部分；调用者在每个 SSE data 行结束时解析 metadata。
 typedef struct {
@@ -13,6 +18,7 @@ typedef struct {
     char token[32];
     size_t token_used;
     bool in_string, escaped, key_audio, after_colon, audio, failed;
+    ib_audio_json_error_t error;
     int nibble;
     uint8_t bytes[256];
     size_t byte_count, audio_bytes;

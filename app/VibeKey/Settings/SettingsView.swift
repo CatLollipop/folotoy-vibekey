@@ -86,12 +86,26 @@ struct SettingsView: View {
         .onDisappear { app.permissions.stopPolling() }
     }
 
+    private var petSyncStatus:String {
+        if let error = app.assistantSync.error { return error }
+        if app.deviceLink.connection == .disconnected { return String(localized:"连接 Passport 后可同步。",bundle:.l10n) }
+        if app.assistantSync.busy { return String(localized:"正在生成并同步宠物…",bundle:.l10n) }
+        if app.assistantSync.appliedPetRevision > 0 {
+            return String(localized:"设备已应用版本：\(Int(app.assistantSync.appliedPetRevision))",bundle:.l10n)
+        }
+        return String(localized:"选择后点击同步，设备收到完整资源后生效。",bundle:.l10n)
+    }
+
     @ViewBuilder
     private var detail: some View {
         switch pane {
         case .assistant: AssistantPane(app: app)
         case .integrations: VibePane(app: app)
-        case .pet: PetSettingsView(controller: app.pet)
+        case .pet: PetSettingsView(controller:app.pet,
+            onSyncPet:{ app.assistantSync.syncPet(controller:app.pet) },
+            canSyncPet:app.deviceLink.connection != .disconnected,
+            syncingPet:app.assistantSync.busy,
+            petSyncStatus:petSyncStatus)
         case .general: GeneralPane(app: app)
         case .dictation: DictationPane(app: app, navigation: navigation)
         case .models: ModelsPane(app: app)

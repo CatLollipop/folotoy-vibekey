@@ -44,6 +44,8 @@ set(UI_SOURCES
     "${UI_DIR}/ib_pet_motion.c"
     "${UI_DIR}/ib_pet_bundle.c"
     "${UI_DIR}/ib_ui.c"
+    "${UI_DIR}/ib_ui_labels.c"
+    "${UI_DIR}/ib_transcript_view.c"
     "${UI_DIR}/ib_ui_gfx.c"
     "${UI_DIR}/ib_ui_wave.c"
     "${UI_DIR}/ib_ui_dots.c"
@@ -84,3 +86,13 @@ target_compile_definitions(ib_ui_preview PRIVATE PREVIEW_PET_ASSETS="${FW_DIR}/b
 target_compile_options(ib_ui_preview PRIVATE -Wall -Wextra -O1)
 # 固件代码按 gcc 编写;clang 额外的这两类提示不影响行为,单独关掉,其余告警照常显示。
 target_compile_options(ib_ui_preview PRIVATE -Wno-missing-field-initializers -Wno-unused-parameter)
+
+# 真正调用LVGL字形查找与位图接口，防止UTF-8字符串存在但屏幕显示方框。
+add_executable(ib_ui_labels_test "${FW_DIR}/tests/test_ib_ui_labels.c"
+    "${UI_DIR}/ib_ui_labels.c" "${UI_DIR}/fonts/ib_cjk_font_12.c")
+target_include_directories(ib_ui_labels_test PRIVATE "${UI_DIR}")
+target_link_libraries(ib_ui_labels_test PRIVATE lvgl_host m)
+# Release预览不影响测试断言；否则NDEBUG会把缺字/尺寸检查编译掉。
+target_compile_options(ib_ui_labels_test PRIVATE -Wall -Wextra -Werror -UNDEBUG)
+enable_testing()
+add_test(NAME chinese_status_glyphs COMMAND ib_ui_labels_test)

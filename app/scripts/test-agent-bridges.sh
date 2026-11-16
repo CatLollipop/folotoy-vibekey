@@ -12,7 +12,7 @@ swiftc -swift-version 6 -default-isolation MainActor -parse-as-library \
   VibeKey/Device/DeviceTypes.swift VibeKey/Device/DeviceText.swift VibeKey/Assistant/AssistantProfile.swift \
   VibeKey/Bridge/KeyPressTracker.swift VibeKey/Assistant/AssistantHardwareRouter.swift \
   VibeKey/Assistant/AssistantStore.swift VibeKey/ASR/Cloud/CloudProvider.swift \
-  VibeKey/ASR/Cloud/CloudASRStore.swift VibeKey/Support/ModelOption.swift VibeKey/Models/ModelCatalog.swift \
+  VibeKey/ASR/Cloud/BailianEndpoint.swift VibeKey/ASR/Cloud/CloudASRStore.swift VibeKey/Support/ModelOption.swift VibeKey/Models/ModelCatalog.swift \
   AgentCoreTests/main.swift -o build/agent-tests/core-tests
 build/agent-tests/core-tests
 node --test AgentBridges/tests/bridge.test.mjs

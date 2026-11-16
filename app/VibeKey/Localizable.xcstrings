@@ -24,9 +24,6 @@
     "%@ tokens": {
       "shouldTranslate": false
     },
-    "%@ · %@": {
-      "shouldTranslate": false
-    },
     "%@ · %lld 句。结束后可以在字幕记录窗口里查看、总结和保存。": {
       "localizations": {
         "en": {
@@ -200,16 +197,6 @@
         }
       }
     },
-    "%lld 种外观 · %lld 种脸型 · %lld 种表情": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld appearances · %2$lld face styles · %3$lld expressions"
-          }
-        }
-      }
-    },
     "%lld 秒前": {
       "localizations": {
         "en": {
@@ -305,6 +292,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "AI Assistant %@ is the latest version."
+          }
+        }
+      }
+    },
+    "AI 助理 · 实时识别与朗读": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Assistant · Live Transcription and Read Aloud"
           }
         }
       }
@@ -458,16 +455,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Invalid API key or access denied (HTTP %lld)"
-          }
-        }
-      }
-    },
-    "ASR 与 TTS 共用一个密钥；用于听写、字幕和 AI 助理语音对话。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ASR and TTS share one key for dictation, captions, and AI assistant voice conversations."
           }
         }
       }
@@ -838,6 +825,16 @@
         }
       }
     },
+    "MiniMax · 语音朗读": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MiniMax · Text-to-Speech"
+          }
+        }
+      }
+    },
     "MiniMax · 语音识别与朗读": {
       "localizations": {
         "en": {
@@ -1010,6 +1007,16 @@
     "WAITING FOR MAC": {
       "shouldTranslate": false
     },
+    "WSS 地址": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "WSS Endpoint"
+          }
+        }
+      }
+    },
     "Whisper Large v3 Turbo（压缩版）": {
       "localizations": {
         "en": {
@@ -1156,6 +1163,9 @@
       }
     },
     "speech-2.8-turbo": {
+      "shouldTranslate": false
+    },
+    "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async": {
       "shouldTranslate": false
     },
     "· 下次总结 %lld:%@": {
@@ -2378,16 +2388,6 @@
         }
       }
     },
-    "加载宠物目录…": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Loading pet catalog…"
-          }
-        }
-      }
-    },
     "加载模型": {
       "localizations": {
         "en": {
@@ -3258,16 +3258,6 @@
         }
       }
     },
-    "外观与表情": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Appearance and expression"
-          }
-        }
-      }
-    },
     "多语言高准确率，压缩构建更省空间。": {
       "localizations": {
         "en": {
@@ -3648,6 +3638,26 @@
         }
       }
     },
+    "实时识别使用豆包，朗读使用 MiniMax。测试会产生相应服务用量；设备首次通过 USB 同步配置。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Real-time recognition uses Doubao; speech uses MiniMax. Tests incur provider usage. Sync Passport over USB first."
+          }
+        }
+      }
+    },
+    "实时识别地址必须是有效的 WSS 地址，且不能包含凭据或查询参数。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The realtime ASR endpoint must be a valid WSS URL without embedded credentials or query parameters."
+          }
+        }
+      }
+    },
     "宠物": {
       "localizations": {
         "en": {
@@ -3658,22 +3668,12 @@
         }
       }
     },
-    "宠物外观": {
+    "宠物外观与表情选择器": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Appearance"
-          }
-        }
-      }
-    },
-    "宠物实时预览": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Live pet preview"
+            "value": "Pet appearance and expression selector"
           }
         }
       }
@@ -3704,6 +3704,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Loading the pet resources timed out. Please try again."
+          }
+        }
+      }
+    },
+    "宠物预览暂不可用，请重新加载。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The pet preview could not load. Please reload."
           }
         }
       }
@@ -4744,16 +4754,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Plugin folder opened. Load it into the original Desktop runtime using DSH plugin management, then check again."
-          }
-        }
-      }
-    },
-    "搜索外观名称或主题": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Search appearances or themes"
           }
         }
       }
@@ -6088,12 +6088,12 @@
         }
       }
     },
-    "正在生成设备宠物…": {
+    "正在生成并同步宠物…": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Preparing device pet…"
+            "value": "Generating and syncing the pet…"
           }
         }
       }
@@ -6478,6 +6478,16 @@
         }
       }
     },
+    "测试实时识别…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test Realtime Transcription…"
+          }
+        }
+      }
+    },
     "测试语音识别…": {
       "localizations": {
         "en": {
@@ -6838,16 +6848,6 @@
         }
       }
     },
-    "电脑显示高清矢量动画，设备显示点阵动画。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The Mac uses high-resolution vector animation; the device uses an LED dot matrix."
-          }
-        }
-      }
-    },
     "电量": {
       "localizations": {
         "en": {
@@ -6984,6 +6984,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Offline wallpaper"
+          }
+        }
+      }
+    },
+    "移除实时识别密钥": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove Realtime ASR Key"
           }
         }
       }
@@ -7134,6 +7144,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Paste MiniMax API key"
+          }
+        }
+      }
+    },
+    "粘贴 MiniMax 朗读 API Key": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste your MiniMax TTS API key"
+          }
+        }
+      }
+    },
+    "粘贴豆包 API Key": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste your Doubao API Key"
           }
         }
       }
@@ -7688,16 +7718,6 @@
         }
       }
     },
-    "脸型": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Face style"
-          }
-        }
-      }
-    },
     "腾讯": {
       "localizations": {
         "en": {
@@ -7848,12 +7868,32 @@
         }
       }
     },
+    "获取 MiniMax API Key": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Get a MiniMax API Key"
+          }
+        }
+      }
+    },
     "获取密钥": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Get Keys"
+          }
+        }
+      }
+    },
+    "获取豆包 API Key": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Get a Doubao API Key"
           }
         }
       }
@@ -7904,16 +7944,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "More lines keep each translated sentence on screen longer, so it's easier to finish reading"
-          }
-        }
-      }
-    },
-    "表情": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Expression"
           }
         }
       }
@@ -8024,6 +8054,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld/4 saved on device"
+          }
+        }
+      }
+    },
+    "设备已应用版本：%lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Version applied on Passport: %lld"
           }
         }
       }
@@ -8428,6 +8468,16 @@
         }
       }
     },
+    "请先在识别模型中填写豆包实时识别 API Key。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter your Doubao real-time recognition API Key under Recognition Models first."
+          }
+        }
+      }
+    },
     "请先把 Codex 切到前台再按住 OK": {
       "localizations": {
         "en": {
@@ -8598,6 +8648,16 @@
         }
       }
     },
+    "豆包 · 实时语音识别": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Doubao · Real-time speech recognition"
+          }
+        }
+      }
+    },
     "豆包流式识别 1.0 · 按并发计费": {
       "localizations": {
         "en": {
@@ -8638,12 +8698,12 @@
         }
       }
     },
-    "跟随会话状态": {
+    "豆包边说边转写；MiniMax 负责朗读。配置供听写、字幕和设备共用。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Follow conversation state"
+            "value": "Doubao transcribes as you speak; MiniMax reads replies aloud. These settings are shared by dictation, captions, and Passport."
           }
         }
       }
@@ -8848,6 +8908,16 @@
         }
       }
     },
+    "连接 Passport 后可同步。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect Passport to sync."
+          }
+        }
+      }
+    },
     "连接 Passport（可选）": {
       "localizations": {
         "en": {
@@ -8994,6 +9064,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Select a session in the original app. Only final replies from the selected session are read aloud automatically."
+          }
+        }
+      }
+    },
+    "选择后点击同步，设备收到完整资源后生效。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a pet, then sync. Passport applies it after receiving the complete resource."
           }
         }
       }
@@ -9188,16 +9268,6 @@
         }
       }
     },
-    "配色": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Color palette"
-          }
-        }
-      }
-    },
     "重新下载": {
       "localizations": {
         "en": {
@@ -9218,12 +9288,12 @@
         }
       }
     },
-    "重新加载目录": {
+    "重新加载": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reload catalog"
+            "value": "Reload"
           }
         }
       }

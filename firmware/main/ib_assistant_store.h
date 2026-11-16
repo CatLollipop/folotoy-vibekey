@@ -10,9 +10,10 @@
 #define IB_PET_CONFIG_MAX 131072
 typedef struct {
     char minimax_key[512], deepseek_key[256];
+    char asr_key[512], asr_ws_url[192], asr_model[64], asr_resource_id[128];
     char minimax_base_url[192], deepseek_base_url[192];
     char llm_model[65], voice_id[96], system_prompt[2049];
-    uint32_t revision;
+    uint32_t revision, schema;
     unsigned record_limit_seconds, max_output_tokens, history_bytes, reply_bytes;
 } ib_assistant_profile_t;
 esp_err_t ib_assistant_store_init(void);

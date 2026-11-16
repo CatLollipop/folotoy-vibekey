@@ -27,6 +27,8 @@
 #include "ib_assistant.h"
 #include "ib_assistant_store.h"
 #include "ib_pet_bundle.h"
+#include "ib_pet.h"
+#include "ib_run_menu.h"
 #include "ib_cloud_stream.h"
 #include "cJSON.h"
 #include "ib_ble.h"
@@ -97,12 +99,20 @@ typedef struct {
 } app_event_t;
 
 static portMUX_TYPE s_assist_lock = portMUX_INITIALIZER_UNLOCKED;
-static struct { ib_assistant_state_t state; char text[192]; uint32_t revision; } s_assist_view;
+static struct {
+    ib_assistant_state_t state;
+    char text[192];
+    uint32_t revision;
+    bool cloud_target,has_phase,owned;
+    const char *companion_error; /* getter仅返回只读机器码常量，无动态生命周期。 */
+} s_assist_view;
 static uint32_t s_assist_seen, s_pet_config_seen;
 static SemaphoreHandle_t s_pet_apply_lock;
 static esp_partition_mmap_handle_t s_pet_mapping;
 static bool s_pet_mapping_live;
-static bool s_solo_exit_press;
+static ib_run_menu_t s_run_menu;
+static bool s_run_replaying;
+static ib_ui_run_mode_notice_t s_run_notice;
 static QueueHandle_t s_queue;
 static TaskHandle_t s_app_task;
 static volatile bool s_app_ready,s_buttons_ready;
@@ -155,8 +165,10 @@ static int64_t s_wifi_restart_at;
 static bool s_ble_only;
 static bool s_ble_manual;
 static int64_t s_wifi_missing_since;
-static const char *offline_hint(void);
+static ib_ui_connection_hint_t offline_hint(void);
 static ib_ui_screen_t screen_for(ib_state_t st);
+static void refresh_assistant(int64_t now);
+static void handle_key(ib_key_t,ib_key_ev_t,int64_t);
 _Static_assert(IB_CAPTION_MAX == IB_UI_CAPTION_MAX, "caption buffer size mismatch");
 _Static_assert(IB_CAPTION_APP_MAX == IB_UI_CAPTION_APP_MAX, "caption app buffer size mismatch");
 static ib_ui_screen_t s_screen = IB_UI_OFFLINE;
@@ -319,6 +331,7 @@ static ib_ui_mode_t ui_mode(void)
 
 static void show_screen(ib_ui_screen_t screen)
 {
+    if(s_run_menu.open)return;
     s_screen = screen;
     if (s_ui_ok) ib_ui_show(screen, ui_mode(), s_msg);
 }
@@ -354,8 +367,9 @@ static void wifi_menu_close(void)
 {
     s_wifi_menu = false;
     s_wifi_menu_ok = false;
-    if (!s_online) {
-        if (s_ui_ok) ib_ui_set_offline_hint(offline_hint());
+    if(ib_assistant_standalone()){show_screen(IB_UI_IDLE);s_assist_seen=0;refresh_assistant(now_ms());}
+    else if (!s_online) {
+        if (s_ui_ok) ib_ui_set_connection_hint(offline_hint());
         show_screen(IB_UI_OFFLINE);
     } else show_screen(s_wifi_menu_return == IB_UI_OFFLINE ? screen_for(s_st) : s_wifi_menu_return);
 }
@@ -367,7 +381,7 @@ static bool wifi_menu_key(ib_key_t key, ib_key_ev_t ev, int64_t now)
          (ev == IB_KEY_EV_LONG && key == IB_KEY_DOWN && (!s_online || s_ble_only))) &&
         (s_screen == IB_UI_IDLE || s_screen == IB_UI_USAGE || s_screen == IB_UI_OFFLINE)) {
         if (ib_wifi_network_count() == 0) {
-            if (s_ui_ok) ib_ui_set_offline_hint("USB TO ADD WIFI");
+            if (s_ui_ok) ib_ui_set_connection_hint(IB_UI_CONN_ADD_WIFI_USB);
             return true;
         }
         s_wifi_menu_return = s_screen;
@@ -396,7 +410,7 @@ static bool wifi_menu_key(ib_key_t key, ib_key_ev_t ev, int64_t now)
             if (selected == count) {
                 s_wifi_menu = false;
                 ib_wifi_request_bluetooth();
-                if (s_ui_ok) ib_ui_set_offline_hint("SWITCHING TO BLUETOOTH...");
+                if (s_ui_ok) ib_ui_set_connection_hint(IB_UI_CONN_SWITCH_BLE);
                 show_screen(IB_UI_OFFLINE);
                 s_wifi_restart_at = now + 700;
             // active_network 只是 NVS 里的首选配置；处于 BLE 或 Wi-Fi 离线时，选同一项仍应重启尝试 Wi-Fi。
@@ -406,11 +420,11 @@ static bool wifi_menu_key(ib_key_t key, ib_key_ev_t ev, int64_t now)
             } else if (ib_wifi_select_network(selected)) {
                 ib_wifi_clear_ble_fallback();
                 s_wifi_menu = false;
-                if (s_ui_ok) ib_ui_set_offline_hint("SWITCHING WI-FI...");
+                if (s_ui_ok) ib_ui_set_connection_hint(IB_UI_CONN_SWITCH_WIFI);
                 show_screen(IB_UI_OFFLINE);
                 s_wifi_restart_at = now + 700;
             } else if (s_ui_ok) {
-                ib_ui_set_offline_hint("WIFI SWITCH FAILED");
+                ib_ui_set_connection_hint(IB_UI_CONN_WIFI_FAILED);
             }
         }
         return true;
@@ -535,7 +549,7 @@ static void refresh_ble_fallback(int64_t now)
     }
     if (!s_wifi_missing_since) s_wifi_missing_since = now;
     if (now - s_wifi_missing_since < BLE_FALLBACK_MS || s_restart_at) return;
-    if (s_ui_ok) ib_ui_set_offline_hint("BLUETOOTH MODE...");
+    if (s_ui_ok) ib_ui_set_connection_hint(IB_UI_CONN_BLE_MODE);
     ib_wifi_request_ble_fallback();
     s_restart_at = now + 500;
 }
@@ -642,13 +656,13 @@ static void revert_home(void)
 // 不清除 Mac 最后下发的状态:恢复在线时 refresh_links 按 s_st 回到原页面(Mac 若重新握手也会重发 state)。
 // 例外:done / err 是短暂结果页,离线期间不会再走 refresh_timers 的自动返回,直接收拢到常驻页,
 // 否则恢复在线后会停在结果页上。列表内容作废(s_list_ready 清零),等 Mac 重新下发 list。
-static const char *offline_hint(void)
+static ib_ui_connection_hint_t offline_hint(void)
 {
-    if (s_usb_present) return "USB LINKED / OPEN VIBEKEY";
-    if (s_ble_subscribed) return "BLE LINKED / OPEN VIBEKEY";
-    if (s_ble_only) return "BLUETOOTH MODE / HOLD DOWN";
-    if (ib_wifi_is_configured()) return "WIFI READY / OPEN VIBEKEY";
-    return "PLUG USB OR SET UP WIFI";
+    if (s_usb_present) return IB_UI_CONN_USB_LINKED;
+    if (s_ble_subscribed) return IB_UI_CONN_BLE_LINKED;
+    if (s_ble_only) return IB_UI_CONN_BLE_ONLY;
+    if (ib_wifi_is_configured()) return IB_UI_CONN_WIFI_READY;
+    return IB_UI_CONN_SETUP;
 }
 
 static void go_offline(void)
@@ -665,7 +679,7 @@ static void go_offline(void)
     if (s_ui_ok) {
         ib_ui_set_ok_held(false);
         ib_ui_set_level(0);
-        ib_ui_set_offline_hint(offline_hint());
+        ib_ui_set_connection_hint(offline_hint());
     }
     // 用户可能正在网络菜单里切网；链路刚掉时保留菜单，关掉后再落到离线页。
     if (!s_wifi_menu) {
@@ -688,9 +702,11 @@ static void refresh_links(int64_t now)
         s_usb_present = usb;
         refresh_battery(now, true);     // 更新充电图标
         if (!s_online && s_ui_ok && s_wake_until == 0) {
-            ib_ui_set_offline_hint(offline_hint());
+            ib_ui_set_connection_hint(offline_hint());
         }
     }
+
+    if(!ib_links_any(&s_links,now))ib_assistant_companion_release();
 
     if (ib_assistant_standalone()) {
         s_online=false;
@@ -736,16 +752,63 @@ static void refresh_links(int64_t now)
     }
 }
 
+static ib_ui_run_mode_notice_t run_notice(const char *error){
+    if(!error)return IB_UI_RUN_MODE_NOTICE_NONE;
+    if(!strcmp(error,"busy"))return IB_UI_RUN_MODE_NOTICE_BUSY;
+    if(!strcmp(error,"upload_active"))return IB_UI_RUN_MODE_NOTICE_UPLOADING;
+    if(!strcmp(error,"wifi_required"))return IB_UI_RUN_MODE_NOTICE_WIFI_REQUIRED;
+    if(!strcmp(error,"profile_required"))return IB_UI_RUN_MODE_NOTICE_PROFILE_REQUIRED;
+    if(!strcmp(error,"save_failed"))return IB_UI_RUN_MODE_NOTICE_SAVE_FAILED;
+    if(!strcmp(error,"restarting"))return IB_UI_RUN_MODE_NOTICE_RESTARTING;
+    return IB_UI_RUN_MODE_NOTICE_UNAVAILABLE;
+}
+static ib_ui_run_mode_notice_t run_current_notice(void){
+    return ib_assistant_store_uploading()?IB_UI_RUN_MODE_NOTICE_UPLOADING:ib_assistant_mode_busy()?IB_UI_RUN_MODE_NOTICE_BUSY:IB_UI_RUN_MODE_NOTICE_NONE;
+}
+static void run_menu_render(void){
+    s_screen=IB_UI_LIST;
+    if(s_ui_ok)ib_ui_run_mode_menu(ib_assistant_standalone(),s_run_menu.selected,s_run_notice);
+}
+static void run_menu_close(int64_t now){
+    ib_run_menu_close(&s_run_menu);ib_keys_reset(&s_keys);
+    if(s_ui_ok)ib_ui_run_mode_menu_hide();
+    ib_ui_screen_t restore=ib_assistant_standalone()?IB_UI_IDLE:!s_online?IB_UI_OFFLINE:(s_st==IB_ST_LIST&&!s_list_ready)?IB_UI_IDLE:screen_for(s_st);
+    show_screen(restore);s_assist_seen=0;refresh_assistant(now);wake(now);
+}
+static bool run_menu_key(ib_key_t key,ib_key_ev_t event,int64_t now){
+    if(s_run_replaying||s_wifi_menu)return false;
+    if(s_run_menu.open&&ib_assistant_take_restart_request())return true;
+    ib_run_result_t result=ib_run_menu_key(&s_run_menu,key,event,now,ib_assistant_standalone(),!s_backlight_on);
+    if(!result.consumed)return false;
+    if(event==IB_KEY_EV_DOWN)wake(now);
+    switch(result.action){
+    case IB_RUN_ACT_OPEN:
+        ib_keys_reset(&s_keys);s_run_notice=run_current_notice();run_menu_render();break;
+    case IB_RUN_ACT_CHANGED:s_run_notice=run_current_notice();run_menu_render();break;
+    case IB_RUN_ACT_CLOSE:run_menu_close(now);break;
+    case IB_RUN_ACT_CONFIRM:{
+        if(s_run_menu.selected==2||(s_run_menu.selected==0)==ib_assistant_standalone()){run_menu_close(now);break;}
+        const char *error=ib_assistant_request_mode(s_run_menu.selected==0);
+        s_run_notice=error?run_notice(error):IB_UI_RUN_MODE_NOTICE_RESTARTING;run_menu_render();break;
+    }
+    case IB_RUN_ACT_SHORT_UP:
+        if(ib_assistant_standalone()){if(!ib_assistant_busy())ib_assistant_clear_history();}
+        else if(!s_run_menu.wake_only){s_run_replaying=true;handle_key(IB_KEY_UP,IB_KEY_EV_DOWN,now-1);handle_key(IB_KEY_UP,IB_KEY_EV_UP,now);s_run_replaying=false;}
+        break;
+    default:break;
+    }
+    return true;
+}
+
 // ---- 事件处理 ----
 
 static void handle_key(ib_key_t key, ib_key_ev_t ev, int64_t now)
 {
-    if(s_solo_exit_press&&key==IB_KEY_DOWN){if(ev==IB_KEY_EV_UP)s_solo_exit_press=false;return;}
+    // 菜单进入前已按住的PTT松开仍须结束录音；不能让本地菜单吞掉麦克风释放沿。
+    if(s_run_menu.open&&ib_assistant_standalone()&&key==IB_KEY_OK&&ev==IB_KEY_EV_UP)ib_assistant_release();
+    if(run_menu_key(key,ev,now))return;
     if(ib_assistant_standalone()){
         if(ev==IB_KEY_EV_DOWN)wake(now);
-        if(!s_wifi_menu&&key==IB_KEY_DOWN&&ev==IB_KEY_EV_LONG&&!ib_assistant_busy()){
-            s_solo_exit_press=true;ib_assistant_leave_standalone();return;
-        }
         if((s_wifi_menu||!ib_assistant_busy())&&wifi_menu_key(key,ev,now))return;
         if(key==IB_KEY_OK){if(ev==IB_KEY_EV_DOWN)ib_assistant_press();else if(ev==IB_KEY_EV_UP)ib_assistant_release();}
         if(key==IB_KEY_DOWN&&ev==IB_KEY_EV_UP)ib_assistant_cancel();
@@ -769,7 +832,7 @@ static void handle_key(ib_key_t key, ib_key_ev_t ev, int64_t now)
             if (s_ble_subscribed) ib_ble_send(msg, len);
             if (ib_wifi_is_configured()) ib_wifi_send((const uint8_t *)msg, len);
         }
-        if (s_ui_ok) ib_ui_set_offline_hint(has_link ? "CONNECTING..." : "CHECK USB CABLE");
+        if (s_ui_ok) ib_ui_set_connection_hint(has_link ? IB_UI_CONN_CONNECTING : IB_UI_CONN_CHECK_USB);
         s_wake_until = has_link ? now + 3000 : 0;
         s_wake_failed = false;
         ib_keys_reset(&s_keys);
@@ -951,6 +1014,10 @@ static void handle_command(ib_link_t link, const ib_cmd_t *cmd, int64_t now)
 
 static void refresh_timers(int64_t now)
 {
+    if(ib_run_menu_expired(&s_run_menu,now))run_menu_close(now);
+    if(s_run_menu.open&&(s_run_notice==IB_UI_RUN_MODE_NOTICE_NONE||s_run_notice==IB_UI_RUN_MODE_NOTICE_BUSY||s_run_notice==IB_UI_RUN_MODE_NOTICE_UPLOADING)){
+        ib_ui_run_mode_notice_t notice=run_current_notice();if(notice!=s_run_notice){s_run_notice=notice;run_menu_render();}
+    }
     if (s_restart_at && now >= s_restart_at) esp_restart();
     if (s_wifi_restart_at && now >= s_wifi_restart_at) esp_restart();
     if (s_wifi_menu && now - s_wifi_menu_touched >= WIFI_MENU_TIMEOUT_MS) wifi_menu_close();
@@ -958,11 +1025,11 @@ static void refresh_timers(int64_t now)
         if (!s_wake_failed) {
             s_wake_failed = true;
             s_wake_until = now + 2000;
-            if (!s_online && s_ui_ok) ib_ui_set_offline_hint("NO RESPONSE - TRY AGAIN");
+            if (!s_online && s_ui_ok) ib_ui_set_connection_hint(IB_UI_CONN_NO_RESPONSE);
         } else {
             s_wake_until = 0;
             s_wake_failed = false;
-            if (!s_online && s_ui_ok) ib_ui_set_offline_hint("PRESS OK TO RECONNECT");
+            if (!s_online && s_ui_ok) ib_ui_set_connection_hint(IB_UI_CONN_RECONNECT);
         }
     }
     if (s_revert_at && now >= s_revert_at) {
@@ -1031,7 +1098,15 @@ static bool apply_pet_configuration(void *context)
 static void assistant_status(ib_assistant_state_t state,const char *text,void *context)
 {
     (void)context;size_t n=ib_utf8_prefix(text,strlen(text),sizeof(s_assist_view.text)-1);
-    portENTER_CRITICAL(&s_assist_lock);s_assist_view.state=state;memcpy(s_assist_view.text,text,n);s_assist_view.text[n]=0;s_assist_view.revision++;portEXIT_CRITICAL(&s_assist_lock);
+    /* 元数据随状态同快照捕获，避免USB下一包到达后把旧state与新target/phase拼在一起。 */
+    portENTER_CRITICAL(&s_assist_lock);
+    s_assist_view.state=state;memcpy(s_assist_view.text,text,n);s_assist_view.text[n]=0;
+    s_assist_view.cloud_target=ib_assistant_companion_cloud_target();
+    s_assist_view.has_phase=ib_assistant_companion_has_phase();
+    s_assist_view.owned=ib_assistant_companion_owned();
+    s_assist_view.companion_error=ib_assistant_companion_error();
+    s_assist_view.revision++;
+    portEXIT_CRITICAL(&s_assist_lock);
 }
 static void refresh_assistant(int64_t now)
 {
@@ -1041,12 +1116,35 @@ static void refresh_assistant(int64_t now)
     if(view.revision==s_assist_seen)return;
     s_assist_seen=view.revision;
     bool solo=ib_assistant_standalone();
-    static const char *names[]={"idle","loading","listening","uploading","thinking","composing","celebrate","alerting","powering-down"};
+    static const char *const names[]={"idle","loading","listening","uploading","thinking","composing","celebrate","alerting","powering-down","humming"};
+    static const ib_ui_assistant_phase_t phases[]={IB_UI_ASSIST_IDLE,IB_UI_ASSIST_PREPARING,IB_UI_ASSIST_LISTENING,
+        IB_UI_ASSIST_TRANSCRIBING,IB_UI_ASSIST_THINKING,IB_UI_ASSIST_REPLYING,IB_UI_ASSIST_DONE,IB_UI_ASSIST_ERROR,
+        IB_UI_ASSIST_STOPPED,IB_UI_ASSIST_SPEAKING};
+    unsigned index=(unsigned)view.state;
+    if(index>=sizeof(names)/sizeof(names[0]))index=IB_ASSIST_ERROR;
     if(s_ui_ok){
-        if(solo){s_revert_at=0;show_screen(IB_UI_IDLE);ib_ui_pet_state(names[view.state],view.text,true);}
-        else if(!ib_ui_pet_state(view.text[0]?view.text:names[view.state],view.text,false))ib_ui_pet_state(names[view.state],view.text,false);
+        if(solo){
+            s_revert_at=0;show_screen(IB_UI_IDLE);
+            ib_ui_pet_assistant_state(names[index],phases[index],true,view.text);
+        }else{
+            const char *canonical=ib_pet_state_is_valid(view.text)?view.text:names[index];
+            ib_ui_assistant_phase_t phase=view.has_phase?phases[index]:IB_UI_ASSIST_COUNT;
+            ib_ui_pet_assistant_state(canonical,phase,view.cloud_target,view.companion_error);
+        }
+        ib_ui_set_assistant_key_hints(solo,solo||view.owned?phases[index]:IB_UI_ASSIST_COUNT);
     }
     if(solo)wake(now);
+}
+
+// 字幕最后快照可合并多个partial；跨generation先begin，final/clear边界由模型拒绝迟到更新。
+static void refresh_transcript(void){
+    static uint32_t seen,generation;static bool active;
+    ib_transcript_view_t view;uint32_t revision;
+    ib_assistant_transcript_snapshot(&view,&revision);if(revision==seen)return;seen=revision;
+    if(!s_ui_ok)return;
+    if(!view.active||view.closed){ib_ui_transcript_clear(0);active=false;return;}
+    if(generation!=view.generation||!active){if(!ib_ui_transcript_begin(view.generation))return;generation=view.generation;active=true;}
+    (void)ib_ui_transcript_update(view.generation,view.text,view.final);
 }
 
 static void app_task(void *arg)
@@ -1074,7 +1172,7 @@ static void app_task(void *arg)
             case EV_LINK:
                 if (ev.link == IB_LINK_BLE) s_ble_subscribed = ev.subscribed;
                 if (!ev.subscribed) ib_links_drop(&s_links, ev.link);
-                if (!s_online && s_ui_ok && s_wake_until == 0) ib_ui_set_offline_hint(offline_hint());
+                if (!s_online && s_ui_ok && s_wake_until == 0) ib_ui_set_connection_hint(offline_hint());
                 break;
             }
         }
@@ -1082,6 +1180,7 @@ static void app_task(void *arg)
         if(ib_assistant_take_restart_request()&&!s_restart_at)s_restart_at=now+500;
         refresh_links(now);
         refresh_assistant(now);
+        refresh_transcript();
         refresh_ble_fallback(now);
         refresh_timers(now);
         refresh_battery(now, false);
@@ -1141,7 +1240,7 @@ esp_err_t ib_app_start(bool ui_ok, bool battery_ok)
     s_pet_apply_lock=xSemaphoreCreateMutex();
     ib_assistant_store_set_apply(apply_pet_configuration,NULL);
     ib_assistant_store_apply();
-    assistant_status(IB_ASSIST_IDLE,"",NULL);
+    assistant_status(ib_assistant_state(),ib_assistant_standalone()&&!ib_assistant_store_configured()?"profile_required":"",NULL);
 
     return ESP_OK;
 }

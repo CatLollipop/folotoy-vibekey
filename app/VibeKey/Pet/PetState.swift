@@ -10,7 +10,7 @@ nonisolated enum PetState: String, CaseIterable, Codable, Sendable {
     case suspicious, surprised, scared, curious, humming, alerting, notifying, refusing
 }
 
-/// Mac与设备共享角色、脸型和表情偏好；Mac为高清vector/solid，设备为pixel/dot。
+/// Mac与设备共享角色/脸型/表情；画风只影响Mac，设备固定pixel/dot。
 @MainActor @Observable
 final class PetSettings {
     @ObservationIgnored private let defaults: UserDefaults
@@ -25,6 +25,7 @@ final class PetSettings {
     var castID: String { didSet { defaults.set(castID, forKey: "pet.castID") } }
     var faceID: String { didSet { defaults.set(faceID, forKey: "pet.faceID") } }
     var colorID: String { didSet { defaults.set(colorID, forKey: "pet.colorID") } }
+    var desktopLookID: String { didSet { defaults.set(desktopLookID, forKey: "pet.desktopLookID") } }
     var followConversation: Bool { didSet { defaults.set(followConversation, forKey: "pet.followConversation") } }
     var manualState: PetState { didSet { defaults.set(manualState.rawValue, forKey: "pet.manualState") } }
 
@@ -41,10 +42,15 @@ final class PetSettings {
         castID = defaults.string(forKey: "pet.castID") ?? "dot"
         faceID = defaults.string(forKey: "pet.faceID") ?? "capsule"
         colorID = defaults.string(forKey: "pet.colorID") ?? "cream"
+        desktopLookID = defaults.string(forKey: "pet.desktopLookID") ?? "vector/solid"
         followConversation = defaults.object(forKey: "pet.followConversation") as? Bool ?? true
         manualState = defaults.string(forKey: "pet.manualState").flatMap(PetState.init(rawValue:)) ?? .idle
     }
 
-    var appearance: PetAppearance { PetAppearance(castID: castID, faceID: faceID, colorID: colorID) }
+    var appearance: PetAppearance {
+        let parts = desktopLookID.split(separator: "/", maxSplits: 1).map(String.init)
+        return PetAppearance(castID: castID, faceID: faceID, colorID: colorID,
+                             styleID: parts.first ?? "vector", variantID: parts.count == 2 ? parts[1] : "solid")
+    }
 
 }

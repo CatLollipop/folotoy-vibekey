@@ -15,8 +15,8 @@ final class CloudASRStore {
                 apiKey: credentials.value(for: Self.keyName(provider)) ?? "",
                 model: defaults.string(forKey: "cloud.\(provider.rawValue).model") ?? provider.defaultModel,
                 region: CloudRegion(rawValue: defaults.string(forKey: "cloud.\(provider.rawValue).region") ?? "") ?? .mainland,
-                baseURL: defaults.string(forKey: "cloud.\(provider.rawValue).baseURL") ?? (provider == .minimax ?
-                    defaults.data(forKey: "assistant.profile").flatMap { try? JSONDecoder().decode(AssistantProfile.self, from: $0).minimaxBaseURL } : nil) ?? provider.defaultBaseURL)
+                baseURL: provider == .bailian ? BailianEndpoint.restored(from: defaults) :
+                    Self.restoredBaseURL(provider, defaults:defaults))
         }
     }
 
@@ -41,5 +41,11 @@ final class CloudASRStore {
         update(provider, config)
     }
 
-    private static func keyName(_ provider: CloudProvider) -> String { provider == .minimax ? "assistant.minimaxKey" : "cloud.\(provider.rawValue).apiKey" }
+    private static func restoredBaseURL(_ provider:CloudProvider, defaults:UserDefaults) -> String {
+        let saved = defaults.string(forKey:"cloud.\(provider.rawValue).baseURL")
+        if provider == .volcengine { return saved.flatMap { URL(string:$0)?.scheme == "wss" ? $0 : nil } ?? provider.defaultBaseURL }
+        return saved ?? provider.defaultBaseURL
+    }
+
+    private static func keyName(_ provider: CloudProvider) -> String { "cloud.\(provider.rawValue).apiKey" }
 }

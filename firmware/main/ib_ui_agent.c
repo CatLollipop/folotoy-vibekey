@@ -43,6 +43,7 @@ static ib_ui_agent_t s_kind;
 static bool s_visible;
 static bool s_is_banner;
 static bool s_hiding;
+static bool s_suspended;
 static uint32_t s_show_ms;
 static char s_source_text[64];
 static char s_banner_buf[40];
@@ -355,12 +356,18 @@ void ib_agent_hide(void)
 
 bool ib_agent_covering(void)
 {
-    return s_visible && !s_is_banner && lv_obj_get_style_bg_opa(s_root, 0) == LV_OPA_COVER;
+    return !s_suspended && s_visible && !s_is_banner && lv_obj_get_style_bg_opa(s_root, 0) == LV_OPA_COVER;
+}
+void ib_agent_set_suspended(bool suspended)
+{
+    s_suspended=suspended;
+    if(suspended)lv_obj_add_flag(s_root,LV_OBJ_FLAG_HIDDEN);
+    else if(s_visible&&!s_hiding)lv_obj_remove_flag(s_root,LV_OBJ_FLAG_HIDDEN);
 }
 
 void ib_agent_frame(uint32_t now_ms)
 {
-    if (!s_visible) return;
+    if (!s_visible||s_suspended) return;
     // 背景还没铺满时 s_show_ms 在未来:动画停在起点。
     uint32_t t = (int32_t)(now_ms - s_show_ms) > 0 ? now_ms - s_show_ms : 0;
     if (s_is_banner) {

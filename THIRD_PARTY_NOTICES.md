@@ -14,11 +14,13 @@
 | --- | --- | --- |
 | folotoy/ai-passport 板级支持包 | `firmware/components/bsp` | MIT(见该目录 LICENSE) |
 | Material Icons Round(生成的图标字体) | `firmware/main/icons` | Apache-2.0(见 `LICENSE-material-icons`) |
+| [Noto Sans SC](https://github.com/google/fonts/tree/86aced91de05cd4f96a06838124cca45be337b2b/ofl/notosanssc)，固定 SemiBold 600 的12px字形 | `firmware/main/fonts/ib_cjk_font_12.c`；中文状态/列表/字幕复用同一静态字库 | SIL Open Font License 1.1(见 `firmware/main/fonts/LICENSE-noto-sans-sc`) |
+| Roboto Mono(生成的ASCII终端字体) | `firmware/main/fonts/ib_terminal_font_*.c` | SIL Open Font License 1.1(见 `firmware/main/fonts/LICENSE-roboto-mono`) |
 | stb_image_write | `firmware/tools/ui-preview/third_party` | MIT / Public Domain(见文件末尾) |
 | silero-vad 模型 | `app/VibeKey/Resources/silero_vad.onnx` | MIT(snakers4/silero-vad) |
 | [Aora Bot](https://github.com/sam70361/aora-bot) / `@aora-bot/engine@0.2.0`，源码 `164ffa38b3c27a8512e7c09cfceb7cf0c98f5144` | `vendor/aora-bot`、`app/VibeKey/Pet/Resources/AoraPet.bundle`、`firmware/main/ib_pet*` 中的派生数据与数值移植 | Aora Bot License 1.1（完整原文见 `vendor/aora-bot/LICENSE`；不由本项目 MIT 许可重新授权） |
 
-**Powered by Aora Bot** — 角色由 [Aora Bot](https://github.com/sam70361/aora-bot) 提供。源码、角色及其派生内容保留 Copyright (c) 2026 sam70361。个人及许可定义的其他免费使用者可按原许可集成到应用与硬件；公开分发保留许可和署名链接。其他组织的上线与商业使用适用原许可的商业授权条款。Mac 使用新版原创 Dot 的高清 vector/solid；设备使用同一新版关键几何与 C 数值移植的 pixel/dot，没有引入经典 Emotion Ball/NX 内容。
+**Powered by Aora Bot** — 角色由 [Aora Bot](https://github.com/sam70361/aora-bot) 提供。源码、角色及其派生内容保留 Copyright (c) 2026 sam70361。个人及许可定义的其他免费使用者可按原许可集成到应用与硬件；公开分发保留许可和署名链接。其他组织的上线与商业使用适用原许可的商业授权条款。Mac 默认新版原创 Dot，支持固定版本实际安装的全部 29 种画风；设备使用所选角色同一新版关键几何与 C 数值移植的 pixel/dot，没有引入经典 Emotion Ball/NX 内容。
 
 ## 编译时获取(不在仓库中)
 
@@ -28,6 +30,7 @@
 | sherpa-onnx / onnxruntime | Swift Package | Apache-2.0 / MIT |
 | KeyboardShortcuts | Swift Package | MIT |
 | ESP-IDF、LVGL、esp_lvgl_port 等 | ESP-IDF 组件管理器 | Apache-2.0 / MIT |
+| [esp_websocket_client](https://github.com/espressif/esp-protocols/tree/70bf122fc8bc74622dcf7e15233b5b2af9088df5/components/esp_websocket_client) 1.8.0（来源提交 `70bf122fc8bc74622dcf7e15233b5b2af9088df5`） | ESP-IDF managed component，版本与校验由 `firmware/dependencies.lock` 固定 | Apache-2.0 |
 | esptool 独立版 | `app/scripts/bundle-device-assets.sh` 下载并打包进 app | GPL-2.0(作为独立程序调用,附 LICENSE) |
 
 ## 运行时由用户下载

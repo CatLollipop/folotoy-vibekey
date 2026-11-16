@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Aora 宠物选择器</title>
+<link rel="stylesheet" href="selector.css">
+<body>
+<main class="selector" id="selector" aria-busy="true">
+  <section class="stage" aria-label="宠物实时预览">
+    <aside class="style-rail">
+      <h2 data-copy="style">画风</h2>
+      <div id="styleOptions" class="style-options scroll" aria-label="桌面画风"></div>
+    </aside>
+    <div class="preview-column">
+      <div class="preview-heading"><h2 id="currentName">Aora Bot</h2><span id="currentStyle"></span></div>
+      <div class="preview-art" id="previewArt"></div>
+      <div class="preview-status"><span class="state-dot"></span><span id="currentState"></span></div>
+    </div>
+    <aside class="look-rail">
+      <div class="rail-heading"><h2 data-copy="color">颜色</h2><span id="colorName"></span></div>
+      <div id="colorOptions" class="color-options scroll"></div>
+      <div class="rail-heading face-heading"><h2 data-copy="face">脸型</h2><span id="faceName"></span></div>
+      <div id="faceOptions" class="face-options scroll"></div>
+    </aside>
+  </section>
+  <section class="expressions">
+    <div class="section-heading">
+      <h2 data-copy="expression">表情</h2>
+      <button class="follow-control" id="followButton" type="button" role="switch" aria-checked="true"><span class="switch-track"><span></span></span><span data-copy="follow">跟随会话</span></button>
+    </div>
+    <div class="state-tabs" id="stateGroups" role="group" aria-label="表情分类"></div>
+    <div class="thumbnail-strip scroll" id="stateOptions"></div>
+  </section>
+  <section class="roster">
+    <div class="section-heading roster-heading">
+      <h2 data-copy="appearance">外观</h2>
+      <div class="search-field"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="6.7" cy="6.7" r="4.4"/><path d="m10 10 3.7 3.7"/></svg><input id="castSearch" type="search" placeholder="搜索外观或主题" aria-label="搜索外观或主题" autocomplete="off"><span id="castCount"></span></div>
+    </div>
+    <div class="roster-row">
+      <button type="button" class="strip-arrow" id="castPrevious" aria-label="向前浏览外观"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m10 3-5 5 5 5"/></svg></button>
+      <div class="thumbnail-strip cast-strip scroll" id="castOptions"></div>
+      <button type="button" class="strip-arrow" id="castNext" aria-label="向后浏览外观"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5"/></svg></button>
+    </div>
+    <p class="empty" id="emptySearch" hidden></p>
+  </section>
+  <footer><span data-copy="desktopOnly">画风应用到桌面挂件，Passport 保持点阵。</span><span data-copy="saved">选择自动保存</span></footer>
+</main>
+<div class="load-state" id="loadState"><span data-copy="loading">正在加载宠物…</span></div>
+<div class="load-state error" id="loadError" hidden><p data-copy="error">宠物预览暂不可用，请重新加载。</p><button type="button" id="reloadButton" data-copy="reload">重新加载</button></div>
+<script src="engine.js"></script>
+<script src="theme-bootstrap.js"></script>
+<script src="themes/extras.js"></script>
+<script src="themes/halloween.js"></script>
+<script src="themes/christmas.js"></script>
+<script src="themes/spring-festival.js"></script>
+<script src="themes/mid-autumn.js"></script>
+<script src="themes/easter.js"></script>
+<script src="themes/summer.js"></script>
+<script src="themes/valentine.js"></script>
+<script src="catalog.js"></script>
+<script src="selector.js"></script>
+</body>
+</html>

@@ -1,0 +1,41 @@
+# AI 助理
+
+<!-- impeccable:product-schema 1 -->
+
+## Platform
+
+adaptive
+
+原生 macOS 设置与桌面挂件，配套 Passport 的 LVGL 点阵屏。
+
+## Users
+
+本机用户通过按键说话，与选中的电脑应用会话交互，或让 Passport 独立进行云端对话。
+
+## Product Purpose
+
+在电脑和 Passport 上共享助手配置、宠物角色与真实会话状态；配置完成后，设备可以脱离 Mac 使用。
+
+## Capabilities and Constraints
+
+- macOS 使用 SwiftUI、AppKit 和离线 WKWebView；设备不运行 JS、DOM 或 SVG。
+- 实时识别按用户最新选择使用豆包；DeepSeek 负责对话，MiniMax 负责朗读。凭据保存在本机，单独同步到设备。
+- Aora Bot 固定版本 0.2.0，保留其许可。提供完整的 193 种外观、16 种脸型与 44 种表情目录。
+- 用户确认画风选择影响桌面挂件；Passport 始终使用所选角色的点阵画。
+- 会话联动、手动表情、设备亮度和帧率、挂件大小与窗口行为等现有功能必须保留。
+- 不使用旧 emotion-ball JSON、NX 或旧配置兼容层。
+
+## Brand Commitments
+
+产品名称为“AI 助理”。宠物设置本次按用户提供的 Aora 选择器截图改造，其余设置页沿用原生 macOS 结构。
+
+## Evidence on Hand
+
+仓库包含固定官方引擎、全部角色目录、离线资源和设备点阵导出器。应用接入和硬件验收的实际限制记录在验收文档，不将未验证能力描述为已完成。
+
+## Product Principles
+
+- 选项即时预览，并使用相同设置驱动桌面与设备导出。
+- 只依据真实会话事件切换状态。
+- 设备同步以实际回执为准。
+- 云凭据与宠物资源隔离。

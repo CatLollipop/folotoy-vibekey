@@ -42,6 +42,15 @@ final class PetWebRenderer: NSObject, WKNavigationDelegate {
         return Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "AoraPet.bundle")
     }
 
+    /// 用户明确重试目录时重载同一宿主；保持NSPanel已连接的WebView和当前设置。
+    func reload() {
+        loaded = false
+        loadError = nil
+        if let url = Self.resourceURL {
+            webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        } else { loadError = "AoraPet.bundle is missing" }
+    }
+
     func update(state: PetState, reducedMotion: Bool, paused: Bool = false, appearance: PetAppearance = .dot) {
         self.state = state
         self.reducedMotion = reducedMotion

@@ -885,3 +885,27 @@ Mac配置调用链为 `AssistantDeviceSync → assistant begin/chunk/commit（ri
 ## LVGL有界刷新与调度
 
 pet自绘使用当前layer clip先裁行/列，只为可见圆点创建draw任务，每次callback复用一个descriptor。frame callback结束后暂停自身，display REFR_READY再reset/resume，防止小DMA缓冲与慢绘制令timer无限追赶过期帧。无invalid area时仍resume display refresh timer完成等待闭环，熄屏不恢复frame。ESP-IDF port在handler返回并解锁后已有vTaskDelay(1)，此结构确保它能运行，保留任务看门狗。目标fps为上限，实际刷新受C3/显示负载限制。
+
+## Passport中文状态与presentation归属（0.3.1）
+
+`独立ib_assistant typed state/error`或`Mac DeviceAssistantPresentation/Hub canonical → assistant pet_state严格校验/明确owner → app任务状态快照 → ib_ui_pet_assistant_state → ib_ui_labels → Noto Sans SC/LVGL`。UI在同一锁内更新动画和中文caption；带phase显示业务精确阶段，不带phase保留canonical工作/检索语义。target区分Mac云端与应用会话，独立模式固定云端。稳定机器错误码对应友好中文；显示msg和自定义正文不参与业务判断。
+
+带target接管caption后，排队旧state只影响原页面；无target旧pet_state和全部Mac链路断开释放owner并清理旧phase/error。`ib_app连接状态 → ib_ui_connection_hint_t → ib_ui_connection_label → UTF-8离线label`统一连接提示。复用既有OFL Noto12px字库，不增加字体位图或运行时字形分配；状态资源及字形/尺寸测试见[firmware-chinese-status.md](firmware-chinese-status.md)。
+
+## 本地运行模式菜单与转写显示边界
+
+`ib_run_menu手势/选择 → ib_app本地owner → 共用ib_assistant_mode_request检查/NVS/重启 → ib_ui_run_mode_menu复用LIST`。UI不改ctx.list中的Mac缓存，菜单期间阻止show切屏并临时遮蔽Agent，退回时恢复最新数据。边缘提示复用原右列和Material字形，仅增加一个左电源自绘对象；短/长按语义由真实模式/阶段驱动，未定义留空，见[device-local-mode.md](device-local-mode.md)。
+
+`实际ASR快照 → generation邮箱/app任务 → ib_ui_transcript_* → ib_transcript_view有界UTF-8窗口 → phase+两行label`。UI不联网、不模拟字、不按计时器播放；final/error/取消拒绝同轮迟到partial。完整文本归ASR/对话层，UI仅192B尾部与256B渲染缓存。0.4来源/parser和真实供应商验收按[transcript-display.md](transcript-display.md)另行完成。
+
+
+## 0.4.0 Mac助手实时ASR
+
+`AppState → AssistantRecognitionFactory → StreamingCloudSession + VolcengineCodec → AssistantController`在录音开始即创建豆包会话并实时feed；partial与句final累积显示，句final仍不是整轮完成。松开后`session.finish → 合法终包确认 → events消费收敛 → onTranscript(text,true) → 原目的地AgentHub/DeepSeek`，MiniMax仅朗读。取消/失败关闭采音gate和会话，generation在请求开始前与完成后都校验；完整录音不再缓存在Controller。协议/事件/文本工具拆到`ASRSession.swift`，语言枚举拆到`SpeechLanguage.swift`，正式传输可替换以验证finish超时和close/终态竞态。详细契约、无收费回归与显式live smoke见[streaming-asr.md](streaming-asr.md)。
+
+
+## 宠物可视选择器与桌面画风
+
+`PetSettingsView → PetVisualSelector单个离线WKWebView → 六种typed选择意图 → PetController / PetSettings持久偏好 → PetWebRenderer → 官方createCharacter.update(style,variant)`。中央一个动态角色，29画风/16脸型/44状态静态缩略图和193外观惰性缩略图共用固定官方引擎；搜索/分类无网络。原生只接收本地main-frame白名单消息并验证目录ID，页面拿不到对话或凭据；关闭时移除弱handler与动画。所有非外观设置保留原生控件；Pet设置页与助手页共用`AssistantDeviceSync.syncPet`导出/事务，状态来自回执。画风只影响Mac；`AoraPetExport → AORAPET2`固定pixel/dot，测试29种画风输出同一设备包。范围和验证见[pet-runtime.md](pet-runtime.md)。
+
+设备实时WSS使用官方`espressif/esp_websocket_client@1.8.0`，来源提交`70bf122fc8bc74622dcf7e15233b5b2af9088df5`，Apache-2.0，依赖锁固定。ASR当前使用豆包binary协议，MiniMax仅TTS；网络/事件合同见[asr-realtime.md](asr-realtime.md)。

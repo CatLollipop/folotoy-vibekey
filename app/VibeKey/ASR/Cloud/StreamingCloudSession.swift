@@ -1,5 +1,23 @@
 import Foundation
 
+/// 仅替换传输便可验证真实pump的ready/finish/关闭顺序，不在测试中实现第二套识别协议。
+nonisolated protocol CloudStreamConnection: AnyObject, Sendable {
+    func send(_ message: URLSessionWebSocketTask.Message)
+    func close()
+}
+nonisolated protocol CloudStreamConnectionBuilding: Sendable {
+    func connect(request: URLRequest,
+                 onMessage: @escaping @Sendable (URLSessionWebSocketTask.Message) -> Void,
+                 onClose: @escaping @Sendable (Error?) -> Void) throws -> any CloudStreamConnection
+}
+nonisolated struct URLSessionCloudConnectionFactory: CloudStreamConnectionBuilding {
+    func connect(request: URLRequest,
+                 onMessage: @escaping @Sendable (URLSessionWebSocketTask.Message) -> Void,
+                 onClose: @escaping @Sendable (Error?) -> Void) throws -> any CloudStreamConnection {
+        try CloudConnection(request: request, onMessage: onMessage, onClose: onClose)
+    }
+}
+
 /// 云端流式识别会话(所有流式服务共用),协议细节交给 RealtimeCodec。
 /// 职责:建立 WebSocket、等待服务端就绪、按包大小发送 PCM、结束时补发尾包并等待定稿、
 /// 字幕模式下连接中断自动重连(把当时的中间结果当作定稿,不丢字)、把错误报告给上层。
@@ -18,10 +36,12 @@ nonisolated final class StreamingCloudSession: ASRSession, @unchecked Sendable {
     ///   - timing: 超时与重连退避(测试里缩短);
     ///   - makeCodec: 每次(重新)连接都生成新的编解码器(新的任务 ID、清空去重状态)。
     init(purpose: ASRPurpose, serviceName: String, timing: CloudStreamTiming = .standard,
+         connectionFactory: any CloudStreamConnectionBuilding = URLSessionCloudConnectionFactory(),
          makeCodec: @escaping @Sendable () -> any RealtimeCodec) {
         let (events, sink) = AsyncStream.makeStream(of: TranscriptEvent.self)
         let (commands, inbox) = AsyncStream.makeStream(of: CloudStreamPump.Command.self)
-        let pump = CloudStreamPump(purpose: purpose, serviceName: serviceName, timing: timing, makeCodec: makeCodec, sink: sink)
+        let pump = CloudStreamPump(purpose: purpose, serviceName: serviceName, timing: timing, makeCodec: makeCodec,
+                                   connectionFactory: connectionFactory, sink: sink)
         self.events = events
         self.sink = sink
         self.inbox = inbox
@@ -74,6 +94,7 @@ nonisolated final class CloudStreamPump: @unchecked Sendable {
     private let purpose: ASRPurpose
     private let serviceName: String
     private let makeCodec: @Sendable () -> any RealtimeCodec
+    private let connectionFactory: any CloudStreamConnectionBuilding
     private let sink: AsyncStream<TranscriptEvent>.Continuation
     private let timing: CloudStreamTiming
     private let state = SharedState()
@@ -82,11 +103,13 @@ nonisolated final class CloudStreamPump: @unchecked Sendable {
     static let maxFailedAttempts = 3
 
     init(purpose: ASRPurpose, serviceName: String, timing: CloudStreamTiming,
-         makeCodec: @escaping @Sendable () -> any RealtimeCodec, sink: AsyncStream<TranscriptEvent>.Continuation) {
+         makeCodec: @escaping @Sendable () -> any RealtimeCodec,
+         connectionFactory: any CloudStreamConnectionBuilding, sink: AsyncStream<TranscriptEvent>.Continuation) {
         self.purpose = purpose
         self.serviceName = serviceName
         self.timing = timing
         self.makeCodec = makeCodec
+        self.connectionFactory = connectionFactory
         self.sink = sink
     }
 
@@ -136,12 +159,17 @@ nonisolated final class CloudStreamPump: @unchecked Sendable {
                     readyTimedOut()
                 }
             case .finish:
-                let settled = await waitUntil(timing.readyTimeout) { self.state.ready || self.state.failed || self.state.lost }
+                // 豆包等协议不要求 ready 握手，短录音可能发 EOS 后才有第一条识别结果。
+                // 必须沿用发送音频的准入条件，不能先等结果再发送触发结果所需的 EOS。
+                let waitsForReady = state.codec.waitsForReady
+                let settled = await waitUntil(timing.readyTimeout) {
+                    self.state.canSendAudio(waitsForReady: waitsForReady) || self.state.failed || self.state.lost
+                }
                 // 一直没就绪(也没收到错误):报告超时,让上层(听写结果、设置页「测试连接」)知道原因。
                 if !settled, !Task.isCancelled, !state.failed {
                     report(CloudASRError.timeout(serviceName).localizedDescription)
                 }
-                if state.ready, !state.lost, !state.failed {
+                if !Task.isCancelled, state.canSendAudio(waitsForReady: waitsForReady) {
                     sendChunks(&pending)
                     state.markFinishing()
                     send((try? state.codec.finishMessages(lastChunk: pending)) ?? [])
@@ -150,6 +178,10 @@ nonisolated final class CloudStreamPump: @unchecked Sendable {
                     await waitUntil(timing.finishTimeout) {
                         self.state.completed || self.state.failed || self.state.lost
                             || (completesOnFinal && self.state.finalAfterFinish)
+                    }
+                    if !Task.isCancelled, !state.failed,
+                       !state.completed, !(completesOnFinal && state.finalAfterFinish) {
+                        report(CloudASRError.timeout(serviceName).localizedDescription)
                     }
                 }
                 shutdown()
@@ -167,7 +199,7 @@ nonisolated final class CloudStreamPump: @unchecked Sendable {
         let generation = state.reset(codec: codec)
         old?.close()
         do {
-            let connection = try CloudConnection(request: codec.makeRequest()) { [weak self] message in
+            let connection = try connectionFactory.connect(request: codec.makeRequest()) { [weak self] message in
                 self?.receive(message, generation: generation)
             } onClose: { [weak self] error in
                 self?.connectionClosed(error, generation: generation)
@@ -245,8 +277,13 @@ nonisolated final class CloudStreamPump: @unchecked Sendable {
 
     /// 连接关闭回调(每条连接最多一次)。旧连接、已经结束 / 已失败 / 已标记断开的连接都忽略(幂等)。
     private func connectionClosed(_ error: Error?, generation: Int) {
-        guard state.isCurrent(generation), !state.closed, !state.finishing, !state.completed,
+        guard state.isCurrent(generation), !state.closed, !state.completed,
               !state.failed, !state.lost else { return }
+        if state.finishing {
+            // close回调可能早于已排队的最后一帧；不让它抢先否定task-finished。
+            // finish的有界等待仍必须收到正式终态，否则发failure，绝不把close当完成。
+            return
+        }
         // 鉴权、额度类错误重连也没用:直接报告。
         if let error = error as? CloudASRError, error.isFatal {
             report(error.localizedDescription)
@@ -278,7 +315,7 @@ nonisolated final class CloudStreamPump: @unchecked Sendable {
 private nonisolated final class SharedState: @unchecked Sendable {
     private let lock = NSLock()
     private var _codec: any RealtimeCodec = PlaceholderCodec()
-    private var _connection: CloudConnection?
+    private var _connection: (any CloudStreamConnection)?
     private var generation = 0
     /// 当前连接建立的时间(判断就绪超时)。
     private var connectedAt = ContinuousClock.now
@@ -290,7 +327,7 @@ private nonisolated final class SharedState: @unchecked Sendable {
                          finishing: false, finalAfterFinish: false, closed: false)
 
     var codec: any RealtimeCodec { lock.withLock { _codec } }
-    var connection: CloudConnection? { lock.withLock { _connection } }
+    var connection: (any CloudStreamConnection)? { lock.withLock { _connection } }
     var lastError: String? { lock.withLock { _lastError } }
     var ready: Bool { lock.withLock { flags.ready } }
     var everReady: Bool { lock.withLock { flags.everReady } }
@@ -318,7 +355,7 @@ private nonisolated final class SharedState: @unchecked Sendable {
     func isCurrent(_ generation: Int) -> Bool { lock.withLock { self.generation == generation } }
 
     /// 记下新建的连接;期间又换了代(不应发生,保险起见)就直接关掉它。
-    func setConnection(_ connection: CloudConnection, generation: Int) {
+    func setConnection(_ connection: any CloudStreamConnection, generation: Int) {
         let stale = lock.withLock { () -> Bool in
             guard self.generation == generation else { return true }
             _connection = connection
@@ -392,7 +429,7 @@ private nonisolated struct PlaceholderCodec: RealtimeCodec {
 }
 
 /// 一条 WebSocket 连接:持续接收,按顺序发送,关闭时回调一次。
-nonisolated final class CloudConnection: NSObject, URLSessionWebSocketDelegate, @unchecked Sendable {
+nonisolated final class CloudConnection: NSObject, URLSessionWebSocketDelegate, CloudStreamConnection, @unchecked Sendable {
     private var session: URLSession!
     private var task: URLSessionWebSocketTask!
     private let onMessage: @Sendable (URLSessionWebSocketTask.Message) -> Void

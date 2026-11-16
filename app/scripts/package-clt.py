@@ -2,12 +2,21 @@
 """将SwiftPM真实可执行文件和运行资源装入开发app，不调用Xcode工具。"""
 import json
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
+project = (root / 'project.yml').read_text()
+def project_version(name):
+    # 两条构建路径必须使用同一个版本源，避免修复后CLT安装包仍显示旧版本。
+    match = re.search(r'^\s+' + re.escape(name) + r':\s*"([0-9A-Za-z.+-]+)"\s*$', project, re.MULTILINE)
+    if not match:
+        raise ValueError('Missing project version: ' + name)
+    return match.group(1)
+
 binaries = Path(sys.argv[1]).resolve()
 app = root / 'build/AI 助理.app'
 if app.exists():
@@ -22,7 +31,8 @@ shutil.copy2(binaries / 'VibeKey', executable)
 info = plistlib.loads((root / 'VibeKey/Info.plist').read_bytes())
 info.update(CFBundleName='AI 助理', CFBundleDisplayName='AI 助理', CFBundleIdentifier='local.folobutton.dev',
             CFBundleExecutable='FoloVibe Key', CFBundleDevelopmentRegion='zh-Hans',
-            CFBundleShortVersionString='0.3.0', CFBundleVersion='25', LSMinimumSystemVersion='26.0',
+            CFBundleShortVersionString=project_version('MARKETING_VERSION'),
+            CFBundleVersion=project_version('CURRENT_PROJECT_VERSION'), LSMinimumSystemVersion='26.0',
             NSAppleEventsUsageDescription='AI 助理需要控制你选中的终端会话，用于向 Claude Code 输入语音指令。')
 for key in list(info):
     if isinstance(info[key], str) and '$(' in info[key]:

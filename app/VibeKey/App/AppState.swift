@@ -111,7 +111,7 @@ final class AppState {
                 let exists = !uid.isEmpty && uid != AppSettings.passportMicID && inputDevices.device(uid: uid) != nil
                 return MicSource(deviceUID: exists ? uid : nil)
             })
-        assistant = AssistantController(store: assistantStore, makeSource: {
+        assistant = AssistantController(store: assistantStore, makeRecognition: { try AssistantRecognitionFactory.make(profile:$0,secrets:$1) }, makeSource: {
             if settings.micID == AppSettings.passportMicID, link.connection != .disconnected {
                 return PassportMicSource(link: link)
             }

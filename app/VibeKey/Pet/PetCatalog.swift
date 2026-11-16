@@ -15,19 +15,31 @@ nonisolated struct PetCatalog: Codable, Sendable {
     }
     struct Choice: Codable, Identifiable, Sendable { let id: String; let name: String; let englishName: String? }
     struct Palette: Codable, Identifiable, Sendable { let id: String; let name: String; let hex: String }
+    struct VisualStyle: Codable, Identifiable, Sendable {
+        let id: String
+        let style: String
+        let variant: String
+        let name: String
+        let englishName: String
+        let group: String
+    }
     let casts: [Cast]
     let faces: [Choice]
     let states: [Choice]
     let colors: [Palette]
-    static let empty = PetCatalog(casts: [], faces: [], states: [], colors: [])
+    let styles: [VisualStyle]?
+    static let empty = PetCatalog(casts: [], faces: [], states: [], colors: [], styles: [])
 }
 
 nonisolated struct PetAppearance: Equatable, Sendable {
     var castID: String
     var faceID: String
     var colorID: String
+    var styleID: String = "vector"
+    var variantID: String = "solid"
     static let dot = PetAppearance(castID: "dot", faceID: "capsule", colorID: "cream")
-    var javascriptValue: [String: String] { ["castId": castID, "faceId": faceID, "colorId": colorID] }
+    var javascriptValue: [String: String] { ["castId": castID, "faceId": faceID, "colorId": colorID,
+                                          "style": styleID, "variant": variantID] }
 }
 
 nonisolated enum PetExportError: LocalizedError {

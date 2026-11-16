@@ -7,19 +7,40 @@ static bool emit(const uint8_t *p, size_t n, void *ctx) {
     (void)ctx; if (output_n + n > sizeof(output)) return false;
     memcpy(output + output_n, p, n); output_n += n; return true;
 }
+static bool reject_audio(const uint8_t *p,size_t n,void *ctx){(void)p;(void)n;(void)ctx;return false;}
 int main(void) {
     ib_audio_json_t s; ib_audio_json_init(&s, emit, NULL);
     const char *json = "{\"data\":{\"audio\":\"0001fF80\",\"status\":2},\"base_resp\":{\"status_code\":0}}";
     for (size_t i = 0; json[i]; i++) CHECK(ib_audio_json_feed(&s, json[i]));
     CHECK(ib_audio_json_finish(&s)); CHECK(output_n == 4); CHECK(output[2] == 255);
     CHECK_STR(s.metadata, "{\"data\":{\"audio\":\"\",\"status\":2},\"base_resp\":{\"status_code\":0}}");
+    CHECK(s.error==IB_AUDIO_JSON_OK);
     ib_audio_json_init(&s, emit, NULL);
     const char *bad = "{\"audio\":\"0\"}";
     bool ok = true; for (size_t i = 0; bad[i] && ok; i++) ok = ib_audio_json_feed(&s, bad[i]);
     CHECK(!ok); CHECK(!ib_audio_json_finish(&s));
+    CHECK(s.error==IB_AUDIO_JSON_ODD_HEX);
     ib_audio_json_init(&s, emit, NULL);
     CHECK(ib_audio_json_feed(&s, '{')); for (int i = 0; i < 5000; i++) ib_audio_json_feed(&s, ' ');
     CHECK(s.failed);
+    CHECK(s.error==IB_AUDIO_JSON_METADATA_FULL);
+    ib_audio_json_init(&s,emit,NULL);
+    const char *nonhex="{\"audio\":\"00x1\"}";
+    ok=true;for(size_t i=0;nonhex[i]&&ok;i++)ok=ib_audio_json_feed(&s,nonhex[i]);
+    CHECK(!ok);CHECK(s.error==IB_AUDIO_JSON_INVALID_HEX);CHECK(!ib_audio_json_finish(&s));CHECK(s.error==IB_AUDIO_JSON_INVALID_HEX);
+    ib_audio_json_init(&s,reject_audio,NULL);
+    const char *refused="{\"audio\":\"0001\"}";
+    ok=true;for(size_t i=0;refused[i]&&ok;i++)ok=ib_audio_json_feed(&s,refused[i]);
+    CHECK(!ok);CHECK(s.error==IB_AUDIO_JSON_OUTPUT_FAILED);
+    ib_audio_json_init(&s,emit,NULL);
+    const char *partial="{\"audio\":\"000";
+    for(size_t i=0;partial[i];i++)CHECK(ib_audio_json_feed(&s,partial[i]));
+    CHECK(!ib_audio_json_finish(&s));CHECK(s.error==IB_AUDIO_JSON_INCOMPLETE);
+    // 任意网络分片可以落在hex半字节中；只在JSON字符串结束/EOF时判断奇数，不能逐read重置。
+    ib_audio_json_init(&s,emit,NULL);output_n=0;
+    const char *halves[]={"{\"data\":{\"audio\":\"0","001f","F80\",\"status\":1}}"};
+    for(size_t part=0;part<sizeof(halves)/sizeof(halves[0]);part++)for(size_t i=0;halves[part][i];i++)CHECK(ib_audio_json_feed(&s,halves[part][i]));
+    CHECK(ib_audio_json_finish(&s));CHECK(output_n==4);CHECK(output[0]==0&&output[1]==1&&output[2]==255&&output[3]==128);
     uint8_t wav[44]; ib_wav_header(wav, 960000);
     CHECK(memcmp(wav, "RIFF", 4) == 0); CHECK(wav[34] == 16); CHECK(wav[24] == 0x80 && wav[25] == 0x3e);
     CHECK(ib_utf8_prefix("A中B", 5, 2) == 1); CHECK(ib_utf8_prefix("A中B", 5, 4) == 4);
