@@ -118,7 +118,7 @@ static lv_obj_t *create(lv_obj_t *parent, const ib_ui_ctx_t *ctx)
 
 static void update(const ib_ui_ctx_t *ctx)
 {
-    const ib_ui_list_t *l = &ctx->list;
+    const ib_ui_list_t *l = ctx->local_list?ctx->local_list:&ctx->list;
     s_run_mode_menu=ctx->run_mode_menu;s_run_mode_standalone=ctx->run_mode_standalone;s_run_mode_notice=ctx->run_mode_notice;
     /* local菜单不改ctx.list，Mac最后一份会话列表始终完整缓存，退出可立即恢复。 */
     ib_ui_list_t local;

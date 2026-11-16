@@ -50,3 +50,6 @@ SCALE=1 bash firmware/tools/ui-preview/run.sh run_mode
 旧路径先隐藏宠物，再对旧页做120ms淡出、LIST做180ms淡入，露出下面旧绿色READY。现在打开本地菜单在同一GUI锁内直接切到完整LIST；退出仅标记return-pending并保留菜单快照，待app明确`ib_ui_show(latest)`才直接恢复目标页。打开0/20/60ms/稳定帧及关闭pending全区域像素相同，不再有中间READY页。长按松开吞沿仍由`ib_run_menu/ib_app`处理。
 
 独立任务通知有自己的reader/page；菜单只暂停其图层，不清内容和页码。恢复不依赖store revision改变；新通知成功时清掉旧legacy Agent UI缓存，关闭通知只恢复云reply/宠物，不重弹旧generic。详见[device-task-notifications.md](device-task-notifications.md)。
+
+
+长按下键网络菜单现与运行模式菜单一样拥有本地UI owner；远端list单独缓存，后台助手PREPARING/IDLE不能把它切回待机。所有LIST进入/返回直切，网络菜单hide保留pending快照直到app明确最新目标；无网络、超时、选网离开均释放owner。通知/回复页在菜单后恢复，详见[device-menu-transitions.md](device-menu-transitions.md)。

@@ -906,6 +906,8 @@ pet自绘使用当前layer clip先裁行/列，只为可见圆点创建draw任�
 
 ## 宠物可视选择器与桌面画风
 
+桌面右键入口：`PetContextMenu（仅目标NSPanel右键/Control点击） → PetController.onOpenSettings → AppState注入 → WindowManager.showSettings(.pet)`。原生单项菜单消费本次down事件以阻止WebKit默认菜单，普通左键保留拖动、穿透模式不拦截下层窗口；停止或释放挂件移除本地事件监视器。离线网页不增加导航或消息能力。
+
 `PetSettingsView → PetVisualSelector单个离线WKWebView → 白名单typed选择/设置意图 → PetController / PetSettings持久偏好 → PetWebRenderer → 官方createCharacter.update(style,variant)`。中央一个动态角色，29画风/16脸型/44状态静态缩略图和193外观惰性缩略图共用固定官方引擎；搜索/分类无网络。原生只接收本地main-frame白名单消息并验证目录ID，页面拿不到对话或凭据；关闭时移除弱handler与动画。全部设置整合在同一暗色画布的桌面/Passport抽屉：typed设置校验布尔/整数/范围/步进后更新PetSettings，reset/sync/固定署名意图由原生执行，旧回推不覆盖待确认本地滑块值。抽屉有界滚动、Esc和焦点恢复不改变事务生命周期；Pet设置页与助手页共用`AssistantDeviceSync.syncPet`导出/事务，状态来自回执。画风只影响Mac；`AoraPetExport → AORAPET2`固定pixel/dot，测试29种画风输出同一设备包。范围和验证见[pet-runtime.md](pet-runtime.md)。
 
 设备实时WSS使用官方`espressif/esp_websocket_client@1.8.0`，来源提交`70bf122fc8bc74622dcf7e15233b5b2af9088df5`，Apache-2.0，依赖锁固定。ASR当前使用豆包binary协议，MiniMax仅TTS；网络/事件合同见[asr-realtime.md](asr-realtime.md)。
@@ -963,3 +965,14 @@ codec实际reader flag→app→ib_ui_set_capture_active→hints绿色Mic循环�
 
 
 通知渲染最终只占`(21,224,198,96)`caption区域，kind/source同行，正文紧接；上方pet与x220以上hint列不受root覆盖。生产flush像素回归同时断言pet ROI不变与pips/UP/DOWN/Mic/左power实际有墨迹，避免状态getter正确但图层不可见的假阳性。热资源事务/提示音生命周期和真实诊断边界见[device-runtime.md](device-runtime.md)。
+
+### 0.6.1权限状态刷新
+
+`设置页/引导页独立PollingOwner → Permissions.startPolling → 立即读取Reader.system → @Observable状态 → PermissionRow`。页面重现保持幂等，多个页面只共用一份common-mode每秒计时器；任一页面消失只移除自己的身份，最后一个离开才注销计时器与应用激活监听。返回本应用的didBecomeActive也立即读取，不等待下一次tick。释放Permissions时清理资源。Reader只封装当前进程的AVCaptureDevice/AXIsProcessTrusted，单元检查注入内存读取器，不申请真实权限。
+
+辅助功能显示成功仅依据当前进程AX读取为true；同名系统开关、旧安装身份或从终端运行的另一进程诊断不等同原生当前副本已受信任。读取为false时在通用和AI助理权限区提示确认“应用程序”中的正确副本及重新开启开关/重启，不自动重置TCC、不改系统授权、不假报成功。`app/scripts/test-permissions.sh`直接编译正式类，覆盖Observation false→true→false、立即刷新、重叠页面/重复出现、真实common-mode计时与激活/隐藏/释放生命周期；原生安装UI与系统授权的最终核验由主集成单独完成。
+
+
+### 长按下键菜单owner与LIST原子边界
+
+`ib_app.wifi_menu_key/update → ib_ui_local_menu_show(独立344B有界缓存) → LIST直切`；`show_screen`同时guard模式与网络owner，背景助手prepare/idle/error和远端list仅缓存。`wifi_menu_end → UI hide保留pending快照 → app show最新screen → 解除通知/Agent遮蔽`覆盖普通关闭、超时、无网络项及选网离开；不恢复进入前过期screen。Mac AssistantCoordinator/旧DeviceBridge的state+list经apply_state/apply_list进入同一LIST直切，返回也直切，无协议改动。导航期间隐藏底层阅读页点，通知/云reply各自页偏移保留；先应用最后Agent show/hide再解除遮蔽，避免旧generic闪现。真实调用链、生产回归及未验证硬件边界见[device-menu-transitions.md](device-menu-transitions.md)。

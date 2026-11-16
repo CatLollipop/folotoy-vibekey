@@ -151,6 +151,10 @@ void ib_ui_set_assistant_key_hints(bool standalone,ib_ui_assistant_phase_t phase
 void ib_ui_run_mode_menu(bool standalone,unsigned selected,ib_ui_run_mode_notice_t notice);
 void ib_ui_run_mode_menu_hide(void);
 bool ib_ui_run_mode_menu_visible(void);
+// 本地网络列表只借用LIST对象；有界副本归UI，迟到远端state/list/通知仅缓存。
+// hide先保留菜单帧，调用方随后必须show最新目标，才能原子恢复且不露旧页面。
+void ib_ui_local_menu_show(const ib_ui_list_t *list);
+void ib_ui_local_menu_hide(void);
 // 实际ASR快照：generation非零且单boot递增，text为当前完整快照而非追加片段。
 bool ib_ui_transcript_begin(uint32_t generation);
 bool ib_ui_transcript_update(uint32_t generation,const char *utf8,bool final);

@@ -123,6 +123,7 @@ final class AppState {
     /// 启动:创建窗口与菜单、挂快捷键、连接设备、预加载模型。
     func launch() {
         windows = WindowManager(app: self)
+        pet.onOpenSettings = { [weak self] in self?.windows.showSettings(.pet) }
         menus = MenuBuilder(app: self)
         pill = PillPanelController(content: { [unowned self] ui, window in
             AnyView(LocalizedRoot(language: language) { PillView(

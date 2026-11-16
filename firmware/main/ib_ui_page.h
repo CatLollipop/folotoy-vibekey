@@ -49,6 +49,7 @@ typedef struct {
     ib_ui_screen_t prev_screen;  // 直切而来时为上一页(页面据此播放变形动画),普通切换为 IB_UI_SCREEN_NONE
     uint32_t now_ms;        // 本帧时刻
     ib_ui_list_t list;      // 列表页内容
+    const ib_ui_list_t *local_list; // 本地网络菜单独占LIST，Mac列表仍单独缓存；指针由UI持有。
     bool run_mode_menu,run_mode_standalone;
     uint8_t run_mode_selected;
     ib_ui_run_mode_notice_t run_mode_notice;

@@ -3355,6 +3355,16 @@
         }
       }
     },
+    "如果已在系统中开启，请确认授权的是“应用程序”内的 AI 助理，并重新开启该开关后重启应用。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "If it is already enabled in System Settings, make sure you authorized AI Assistant in Applications, then turn the switch off and on again and restart the app."
+          }
+        }
+      }
+    },
     "字幕": {
       "localizations": {
         "en": {
@@ -3721,6 +3731,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "The offline pet resources are not ready."
+          }
+        }
+      }
+    },
+    "宠物设置": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pet settings"
           }
         }
       }

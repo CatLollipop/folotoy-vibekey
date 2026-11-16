@@ -207,3 +207,8 @@ Mac 下发 `agent` 时,在任何页面上方弹出全屏通知层(录音中不�
 
 
 0.5.1修复成功正文被后台PREPARING误清：DONE→后台预擦→IDLE后保留已完成页与全文翻页，只有实际新轮/清理/错误取消结束旧正文。主画布全宽，文字自然高度居中，左右实体主图标距边缘均12px；去掉idle常驻按住确认键说话。OK麦克风由真实reader flag驱动中性/绿色呼吸，停止、睡眠和菜单遮盖停止动画，不用phase或计时器猜采集。所有新图都是生产LVGL离屏夹具，非真机照片，详见device-reply.md。
+
+
+## 下键菜单的原子进入与返回
+
+长▼设备网络列表和Mac会话列表都使用LIST原子切换，不再先隐藏pet后淡出旧页。设备网络菜单有独立owner/有界内容，背景prepare/idle、Mac state/list及通知不会抢屏；关闭/超时按最新状态恢复，明确错误不丢。LIST优先显示导航glyph，底下reply/notification页点临时隐藏，返回恢复原页；上键模式菜单已修行为保持。生产API像素回归和边界见[device-menu-transitions.md](device-menu-transitions.md)，离屏通过不代表实体屏幕已验收。

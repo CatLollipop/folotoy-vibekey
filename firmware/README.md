@@ -167,3 +167,6 @@ C3无PSRAM。16 KiB采音环只在录音时分配，转写/回复缓冲分阶段
 
 
 最终通知读层仅覆盖宠物下方198×96px caption：kind/source同一行、两行正文紧接，保留pet/状态栏/实体键/右页轨道。生产像素断言检查pet ROI与通知前一致、页点与UP/DOWN/Mic/power均实际可见。资源热切/通知短音的运行合同见[device-runtime.md](../docs/device-runtime.md)；纯业务回归可分别运行`tools/test-notification.sh`与`tools/test-audio-runtime.sh`（ASan/UBSan，非硬件声音验证）。
+
+
+下键菜单修复：所有LIST进入/返回原子直切；本地网络菜单独立344B静态内容与owner，后台prepare/idle或Mac列表不覆盖，退出恢复最新状态及原通知/云reply页。`tools/test-display-ui.sh`新增awake本地/远端菜单首帧、返回、后台缓存、最新错误和离线退出回归；它不执行完整ib_app/真实按键或网络，硬件确认仍由主集成完成。调用链与边界见[device-menu-transitions.md](../docs/device-menu-transitions.md)。

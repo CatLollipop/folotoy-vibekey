@@ -37,6 +37,7 @@ struct OnboardingView: View {
 
     @State private var step: Step = Self.initialStep
     @State private var forward = true
+    @State private var permissionPollingOwner = Permissions.PollingOwner()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,8 +55,8 @@ struct OnboardingView: View {
         }
         .frame(width: 680, height: 560)
         .background(Color(nsColor: .windowBackgroundColor))
-        .onAppear { app.permissions.startPolling() }
-        .onDisappear { app.permissions.stopPolling() }
+        .onAppear { app.permissions.startPolling(for: permissionPollingOwner) }
+        .onDisappear { app.permissions.stopPolling(for: permissionPollingOwner) }
     }
 
     /// 调试用:环境变量 IB_ONBOARDING_STEP=N 直接打开第 N 步,便于逐页检查界面。

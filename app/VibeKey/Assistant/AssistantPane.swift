@@ -15,7 +15,7 @@ struct AssistantPane: View {
         @Bindable var store = app.assistantStore
         @Bindable var assistant = app.assistant
         VStack(alignment: .leading, spacing: 0) {
-            SettingsSection(title: "权限") {
+            SettingsSection(title: "权限", footer: app.permissions.accessibility ? nil : "如果已在系统中开启，请确认授权的是“应用程序”内的 AI 助理，并重新开启该开关后重启应用。") {
                 VStack(spacing: 8) {
                     PermissionRow(symbol: "mic.fill", title: "麦克风", detail: "用于电脑端语音对话。", granted: app.permissions.microphone == .authorized) {
                         app.permissions.requestMicrophone()

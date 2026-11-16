@@ -687,5 +687,94 @@ int preview_run_scenarios(const char *out_dir, int scale, const char *filter)
     ib_ui_pet_assistant_state("alerting",IB_UI_ASSIST_ERROR,true,"authentication_failed");preview_advance(200);shot("next_error_keeps_diagnostic");
     ib_ui_pet_config(true,12,80,0xEADBB9);
     printf("Next UI: atomic menu first frame, one action per key, bounded pips and independent production notification lifecycle checks complete.\n");
+    // 与app实际路径一致：本地网络菜单独占LIST；Mac state/list与后台prepare/idle仍更新缓存。
+    ib_ui_set_capture_active(false);ib_ui_notification_hide();ib_notification_dismiss();ib_ui_agent_hide();
+    ib_ui_reply_clear(0);ib_reply_store_clear(0);ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");
+    ib_ui_pet_assistant_state("happy",IB_UI_ASSIST_DONE,true,NULL);ib_ui_set_assistant_key_hints(true,IB_UI_ASSIST_DONE);
+    if(ib_reply_store_begin(901,NULL)||!ib_ui_reply_begin(901))s_failures++;
+    for(size_t offset=0;offset<1800;){size_t n=1800-offset;if(n>192)n=192;
+        if(ib_reply_store_append(901,offset,long_reply+offset,n))s_failures++;
+        offset+=n;
+    }
+    if(ib_reply_store_final(901,1800)||!ib_ui_reply_update(901,1800,true,ib_reply_store_read,NULL)||!ib_ui_reply_page(12))s_failures++;
+    ib_ui_set_awake(true);preview_advance(400);
+    uint32_t down_reply_pixels=preview_region_hash(20,240,200,80);
+    ib_ui_list_t wifi={.title="WIFI / BLUETOOTH",.items={"* Test Network A","  Test Network B","  USE BLUETOOTH"},.rows=3,.n=3,.sel=0};
+    ib_ui_list_t sessions={.title="AI ASSISTANT",.items={"CLOUD CHAT","Example Session","BACK"},.rows=3,.n=3,.sel=1};
+    ib_ui_local_menu_show(&wifi);shot("down_menu_wifi_000ms");
+    uint32_t wifi_pixels=preview_region_hash(0,24,240,296);
+    preview_advance(20);shot("down_menu_wifi_020ms");if(preview_region_hash(0,24,240,296)!=wifi_pixels)s_failures++;
+    preview_advance(40);shot("down_menu_wifi_060ms");if(preview_region_hash(0,24,240,296)!=wifi_pixels)s_failures++;
+    preview_advance(300);shot("down_menu_wifi_settled");if(preview_region_hash(0,24,240,296)!=wifi_pixels)s_failures++;
+    ib_ui_pet_assistant_state("loading",IB_UI_ASSIST_PREPARING,true,NULL);ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");
+    ib_ui_pet_assistant_state("idle",IB_UI_ASSIST_IDLE,true,NULL);ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");
+    ib_ui_set_list(&sessions);ib_ui_show(IB_UI_LIST,IB_UI_MODE_DICT,"AI ASSISTANT");
+    ib_ui_agent_show(IB_UI_AGENT_DONE,"Example Agent");
+    if(ib_ui_notification_show(1001,"Example Agent",IB_UI_NOTIFICATION_COMPLETED,false,0,NULL,NULL))s_failures++;
+    preview_advance(200);shot("down_menu_wifi_background_cached");
+    if(preview_region_hash(0,24,240,296)!=wifi_pixels||ib_hints_page_window().active)s_failures++;
+    ib_ui_agent_hide();ib_ui_local_menu_hide();ib_ui_set_list(&sessions);shot("down_menu_wifi_return_pending");
+    if(preview_region_hash(0,24,240,296)!=wifi_pixels)s_failures++;
+    ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");shot("down_menu_wifi_reply_restored");
+    if(!ib_ui_reply_visible()||ib_hints_page_window().current!=12||preview_region_hash(20,240,200,80)!=down_reply_pixels)s_failures++;
+    // 远端助手菜单state先到时app保留当前screen，list到达后才调用show(LIST)。
+    // awake保持true，检查真实首次转场，而不是借熄屏路径自动直切通过。
+    ib_ui_set_assistant_key_hints(false,IB_UI_ASSIST_IDLE);keys(IB_ICON_UP,IB_ICON_DOWN,IB_ICON_CHECK);
+    ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"AI ASSISTANT");ib_ui_set_list(&sessions);
+    ib_ui_show(IB_UI_LIST,IB_UI_MODE_DICT,"AI ASSISTANT");shot("down_menu_remote_000ms");
+    uint32_t session_pixels=preview_region_hash(0,24,240,296);
+    if(ib_hints_page_window().active||ib_hints_current_icon(IB_UI_KEY_UP)!=IB_ICON_UP||ib_hints_current_icon(IB_UI_KEY_DOWN)!=IB_ICON_DOWN||ib_hints_current_icon(IB_UI_KEY_OK)!=IB_ICON_CHECK)s_failures++;
+    preview_advance(20);shot("down_menu_remote_020ms");if(preview_region_hash(0,24,240,296)!=session_pixels)s_failures++;
+    preview_advance(40);shot("down_menu_remote_060ms");if(preview_region_hash(0,24,240,296)!=session_pixels)s_failures++;
+    preview_advance(300);shot("down_menu_remote_settled");if(preview_region_hash(0,24,240,296)!=session_pixels)s_failures++;
+    // 本地菜单退出到最新Mac会话菜单，不能把缓存的远端列表丢掉或永久停在本地owner。
+    ib_ui_local_menu_show(&wifi);ib_ui_set_list(&sessions);ib_ui_local_menu_hide();
+    ib_ui_show(IB_UI_LIST,IB_UI_MODE_DICT,"AI ASSISTANT");shot("down_menu_latest_remote_restored");
+    if(preview_region_hash(0,24,240,296)!=session_pixels)s_failures++;
+    // 隐藏pet而仍由助手接管，返回0/20/60ms/稳定帧应完全一致，不能露旧LIST/READY。
+    ib_ui_pet_config(false,12,80,0xEADBB9);ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");shot("down_menu_remote_return_000ms");
+    uint32_t return_pixels=preview_region_hash(0,24,240,296);
+    preview_advance(20);shot("down_menu_remote_return_020ms");if(preview_region_hash(0,24,240,296)!=return_pixels)s_failures++;
+    preview_advance(40);shot("down_menu_remote_return_060ms");if(preview_region_hash(0,24,240,296)!=return_pixels)s_failures++;
+    preview_advance(300);shot("down_menu_remote_return_settled");if(preview_region_hash(0,24,240,296)!=return_pixels)s_failures++;
+    if(!ib_ui_reply_visible()||ib_hints_page_window().current!=12)s_failures++;
+    ib_ui_pet_config(true,12,80,0xEADBB9);
+    // 本地网络菜单覆盖生产通知的中间页，hide/show必须恢复，不依赖新store revision。
+    static const char down_nid[]="fedcba9876543210fedcba9876543210";uint32_t down_crc=ib_crc32(long_reply,1500);
+    if(ib_notification_begin(IB_LINK_USB,down_nid,1,"Example Agent",IB_NOTIFICATION_DONE,1500,down_crc,false,false))s_failures++;
+    for(size_t offset=0;offset<1500;){size_t n=1500-offset;if(n>96)n=96;
+        if(ib_notification_chunk(IB_LINK_USB,down_nid,1,offset,long_reply+offset,n))s_failures++;
+        offset+=n;
+    }
+    if(ib_notification_commit(IB_LINK_USB,down_nid,1,1500,down_crc))s_failures++;
+    ib_notification_snapshot(&notice);
+    if(!ib_ui_notification_show(notice.generation,notice.source,IB_UI_NOTIFICATION_COMPLETED,false,1500,ib_notification_read,NULL)||!ib_ui_notification_page(4))s_failures++;
+    uint32_t down_notice_pixels=preview_region_hash(21,224,198,96);
+    ib_ui_set_list(&sessions);ib_ui_show(IB_UI_LIST,IB_UI_MODE_DICT,"AI ASSISTANT");
+    if(ib_ui_notification_visible()||ib_hints_page_window().active)s_failures++;
+    ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");
+    if(!ib_ui_notification_visible()||ib_hints_page_window().current!=4||preview_region_hash(21,224,198,96)!=down_notice_pixels)s_failures++;
+    ib_ui_local_menu_show(&wifi);preview_advance(40);
+    if(ib_ui_notification_visible()||ib_hints_page_window().active)s_failures++;
+    ib_ui_local_menu_hide();ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");shot("down_menu_notification_restored");
+    if(!ib_ui_notification_visible()||ib_hints_page_window().current!=4||preview_region_hash(21,224,198,96)!=down_notice_pixels)s_failures++;
+    ib_ui_notification_hide();ib_notification_dismiss();
+    if(!ib_ui_reply_visible()||ib_hints_page_window().current!=12)s_failures++;
+    // 菜单中的真实错误只缓存，退出仍需显示最新错误，不能被旧idle/prepare吞掉。
+    ib_ui_local_menu_show(&wifi);ib_ui_pet_assistant_state("alerting",IB_UI_ASSIST_ERROR,true,"authentication_failed");
+    ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");
+    if(preview_region_hash(0,24,240,296)!=wifi_pixels)s_failures++;
+    ib_ui_local_menu_hide();ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");shot("down_menu_latest_error_restored");
+    if(ib_ui_reply_visible()||preview_region_ink(21,242,198,60)<30)s_failures++;
+    uint32_t latest_error_pixels=preview_region_hash(21,242,198,60);
+    ib_ui_agent_show(IB_UI_AGENT_DONE,"Old Agent");preview_advance(600);
+    ib_ui_local_menu_show(&wifi);ib_ui_agent_hide();ib_ui_local_menu_hide();
+    ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");shot("down_menu_expired_agent_not_replayed");
+    if(preview_region_hash(21,242,198,60)!=latest_error_pixels)s_failures++;
+    // 离线Wi-Fi与网络选择离开路径也走同一owner清理，不能遗留永久菜单。
+    ib_ui_show(IB_UI_OFFLINE,IB_UI_MODE_DICT,"");ib_ui_local_menu_show(&wifi);shot("down_menu_offline_wifi_000ms");
+    ib_ui_local_menu_hide();ib_ui_show(IB_UI_OFFLINE,IB_UI_MODE_DICT,"");shot("down_menu_offline_return");
+    if(ib_hints_page_window().active)s_failures++;
+    printf("DOWN menus: awake remote/local entry and return hashes, background state/list/Agent ownership, production notice/reply page restore, latest error and offline exit passed; local list=%zuB.\n",sizeof(ib_ui_list_t));
     return s_failures;
 }

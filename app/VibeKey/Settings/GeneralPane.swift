@@ -12,7 +12,7 @@ struct GeneralPane: View {
             // 版本与检查更新放在最上面,一打开设置就能看到。
             AboutSection(app: app)
 
-            SettingsSection(title: "权限") {
+            SettingsSection(title: "权限", footer: app.permissions.accessibility ? nil : "如果已在系统中开启，请确认授权的是“应用程序”内的 AI 助理，并重新开启该开关后重启应用。") {
                 VStack(spacing: DS.Space.s) {
                     PermissionRow(symbol: "mic.fill",
                                   title: "麦克风", detail: "听写时录音",

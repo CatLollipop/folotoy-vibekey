@@ -1,4 +1,4 @@
-# AI 助理 0.6.0 开发版验收记录
+# AI 助理 0.6.1 开发版验收记录
 
 上游基线为 `nexsjournal/folotoy-vibekey@0eb628bf7a563e67d76fc9e7841bbfdb768b7473`，个人 Fork 为 `CatLollipop/folotoy-vibekey`，分支 `codex/ai-assistant`。历史观察与缺陷见 [阶段记录](assistant-acceptance-history.md)。本页区分主机自动化、真实设备链路、真实云服务和人眼/听音观察。
 
@@ -47,3 +47,12 @@
 0.6.0/build32已安装到系统应用程序目录并从该目录运行，About窗口实际显示0.6.0 (32)；主可执行文件与交付包相同、codesign深层严格验证通过。旧0.2.13/build24应用移出应用程序并备份，配置和凭据未清除。
 
 [GitHub Release v0.6.0](https://github.com/CatLollipop/folotoy-vibekey/releases/tag/v0.6.0)已公开发布为Pre-release。Tag指向构建源码9e0003815f4855e961be2d64178a0e473a0df631；Mac ZIP、固件ZIP、两个同名.sha256、Guide和Acceptance共六个附件均为uploaded，GitHub远端SHA-256与本地逐一匹配。未登记上游更新后台，未执行额外设备刷写。
+
+## 0.6.1增量与验证
+
+- Mac0.6.1/build33完整CLT编译、1005条字符串无缺失英文、深层严格ad-hoc签名通过。0.6.0已发布附件保持原样。
+- 新版已安装到应用程序，原0.6.0应用留作备份。真实CUA右键桌面宠物弹出原生“宠物设置”，点击进入已选宠物页；原水灵/柔软/snow/胶囊保留。常规左键不消费，点击穿透时不拦截；这两项代码/类型检查通过，未额外声称所有鼠标路径已人眼实测。
+- Permissions正式类注入内存读取器验证Observation双向变化、出现立即刷新、独立重复/重叠页面owner、应用激活、实际common-mode RunLoop、隐藏/释放清理通过。保留真实AX读值，不据系统开关推定成功。
+- 本机曾系统开关on但原生0.6.0界面false，正常重启未恢复；从终端直接执行同binary的诊断true不作为原生授权证据。更新固定0.6.1后，用户重新开启系统开关并确认“已授权”；最终原生再次观察待设备刷写后恢复App时补记。未读写TCC数据库、未重置全局权限。
+- 长DOWN路径使用原子LIST进出和独立本地网络菜单owner。生产LVGL/ASan/UBSan检查网络菜单及Mac会话菜单0/20/60ms/稳定帧、背景准备/空闲/远端状态与通知、最新错误和离线退出通过；关闭后通知第5页与云回复第13页恢复。host未执行完整ib_app任务，不能替代真机菜单观察。
+- 最终固件2718736B，SHA256 `4ae0c0892b8585f26e9949a1e848c134b5c98a8fbbe9e4654db29372e2155557`，IDF5.5.3 build/size/layout通过，仍在原3MiB应用分区；受保护刷写与用户真机观察待本轮继续。

@@ -172,7 +172,6 @@ static bool s_wifi_menu;
 static bool s_wifi_menu_ok;
 static uint8_t s_wifi_menu_sel;
 static int64_t s_wifi_menu_touched;
-static ib_ui_screen_t s_wifi_menu_return;
 static int64_t s_wifi_restart_at;
 static bool s_ble_only;
 static bool s_ble_manual;
@@ -349,15 +348,16 @@ static ib_ui_mode_t ui_mode(void)
 
 static void show_screen(ib_ui_screen_t screen)
 {
-    if(s_run_menu.open)return;
+    if(s_run_menu.open||s_wifi_menu)return;
     s_screen = screen;
     if (s_ui_ok) ib_ui_show(screen, ui_mode(), s_msg);
 }
 
+static void wifi_menu_close(void);
 static void wifi_menu_update(int64_t now)
 {
     size_t count = ib_wifi_network_count();
-    if (!count) { s_wifi_menu = false; return; }
+    if (!count) { wifi_menu_close(); return; }
     size_t total = count + 1;       // 最后一个固定是蓝牙模式
     if (s_wifi_menu_sel >= total) s_wifi_menu_sel = (uint8_t)ib_wifi_active_network();
     s_wifi_menu_touched = now;
@@ -377,19 +377,25 @@ static void wifi_menu_update(int64_t now)
     list.n = (uint16_t)total;
     list.top = 0;
     list.sel = s_wifi_menu_sel;
-    ib_ui_set_list(&list);
-    if (s_screen != IB_UI_LIST) show_screen(IB_UI_LIST);
+    // 本地列表与Mac会话列表分开，首帧直接提交；后台prepare/idle不能抢走owner。
+    s_screen=IB_UI_LIST;ib_ui_local_menu_show(&list);
 }
 
-static void wifi_menu_close(void)
+static void wifi_menu_end(void)
 {
     s_wifi_menu = false;
     s_wifi_menu_ok = false;
+    ib_keys_reset(&s_keys);
+    if(s_ui_ok)ib_ui_local_menu_hide();
+}
+static void wifi_menu_close(void)
+{
+    wifi_menu_end();
     if(ib_assistant_standalone()){show_screen(IB_UI_IDLE);s_assist_seen=0;refresh_assistant(now_ms());}
     else if (!s_online) {
         if (s_ui_ok) ib_ui_set_connection_hint(offline_hint());
         show_screen(IB_UI_OFFLINE);
-    } else show_screen(s_wifi_menu_return == IB_UI_OFFLINE ? screen_for(s_st) : s_wifi_menu_return);
+    } else show_screen(s_st==IB_ST_LIST&&!s_list_ready?IB_UI_IDLE:screen_for(s_st));
 }
 
 static bool wifi_menu_key(ib_key_t key, ib_key_ev_t ev, int64_t now)
@@ -402,7 +408,6 @@ static bool wifi_menu_key(ib_key_t key, ib_key_ev_t ev, int64_t now)
             if (s_ui_ok) ib_ui_set_connection_hint(IB_UI_CONN_ADD_WIFI_USB);
             return true;
         }
-        s_wifi_menu_return = s_screen;
         s_wifi_menu = true;
         s_wifi_menu_ok = false;
         s_wifi_menu_sel = (uint8_t)ib_wifi_active_network();
@@ -426,7 +431,7 @@ static bool wifi_menu_key(ib_key_t key, ib_key_ev_t ev, int64_t now)
             s_wifi_menu_ok = false;
             size_t selected = s_wifi_menu_sel;
             if (selected == count) {
-                s_wifi_menu = false;
+                wifi_menu_end();
                 ib_wifi_request_bluetooth();
                 if (s_ui_ok) ib_ui_set_connection_hint(IB_UI_CONN_SWITCH_BLE);
                 show_screen(IB_UI_OFFLINE);
@@ -437,7 +442,7 @@ static bool wifi_menu_key(ib_key_t key, ib_key_ev_t ev, int64_t now)
                 wifi_menu_close();
             } else if (ib_wifi_select_network(selected)) {
                 ib_wifi_clear_ble_fallback();
-                s_wifi_menu = false;
+                wifi_menu_end();
                 if (s_ui_ok) ib_ui_set_connection_hint(IB_UI_CONN_SWITCH_WIFI);
                 show_screen(IB_UI_OFFLINE);
                 s_wifi_restart_at = now + 700;

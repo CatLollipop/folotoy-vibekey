@@ -6,6 +6,7 @@ struct SettingsView: View {
     /// 当前分类(由 WindowManager 持有,外部可以直接打开某个分类,如字幕条里的"翻译设置")。
     @Bindable var navigation: SettingsNavigation
     @State private var settingsHeight:CGFloat = 700
+    @State private var permissionPollingOwner = Permissions.PollingOwner()
 
     enum Pane: String, CaseIterable, Identifiable {
         case assistant, integrations, pet, general, dictation, subtitles, models, translation, ai, shortcuts, vocabulary, passport, vibe
@@ -91,8 +92,8 @@ struct SettingsView: View {
         .ignoresSafeArea()
         .frame(minWidth: 820, minHeight: 560)
         .preferredColorScheme(.dark)
-        .onAppear { app.permissions.startPolling() }
-        .onDisappear { app.permissions.stopPolling() }
+        .onAppear { app.permissions.startPolling(for: permissionPollingOwner) }
+        .onDisappear { app.permissions.stopPolling(for: permissionPollingOwner) }
     }
 
     private var petSyncStatus:String {

@@ -17,4 +17,9 @@ same run_mode_companion_select_assistant run_mode_survives_remote_updates
 same transcript_fixture_final_frozen transcript_fixture_late_partial_ignored
 same transcript_fixture_error_overrides transcript_fixture_error_rejects_late
 same reply_quiet_final_frozen reply_quiet_late_partial_ignored
-printf 'Display UI: menu priority, final/error freeze, DONE/PREPARING/IDLE reply retention/page restore and actual capture cue lifecycle passed.\n'
+same down_menu_wifi_000ms down_menu_wifi_settled
+same down_menu_wifi_000ms down_menu_wifi_background_cached
+same down_menu_wifi_000ms down_menu_wifi_return_pending
+same down_menu_remote_000ms down_menu_remote_settled
+same down_menu_remote_return_000ms down_menu_remote_return_settled
+printf 'Display UI: UP/DOWN menu atomic entry/return and owner cache, final/error freeze, production notification/reply page restore and actual capture cue lifecycle passed.\n'

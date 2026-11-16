@@ -14,7 +14,7 @@
 
 ## 常用命令
 
-AI助理新增：`app/scripts/build-clt.sh`（CLT/SwiftPM构建）、`app/scripts/test-assistant-core.sh`、`app/scripts/test-agent-bridges.sh`、`app/scripts/test-agent-components.sh`、`app/scripts/test-agent-notifications.sh`；工具链用 `scripts/setup-dev.sh` 安装、`source scripts/dev-env.sh` 激活。运行链路见 `docs/assistant-desktop.md` / `docs/assistant-device-protocol.md`。
+AI助理新增：`app/scripts/build-clt.sh`（CLT/SwiftPM构建）、`app/scripts/test-assistant-core.sh`、`app/scripts/test-agent-bridges.sh`、`app/scripts/test-agent-components.sh`、`app/scripts/test-agent-notifications.sh`、`app/scripts/test-permissions.sh`；工具链用 `scripts/setup-dev.sh` 安装、`source scripts/dev-env.sh` 激活。运行链路见 `docs/assistant-desktop.md` / `docs/assistant-device-protocol.md`。
 接入组件隔离测试：`bash app/scripts/test-agent-components.sh`（临时目录验证安装/卸载，不访问用户真实配置）；已有隔离提取产物可用 `app/scripts/update-strings.sh --strings-dir <目录>` 检查本地化，避免重打包运行中的客户端。
 
 

@@ -12,6 +12,9 @@ final class PetController {
     private(set) var loadingCatalog = false
     @ObservationIgnored private var panel: NSPanel?
     @ObservationIgnored private var renderer: PetWebRenderer?
+    /// 组合根注入导航意图，挂件不持有设置窗口或业务控制器。
+    @ObservationIgnored var onOpenSettings: (() -> Void)?
+    @ObservationIgnored private var contextMenu: PetContextMenu?
     @ObservationIgnored private var running = false
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
@@ -85,6 +88,8 @@ final class PetController {
         for observer in observers { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
         observers.removeAll()
         pauseAnimation(true)
+        contextMenu?.stop()
+        contextMenu = nil
         panel?.orderOut(nil)
         panel = nil
         renderer = nil
@@ -120,6 +125,7 @@ final class PetController {
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         panel.contentView = renderer.webView
+        contextMenu = PetContextMenu(window: panel) { [weak self] in self?.onOpenSettings?() }
         panel.setFrameAutosaveName("AoraDesktopPet")
         self.panel = panel
         if !panel.setFrameUsingName("AoraDesktopPet") { resetPosition() }
