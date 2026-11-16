@@ -4,11 +4,12 @@
 
 ## 0.7当前证据
 
-- Mac整体SwiftPM编译通过，开发包版本0.7.0/build35；1024条字符串已提取，最终签名包和本机安装记录由交付步骤补充。
+- Mac整体SwiftPM编译通过，开发包版本0.7.0/build35；1024条字符串已提取且缺失英文为0，ad-hoc深层严格签名与本机安装通过，主可执行文件逐字一致。
 - 100项会话/协议检查通过：原实例隔离、切页草稿、旧识别、同gid互斥、未知票据CAS、旧ACK不删新稿、UTF-8与511B整帧。
 - Controller、AgentHub、Agent bridge、组件配置与通知专项通过；Node桥接8项通过，Claude官方plugin validate静态通过。实际原会话尚未加载的插件不算可用接入。Codex Desktop queue消费/回执仍未验证，本版仅提醒；不存在辅助功能输入fallback。
 - Gzip原源码切片SIGTRAP独立复现，修后27子进程/136正式EOS/ASan通过；真实用户尾块大小未知。
-- 当前8MiB Flash备份完整，cardid与原始备份一致。固件0.7实际构建/保护刷写/回读、双击导航及真实ASR→草稿→官方投递验收待补充；当前设备仍为已验证0.6.1。
+- 当前8MiB Flash备份完整，cardid与原始备份一致。0.7实际IDF构建与受保护刷写通过；2732016B应用适配3MiB分区，三份镜像逐字回读一致，cardid与原始备份一致。一份有效宠物bank/一份全FF，profile rev5和pet rev1794826363保持不变。物理双击及真实ASR到原会话投递仍待用户操作。
+- 设备真实USB的cap/bind/state/双pane/view/clear通过，错rev及过期result明确stale后，后续state继续成功。仅合成界面测试，0条真实Agent发送、0次云调用。companion空闲heap45596B/largest34816B/min41320B，合成双栏LVGL峰26868B；采音/公网TLS阶段本版未重测。
 - Mac草稿/票据不跨App重启恢复；没有宣称exactly-once。未安装、接口受限和没有原生双向通道的应用保留明确能力阻塞。
 
 ## 历史验收（0.6.2未发布候选 / Passport0.6.1）

@@ -296,3 +296,8 @@ update的off按UTF-8字节计算且必须连续；单块最多192B，Mac使用64
 ## 0.7 电脑已有会话扩展
 
 新增独立 `cmd/t=conversation` schema1，不把字段加进接近511B上限的assistant capabilities。云profile、pet同步及notification事务保持独立。`cap/bind/state/pane/view/clear/result` 请求使用rid，成功的bind/state/pane/view回显sid/rev。设备语义event包含boot/gid；除通知jump外必须匹配sid/rev/drev。jump携带nid/nrev，由Mac有界导航表解析原会话，不传原生会话ID或密钥。设备仅保存双128B阅读窗，Mac完成全文分页。详细合同见[会话路由](conversation-routing.md)与[设备协议](protocol.md)。旧固件缺split能力时提示升级，不将普通粘贴或云回复当作已接入。
+
+
+## 方案B conversation独立协议
+
+电脑会话使用独立cmd/t=conversation、schema1/split1能力，不追加原assistant能力帧。bind/state/pane/view按sid/rev校验，两个128B窗口由Mac完整历史分页，result按gid关联；设备事件带boot/gid及固定binding/drev，jump改带不透明nid/nrev。PTT松开只保留草稿，新的短OK确认后Mac才调用已验证的官方发送通道；通知active的双击优先、单击延迟仅dismiss。PET和双栏共用输入owner，切画面不回落旧录音。字段、0.6.1菜单/页点保持及验证边界见[device-conversation.md](device-conversation.md)。

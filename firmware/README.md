@@ -170,3 +170,8 @@ C3无PSRAM。16 KiB采音环只在录音时分配，转写/回复缓冲分阶段
 
 
 下键菜单修复：所有LIST进入/返回原子直切；本地网络菜单独立344B静态内容与owner，后台prepare/idle或Mac列表不覆盖，退出恢复最新状态及原通知/云reply页。`tools/test-display-ui.sh`新增awake本地/远端菜单首帧、返回、后台缓存、最新错误和离线退出回归；它不执行完整ib_app/真实按键或网络，硬件确认仍由主集成完成。调用链与边界见[device-menu-transitions.md](../docs/device-menu-transitions.md)。
+
+
+## 统一电脑会话窗口（方案B）
+
+conversation有独立cap/ACK/状态、左右各128B窗口和title，不扩assistant主能力帧；Mac拥有完整历史及官方发送。12px双栏左mini宠物/Agent、右ASR草稿；OK持有/松开仅录音成草稿，另一次短按确认；通知双击绑定nid/nrev/gid由Mac核验原会话，设备不自行热切。PET只改变画面，仍使用同一会话输入owner与late-mic保护，UNKNOWN/只读不能录音或确认。`bash tools/test-dialogue.sh`运行生产手势/协议模型ASan/UBSan，`tools/test-display-ui.sh`及`tools/test-ui-labels.sh`覆盖当前双栏和旧菜单/通知回归。模型432B、host LVGL峰41776B仅参考；真实C3/ASR/官方会话手势与投递须另验。详见[device-conversation.md](../docs/device-conversation.md)。

@@ -1,6 +1,6 @@
 # AI 助理 · FoloVibe Key Fork
 
-0.7.0开发预览：统一已有会话路由、官方接入、语音草稿确认、Passport左右双栏与通知双击OK进入会话。只接原应用已有会话，缺少官方发送接口时仅提醒；不创建独立会话，不前置Mac。详见[会话路由](docs/conversation-routing.md)和[当前验收](docs/assistant-acceptance.md)。
+[下载0.7.0开发预览](https://github.com/CatLollipop/folotoy-vibekey/releases/tag/v0.7.0)：统一已有会话路由、官方接入、语音草稿确认、Passport左右双栏与通知双击OK进入会话。只接原应用已有会话，缺少官方发送接口时仅提醒；不创建独立会话，不前置Mac。详见[会话路由](docs/conversation-routing.md)和[当前验收](docs/assistant-acceptance.md)。
 
 0.6.1：右键桌面宠物 →“宠物设置”；权限页独立轮询并在返回应用时重查；修正长按下键网络/电脑会话菜单闪旧页面与后台状态抢屏。
 

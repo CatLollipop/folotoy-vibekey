@@ -212,3 +212,8 @@ Mac 下发 `agent` 时,在任何页面上方弹出全屏通知层(录音中不�
 ## 下键菜单的原子进入与返回
 
 长▼设备网络列表和Mac会话列表都使用LIST原子切换，不再先隐藏pet后淡出旧页。设备网络菜单有独立owner/有界内容，背景prepare/idle、Mac state/list及通知不会抢屏；关闭/超时按最新状态恢复，明确错误不丢。LIST优先显示导航glyph，底下reply/notification页点临时隐藏，返回恢复原页；上键模式菜单已修行为保持。生产API像素回归和边界见[device-menu-transitions.md](device-menu-transitions.md)，离屏通过不代表实体屏幕已验收。
+
+
+## 方案B电脑会话双栏
+
+正式绑定后可由长DOWN会话菜单选择对话/PET与焦点。对话屏左侧mini所选宠物+Agent正文、右侧ASR草稿，同屏并列；保留12px字、7点滚动页轨道。普通状态只有小动画icon，具体错误/只读说明保留。按住OK只采音，松开仅成草稿，新的短OK才确认；通知可见时双短OK只请求跳对应官方会话，单短OK延迟只dismiss，长持仍采音，不产生双请求。PET与DIALOGUE是同一输入owner，长UP/长DOWN菜单仍优先；见[device-conversation.md](device-conversation.md)。
