@@ -36,6 +36,14 @@ import Foundation
         connection = nil; connectionEpoch = UUID().uuidString; validated = false; disconnect()
     }
 
+    /// 仅清除AI助理保存的连接信息，不更改Kimi服务及其会话。
+    func clearConfiguration() {
+        disconnect()
+        UserDefaults.standard.removeObject(forKey: "assistant.kimi.endpoint")
+        CredentialStore.shared.set("", for: "agent.kimi.token")
+        connection = nil; connectionEpoch = UUID().uuidString; validated = false
+    }
+
     func diagnose() async -> AgentDiagnostic {
         do {
             guard !token.isEmpty else { throw AgentAdapterError.blocked("填写原 Kimi Code server 的本机访问令牌") }

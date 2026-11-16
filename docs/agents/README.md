@@ -2,6 +2,29 @@
 
 本模块在上游 Codex 导航、通知和听写链路之外增加 `AgentHub`。七个目标分别登记适配器，不把“可以粘贴”当成“可以读取回复和运行状态”。当前未完成真机/真实应用验收的能力仍显示缺失；模拟测试通过不能作为七个应用全部可用的验收证明。
 
+## 自动检测与组件管理
+
+设置页按「Codex 用量 → 智能体接入 → 可展开的会话测试 / Codex 兼容通知」排列。用量仍使用原有真实账户数据链路；紧凑模式把 Token 和周额度并排显示，空间不足时垂直排列。接入列表默认每行约51pt，能力明细和Kimi连接表单按需展开。
+
+列表左侧使用28pt官方图标并保留原色：优先读取已安装/运行宿主的macOS App图标，未安装时读取客户端内置PNG；Claude Code和Claude Desktop共享Claude官方标记。图标读取不联网、不启动宿主，行高不随图标放大。Xcode平铺和SwiftPM/CLT文件夹打包均支持；来源、原始版本和文件哈希见 [图标来源清单](../../app/VibeKey/Resources/AgentIcons/sources.json)，第三方品牌权利保持原归属。
+
+页面打开后立即检测，每10秒重新检测，并在macOS应用启动/退出通知后刷新；页面离开后取消定时任务。检测只查Launch Services、运行应用、常见可执行文件路径和原有适配器，不启动、重启或切换用户Agent。每行分别显示宿主存在/运行状态、组件安装状态、真实能力结果；安装完成不代表宿主已加载或双向能力通过。
+
+| 条目 | 一键安装 | 一键卸载 |
+| --- | --- | --- |
+| Claude Code | 合并完整生命周期Hook，保留原配置并备份 | 逐命令移除本应用Hook，保留组内其他命令、matcher和用户后来修改的设置 |
+| Claude Desktop / ChatGPT.App | 启用内置AX适配器 | 停用本应用适配器，不撤销系统辅助功能权限，不删除宿主应用 |
+| OMP | 安装本应用扩展包装文件 | 仅删除带本应用标记的包装文件；原会话需再次 `/reload` |
+| DeepSeek Harness | 在本机生成插件包，展开后可打开插件目录 | 仅删除该包固定文件，保留目录内其他文件；宿主已加载插件需自行停用或重新加载 |
+| Kimi Code | 注册本机连接配置，展开地址/令牌表单 | 清除本应用保存的Kimi地址和令牌，断开本应用WS，不停止原服务 |
+| WorkBuddy | 首次选择当前版本的实际Hook JSON；记住位置后可直接合并 | 从记住的JSON逐命令移除本应用Hook并清除路径登记 |
+
+组件卸载后，Hub立即清理对应会话选择并停止发现/轮询，忽略该适配器的迟到事件与回复，防止旧扩展心跳重新恢复接入。未设置新偏好的旧用户默认保留原有接入，重新安装可启用。不会删除Agent程序、账户、聊天记录或用户其他插件，不替原应用进行工具批准。
+
+配置安装备份为 `.vibekey-assistant.bak`，卸载前的当前配置另存 `.vibekey-assistant-uninstall.bak`；不会恢复整份旧备份。新写配置和备份从临时文件创建起均为0600。同名非本应用OMP文件或DSH包会明确失败并保留。
+
+运行 `bash app/scripts/test-agent-components.sh` 可在隔离临时目录验证合并、卸载、用户后续设置与同组Hook保留、重复操作、无效配置、权限和偏好隔离；不会安装到用户真实配置。该测试与真实应用版本的加载、权限、发送/停止验收分别记录。
+
 ## 调用链与接口
 
 - 设置页 / AssistantController → AgentHub 选择的 `AssistantAgentSession` → AgentAdapter → 原应用 AX、原进程扩展或官方 Kimi Server API。
@@ -9,7 +32,7 @@
 - 原应用最终 assistant 正文 → `AgentReply` → 当前会话及 message ID 去重 → AssistantCoordinator → MiniMax TTS。思考、工具结果、错误和取消的半条回复不会朗读。
 - `discover / activate / submit / stop / observeState / readReply` 是完整双向接入要求；`insertDraft` 是可选能力。Kimi/DSH直接提交API没有原编辑器草稿接口，不因此被判定为缺少双向能力。
 
-设置 › 智能体将 `AgentDiagnosticsView(hub:)` 与原 Codex 用量/兼容通知合为一页。旧 `.integrations` 入口转向 `.vibe`，侧栏仅保留一个「智能体」。Claude 完整 Hook 只从上方安装，原 Codex 通知配置保留。
+设置 › 智能体将 Codex 用量置于顶部，下方为 `AgentDiagnosticsView(hub:)` 的七项接入列表。旧 `.integrations` 入口转向 `.vibe`，侧栏仅保留一个「智能体」。Claude完整Hook在自身条目安装/卸载；原Codex通知独立收纳为可展开配置。
 
 `AgentDiagnosticsView(hub:)` 提供逐应用能力、原会话选择、测试文本直接发送、写草稿、停止、扩展安装和 Kimi 连接设置。`onEvent`、`onReply`、`onSelectionChange` 均在主线程回调。切换会话取消旧播放，过期异步选择不能覆盖较新的选择。原有 Codex `AgentNotifier` 保留；新助手硬件接管开启时不调用原 Codex 导航或发送。
 

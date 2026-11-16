@@ -16,4 +16,5 @@ same(){
 same run_mode_companion_select_assistant run_mode_survives_remote_updates
 same transcript_fixture_final_frozen transcript_fixture_late_partial_ignored
 same transcript_fixture_error_overrides transcript_fixture_error_rejects_late
-printf 'Display UI: local menu survives late network updates; final/error reject late partial pixels unchanged.\n'
+same reply_quiet_final_frozen reply_quiet_late_partial_ignored
+printf 'Display UI: menu priority, final/error freeze, DONE/PREPARING/IDLE reply retention/page restore and actual capture cue lifecycle passed.\n'

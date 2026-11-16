@@ -29,6 +29,8 @@ run_host() {
     "${CC:-cc}" "${cflags[@]}" tests/test_ib_doubao_asr.c main/ib_doubao_asr.c main/ib_asr_events.c -o "${out}/doubao_asr"
     "${out}/doubao_asr"
     "${out}/asr_events"
+    "${CC:-cc}" "${cflags[@]}" tests/test_ib_reply_keys.c main/ib_reply_keys.c -o "${out}/reply_keys"
+    "${out}/reply_keys"
     "${out}/run_menu"
     "${out}/cloud_stream"
     "${out}/protocol"

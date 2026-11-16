@@ -34,3 +34,6 @@ struct _lv_display_t *bsp_lvgl_init(void);
 // LVGL 非线程安全:在【非 LVGL 任务】里操作任何 lv_* 对象前后必须加解锁。
 bool bsp_lvgl_lock(int timeout_ms);
 void bsp_lvgl_unlock(void);
+
+// 调用方持LVGL锁；等待此前所有LCD颜色DMA事务完成，不向面板发送命令或数据。
+esp_err_t bsp_display_wait_idle(void);

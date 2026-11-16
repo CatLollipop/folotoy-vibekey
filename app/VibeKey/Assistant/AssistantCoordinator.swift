@@ -21,6 +21,8 @@ import Foundation
     private var selectionGeneration = UUID()
     private var hardwareError: String?
     private var devicePhase: DeviceAssistantPresentation.Phase?
+    private var replyTransfer:Task<Void,Never>?
+    private var replyGeneration:UInt32 = UInt32.random(in:1...UInt32.max)
     private var transcriptGeneration: UInt32 = UInt32.random(in: 1...UInt32.max)
 
     init(assistant: AssistantController, store: AssistantStore, hub: AgentHub,
@@ -37,6 +39,7 @@ import Foundation
         assistant.onPhase = { [weak self] phase in
             guard let self else { return }
             self.apply(Self.petState(phase), phase: .init(rawValue: phase.rawValue))
+            if [.recording,.stopped,.failed,.idle].contains(phase) { clearDeviceReply() }
             if store.usePassportForAssistant, sync.mode != "standalone" {
                 if phase == .recording {
                     transcriptGeneration = transcriptGeneration == UInt32.max ? 1 : transcriptGeneration + 1
@@ -50,15 +53,16 @@ import Foundation
             if phase == .replying, self.assistant.destination == .application,
                let reply = self.pendingApplicationReply, self.hub.selectedSession?.id == reply.session.id {
                 self.pendingApplicationReply = nil
-                self.assistant.speakApplicationReply(reply.text)
+                self.assistant.showApplicationReply(reply.text)
             }
         }
+        assistant.onReply = { [weak self] text in self?.displayDeviceReply(text) }
         assistant.onTranscript = { [weak self] text, final in
             guard let self, store.usePassportForAssistant, sync.mode != "standalone" else { return }
             link.sendAssistantTranscript(.update, generation: transcriptGeneration, text: text, final: final)
         }
         hub.onSelectionChange = { [weak self] session in
-            self?.pendingApplicationReply = nil; self?.hardwareError = nil
+            self?.pendingApplicationReply = nil; self?.hardwareError = nil; self?.clearDeviceReply()
             if let self, store.usePassportForAssistant, sync.mode != "standalone" { link.sendAssistantTranscript(.clear, generation: 0) }
             self?.assistant.destination = session == nil ? .cloud : .application
             self?.assistant.cancel(); self?.apply(.idle, phase: .idle)
@@ -79,10 +83,10 @@ import Foundation
                   !assistant.isRecording, assistant.phase != .transcribing,
                   assistant.destination == .application || !assistant.isBusy else { return }
             if assistant.destination == .application, assistant.phase == .thinking {
-                // 极快回复可能早于发送回执；等原提交收敛后播放，不取消尚在确认的投递。
+                // 极快回复可能早于发送回执；等原提交收敛后显示，不取消尚在确认的投递。
                 pendingApplicationReply = reply; return
             }
-            assistant.speakApplicationReply(reply.text)
+            assistant.showApplicationReply(reply.text)
         }
         link.onAssistantMessage = { [weak self] message in
             guard let self else { return }
@@ -107,7 +111,7 @@ import Foundation
         link.onConnectionChange = { [weak self] connection in
             guard let self else { return }
             originalConnection?(connection)
-            hardware.reset(); closeMenu(); cancelSelection()
+            hardware.reset(); closeMenu(); cancelSelection(); clearDeviceReply()
             if connection == .disconnected { assistant.cancel() }
             else if connection == .usb || connection == .wifi {
                 sync.refresh(); link.sendAssistantTranscript(.clear, generation: 0); apply(pet.state, phase: devicePhase)
@@ -128,7 +132,30 @@ import Foundation
         }
     }
 
-    func stop() { cancelSelection(); closeMenu(); assistant.cancel(); hub.shutdown(); pet.stop(); sync.cancel() }
+    func stop() { clearDeviceReply(); cancelSelection(); closeMenu(); assistant.cancel(); hub.shutdown(); pet.stop(); sync.cancel() }
+
+    private func clearDeviceReply() {
+        replyTransfer?.cancel();replyTransfer=nil
+        replyGeneration = replyGeneration == UInt32.max ? 1 : replyGeneration+1
+        if store.usePassportForAssistant, sync.mode != "standalone", sync.supportsTextReplies { link.clearAssistantReply() }
+    }
+    private func displayDeviceReply(_ text:String) {
+        clearDeviceReply()
+        guard store.usePassportForAssistant,sync.mode != "standalone",link.connection != .disconnected else { return }
+        guard sync.supportsTextReplies else { assistant.reportDeviceReplyError(AssistantError.upgradeRequired.localizedDescription); return }
+        let token=replyGeneration
+        assistant.reportDeviceReplyError(nil)
+        replyTransfer=Task { [weak self] in
+            guard let self,!Task.isCancelled,token==replyGeneration else { return }
+            do {
+                try await link.sendAssistantReply(text,generation:token)
+            } catch {
+                guard !Task.isCancelled,token==replyGeneration else { return }
+                link.clearAssistantReply()
+                assistant.reportDeviceReplyError(String(localized:"Passport 文字显示失败，请在电脑查看本轮回复。\(error.localizedDescription)",bundle:.l10n))
+            }
+        }
+    }
 
     /// 旧DeviceBridge只显示这个覆盖状态，菜单优先，绝不显示旧Codex的发送提示。
     func deviceDisplay() -> (DeviceUIState, String)? {

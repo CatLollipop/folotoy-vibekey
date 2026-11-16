@@ -13,7 +13,9 @@
       <div id="styleOptions" class="style-options scroll" aria-label="桌面画风"></div>
     </aside>
     <div class="preview-column">
-      <div class="preview-heading"><h2 id="currentName">Aora Bot</h2><span id="currentStyle"></span></div>
+      <div class="preview-heading"><h2 id="currentName">Aora Bot</h2><span id="currentStyle"></span>
+        <button id="settingsOpen" class="settings-open" type="button" aria-haspopup="dialog" aria-controls="settingsDrawer" aria-label="宠物设置"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3-.6 2.4-2.1 1.2L4 6l-2 3.5 1.7 1.8v2.4L2 15.5 4 19l2.3-.6 2.1 1.2L9 22h4l.6-2.4 2.1-1.2 2.3.6 2-3.5-1.7-1.8v-2.4L20 9l-2-3.5-2.3.6-2.1-1.2L13 3Z"/><circle cx="11" cy="12.5" r="3"/></svg><span data-copy="settings">设置</span></button>
+      </div>
       <div class="preview-art" id="previewArt"></div>
       <div class="preview-status"><span class="state-dot"></span><span id="currentState"></span></div>
     </div>
@@ -46,6 +48,36 @@
   </section>
   <footer><span data-copy="desktopOnly">画风应用到桌面挂件，Passport 保持点阵。</span><span data-copy="saved">选择自动保存</span></footer>
 </main>
+<div id="settingsBackdrop" class="settings-backdrop" hidden>
+  <section id="settingsDrawer" class="settings-drawer" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" tabindex="-1">
+    <header class="drawer-heading"><h2 id="settingsTitle" data-copy="petSettings">宠物设置</h2><button id="settingsClose" class="icon-button" type="button" aria-label="关闭设置"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg></button></header>
+    <div class="settings-tabs" role="tablist" aria-label="宠物设置分类">
+      <button id="desktopTab" type="button" role="tab" aria-controls="desktopSettings" aria-selected="true" data-pane="desktop" data-copy="desktop">桌面</button>
+      <button id="deviceTab" type="button" role="tab" aria-controls="deviceSettings" aria-selected="false" tabindex="-1" data-pane="device" data-copy="passport">Passport</button>
+    </div>
+    <div class="settings-scroll scroll">
+      <div id="desktopSettings" class="settings-pane" role="tabpanel" aria-labelledby="desktopTab">
+        <p class="settings-intro" data-copy="desktopIntro">画风与表情即时应用到桌面挂件。</p>
+        <label class="setting-row" for="desktopEnabled"><span data-copy="showDesktop">显示桌面宠物</span><input id="desktopEnabled" type="checkbox" data-setting="desktopEnabled"></label>
+        <div class="range-setting"><div class="range-heading"><label for="petSize" data-copy="size">挂件大小</label><output id="sizeValue" for="petSize">220 px</output></div><input id="petSize" type="range" data-setting="size" min="100" max="400" step="10" value="220"></div>
+        <label class="setting-row" for="alwaysOnTop"><span data-copy="alwaysOnTop">始终置顶</span><input id="alwaysOnTop" type="checkbox" data-setting="alwaysOnTop"></label>
+        <label class="setting-row" for="clickThrough"><span data-copy="clickThrough">鼠标穿透</span><input id="clickThrough" type="checkbox" data-setting="clickThrough"></label>
+        <label class="setting-row" for="reducedMotion"><span data-copy="reducedMotion">减少动画</span><input id="reducedMotion" type="checkbox" data-setting="reducedMotion"></label>
+        <button id="resetPosition" class="settings-action" type="button" data-copy="resetPosition">恢复挂件位置</button>
+        <p class="settings-note" data-copy="followHelp">选择表情后固定显示；打开跟随会话可恢复自动联动。</p>
+      </div>
+      <div id="deviceSettings" class="settings-pane" role="tabpanel" aria-labelledby="deviceTab" hidden>
+        <p class="settings-intro" data-copy="deviceIntro">外观、脸型、颜色与表情同步到 Passport，设备保持点阵画风。</p>
+        <label class="setting-row" for="deviceEnabled"><span data-copy="showDevice">显示设备宠物</span><input id="deviceEnabled" type="checkbox" data-setting="deviceEnabled"></label>
+        <div class="range-setting"><div class="range-heading"><label for="deviceFPS" data-copy="fps">动画帧率</label><output id="fpsValue" for="deviceFPS">12 FPS</output></div><input id="deviceFPS" type="range" data-setting="deviceFPS" min="6" max="20" step="1" value="12"></div>
+        <div class="range-setting"><div class="range-heading"><label for="deviceBrightness" data-copy="brightness">点阵亮度</label><output id="brightnessValue" for="deviceBrightness">80%</output></div><input id="deviceBrightness" type="range" data-setting="deviceBrightness" min="10" max="100" step="10" value="80"></div>
+        <p class="settings-note" data-copy="deviceHelp">同步后生效。离线页始终显示当前宠物。按住设备 OK 说话，松开结束。</p>
+        <div class="sync-section"><button id="syncPet" class="settings-action primary" type="button" data-copy="syncPet" disabled>同步到 Passport</button><p id="syncStatus" class="settings-note" role="status" aria-live="polite"></p></div>
+      </div>
+    </div>
+    <footer class="drawer-footer"><button id="attributionButton" type="button">Powered by Aora Bot<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3h8v8M13 3 3 13"/></svg></button><span data-copy="version">0.2.0 · 离线运行</span></footer>
+  </section>
+</div>
 <div class="load-state" id="loadState"><span data-copy="loading">正在加载宠物…</span></div>
 <div class="load-state error" id="loadError" hidden><p data-copy="error">宠物预览暂不可用，请重新加载。</p><button type="button" id="reloadButton" data-copy="reload">重新加载</button></div>
 <script src="engine.js"></script>

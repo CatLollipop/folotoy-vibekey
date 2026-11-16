@@ -34,5 +34,7 @@ void ib_pet_set_color(uint32_t rgb888);
 bool ib_pet_enabled(void);
 /* 内部按fps限流；返回true表示真正栅格化一帧。无malloc、网络或LVGL依赖。 */
 bool ib_pet_render(uint32_t now_ms,ib_pet_pixel_fn pixel,void *context);
+// 启动背光门禁：强制当前已加载资产/姿态写入缓存，不受FPS限流、不推进时间。
+bool ib_pet_render_current(ib_pet_pixel_fn pixel,void *context);
 /* 供host黄金测试/截图：无动画静态关键姿态，动态仍由上面C内核实时计算。 */
 void ib_pet_render_static(ib_pet_state_t state,ib_pet_pixel_fn pixel,void *context);

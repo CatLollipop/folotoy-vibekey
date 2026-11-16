@@ -1,12 +1,12 @@
-# Passport 豆包实时识别（固件 0.4.0）
+# Passport 豆包实时识别与文字对话（固件 0.5.1）
 
-0.4.0独立模式使用用户已配置的豆包实时语音识别，MiniMax仅TTS，DeepSeek仍`deepseek-flash`。按住确认键时持续发送16kHz、16bit、单声道PCM；服务返回的真实中间结果立即显示字幕。松开后送完已采集尾音与结束负包，收到服务完整终包才调用DeepSeek，再串行调用MiniMax TTS。旧MiniMax文件ASR已删除；不自动切换其他ASR供应商。
+0.4引入豆包实时语音识别，0.5按用户新决定改为纯文字对话。按住确认键时持续发送16kHz、16bit、单声道PCM，服务的真实中间结果立即显示字幕；松开后送完音频并等待完整终包，再调用DeepSeek deepseek-flash。思考时保留识别字幕，模型增量使用独立reply视图，完成后可短按▲/▼阅读全文。设备不调用TTS、不创建播放队列，不要求MiniMax Key；本机旧凭据保留。旧MiniMax文件ASR已删除，不自动切换其他ASR供应商。
 
 官方依据：[双向流式接口](https://docs.volcengine.com/docs/doubao-voice/bidirectional-streaming-automatic-speech-recognition-websocket?lang=zh)、[v3协议说明](https://www.volcengine.com/docs/6561/1354869)、[新版协议页](https://docs.volcengine.com/docs/doubao-voice/large-model-streaming-automatic-speech-recognition-api-1?lang=en)。设备使用固定`espressif/esp_websocket_client 1.8.0`与ESP-IDF5.5.3的TLS/WS transport。
 
 ## 配置升级
 
-传输能力`schema:1`保持兼容，新增`profile_schema:2`、`asr:"doubao-realtime"`、`transcript:1`。profile仍最多16KiB，经既有USB初次配对／已配对局域网加密分块事务、CRC、双bank和头最后提交原子生效。
+传输能力`schema:1`保持兼容，新增`profile_schema:2`、`asr:"doubao-realtime"`、`transcript:1`，0.5还要求`tts:0, reply_text:1, single_pet:1`；`retired_clean`为实际旧bank回收状态，`display_ready`为正确首帧已完成的状态。profile仍最多16KiB，经既有USB初次配对／已配对局域网加密分块事务、CRC、双bank和头最后提交原子生效。
 
 | profile2字段 | 规则 |
 | --- | --- |
@@ -15,7 +15,7 @@
 | `asr_key` | 新版控制台API Key，非空≤511字节，禁止请求头换行 |
 | `asr_resource_id` | 非空≤127字节，仅ASCII字母、数字、点、下划线、连字符；默认`volc.seedasr.sauc.duration` |
 | `asr_ws_url` | ≤191字节，严格wss，禁止userinfo/query/fragment/控制字符/反斜线；默认`wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async` |
-| `minimax_key` | 仅TTS，沿用旧字段名 |
+| `minimax_key` / `minimax_base_url` / `voice_id` | 0.5可缺省、不参与configured；仅保留兼容字段，客户端不再发送 |
 
 新版认证仅需`X-Api-Key`，不需要旧AppID/AccessToken，也不要求阿里云Key。WSS头同时传资源ID、同一随机UUID的`X-Api-Request-Id`／`X-Api-Connect-Id`以及`X-Api-Sequence:-1`。UUID由硬件随机数生成，不含设备身份。握手缓冲2048字节，覆盖profile允许的最大Header长度。自建ext WS必须自身设置default443；仅设置TLS父层不会被官方client继承，真实源码确认原默认为0。用户URI显式端口仍优先。
 
@@ -35,13 +35,14 @@ CA链、主机名、证书有效期均验证；先同步可信时钟，不提供
 
 ## 音频与线程
 
-调用链：`按住OK → ib_assistant worker → reader/Flash writer → ib_asr_realtime → ib_doubao_asr → result.text邮箱 → app/LVGL → 合法终包 → DeepSeek → MiniMax PCM播放器`。
+调用链：`按住OK → ib_assistant worker → reader/Flash writer → ib_asr_realtime → ib_doubao_asr → result.text邮箱 → app/LVGL → 合法终包 → DeepSeek → ib_reply_store单份正文 → reader分页`。
 
 - 录音前擦除1MiB槽；最长30秒960,000字节PCM。录音期间不擦Flash。
 - reader priority6、3072字节栈，20ms／640字节读取，只做能量检测和投递；6144字节StreamBuffer在录音前预分配，约192ms缓冲。Flash writer priority5、2560字节栈，每次最多1024字节写入；与I2S90ms DMA一起覆盖曾实测约140ms的Flash／调度停顿。
+- 右侧麦克风采集动画以实际采集标志为准。独立模式由reader进入／退出发布原子flag，`ib_assistant_capture_active()`同时排除松键、取消和非独立模式；app每tick交给UI。相伴模式使用codec打开成功后才有效的`ib_audio_mic_active()`。Flash drain、TLS连接及等待ASR终包不让麦克风继续显示为正在采音。
 - 写者仅在写入成功后以release顺序发布tail；网络以acquire读取已提交区。SNTP/TLS/WS握手期间仍持续采音写入，避免丢首字。WSS发送最大6400字节／200ms，积压最多5倍实时追赶，发送之间真实delay给低优先级任务机会。
 - WSS接收priority5、4096字节栈，rx/tx各1024字节，使用官方separate TX lock支持双向读写；接收处理WS transport分块和continuation/FIN，不把一条事件假定为一次回调。
-- 释放顺序：取消置位／清字幕／shutdown登记socket → 官方WSS接收任务退出 → 停止采音、Flash写者drain → 释放队列与codec → 释放文本／准备下一轮。不得跨任务销毁正在使用的TLS，旧PCM/字幕不能跨轮。
+- 释放顺序：取消置位／清字幕／shutdown登记socket → 官方WSS接收任务退出 → 停止采音、Flash写者drain → 释放队列与codec → 释放文本／准备下一轮。不得跨任务销毁正在使用的TLS，旧PCM/字幕不能跨轮。0.5成功回复保留在唯一4KiB buffer；新轮在Wi-Fi检查前即清除旧正文，避免网络失败时残留旧页。
 - 去直流RMS/peak及有声块统计仍拒绝静音进入LLM；由于真流式ASR在采集中已经联网，此检查不承诺避免ASR费用。
 
 设备LVGL池由40KiB降32KiB，依据先前真实C3峰23,752字节给音频让出8KiB。分辨率、字形、颜色与点阵不变；host64位预览独立256KiB，不能把其对象内存直接推为C3结论。0.4新增字幕+菜单必须继续量真实`lvgl_peak`。
@@ -75,8 +76,21 @@ CA链、主机名、证书有效期均验证；先同步可信时钟，不提供
 
 单独`assistant/asr_diagnostics`为只含数字的握手排查快照（最坏428字节）：port、connect_result/connect_errno、tls_error/tls_stack/tls_flags、http_code、error_type、ws_error/ws_stack/ws_flags、socket_errno、io_stage/io_result/io_errno。IO阶段1=TLS connect、2=upgrade write、3=upgrade read、4=connected、5=data read、6=data write。直接从底层SSL读取原始错误，补足guard未继承foundation时WS事件副本缺少TLS错误的问题；回执和ib_asr失败日志均不含请求头/Key/正文。
 
+0.5.1新增只读`assistant/reply_status`，echo请求rid，返回`generation/revision/length/active/final/state/capture_active`。这些字段来自短锁下的生产store快照，只反映正文是否保留与采音任务状态，不返回正文、不声称UI当前可见。成功正文在`DONE → 后台下一槽PREPARING → IDLE`期间保持同一generation/revision及active/final；新PTT、取消、错误或明确clear才结束正文生命周期。UI对后台准备的呈现与翻页另以真实LVGL回归及物理按键验收。
+
 ## 验证界限
 
 `tools/validate.sh --host`覆盖JSON Unicode/逐字分块/大时间戳数组及豆包flags、signed seq解码、真实正seq终包形状、错误帧、长度、压缩协商。`tools/test-asr-realtime.sh`默认ASan/UBSan，编译生产WSS运行器，使用同步事件与虚拟时间替换transport/RTOS/Flash（不模拟真实任务竞争、TLS或ISR），覆盖边录边字幕、PCM字节一致、请求先后、完整终态、取消、401、错误、坏帧、提前结束、缺正文终包、超时、重定向门禁、Flash和采音失败，逐轮检查释放。`tests/fixtures/doubao-asr-wire.json`为官方结构合成夹具，明确不是收费API实录。store测试覆盖旧schema1保留、schema2原子更新和宠物持久化。
 
 这些离线测试与IDF编译不证明真实账号资源权限、首字、TLS余量、32KiB LVGL峰、音频栈或听感。主任务仍需受保护刷写、逐字节复核cardid，并读取status/asr_status/audio_status，最后由用户物理按键和听感验收。当前文档不宣称0.4新豆包真机链路已通过。
+
+
+## 0.5正文、启动与单份资源
+
+完整正文和分页协议见[device-reply.md](device-reply.md)。`reply_begin/update/final/clear`独立于ASR generation，全文4096B，update连续UTF-8 off、单块≤192B，Mac采用64B覆盖最坏JSON转义；final要完整UI发布才ACK。force clear0重置连接epoch，取消worker时先隐藏，等写者结束才释放旧buffer并重置epoch。
+
+启动前移NVS/profile/pet校验与应用到RF/audio之前，第一阶段只让预留8KiB的app任务呈现正确宠物，普通命令/按键消费仍等第二阶段RF/audio/buttons完成。GUI锁内强制当前资产栅格、整屏刷新、通过SPI真实事务完成屏障后才开背光；没有有效资源才显示内置Dot，加载失败保留USB与后续重试，不把有效资产改为默认。
+
+稳态只保留一份同步宠物。新bank校验、头最后提交并切换mmap成功后，擦除旧inactive整bank并逐字读回全FF，commit ACK才返回retired_clean1；失败不回滚新active，返回cleanup_failed/retired_clean0并在空闲维护中重试。清理与事务共享control，采音或相伴麦克风活跃时不清理；新begin/clear要先处理退休bank，暂存仍保障断电原子性。重启扫描整个inactive bank，不能只凭被擦掉的旧头误称资源已删除。Flash分区继续保留作下一次staging，不变成RAM。
+
+0.4端口修复后用户已确认真实实时出字；0.5全文分页、冷启动首帧、单副本回收和连续对话仍以主任务最终真机验收为准，不能以宿主夹具代替。

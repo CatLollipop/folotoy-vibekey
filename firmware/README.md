@@ -33,6 +33,8 @@ tools/validate.sh --host   # 只跑主机测试(不需要 ESP-IDF)
 tools/test-pet.sh          # Aora几何/运动golden与内存检查
 tools/test-ui-labels.sh    # 中文状态逐字形/两行尺寸检查（需已有LVGL组件/sdkconfig）
 tools/test-ui-transcript.sh # generation/真实快照替换/final/UTF-8尾部ASan检查
+tools/test-ui-reply.sh      # 独立全文分页/4096B/UTF-8/epoch/final/reader ASan检查
+tools/test-reply-store.sh   # 单份正文store并发/取消/释放/不可变前缀ASan检查
 tools/test-display-ui.sh   # 模式菜单优先与字幕冻结的真实LVGL像素回归
 tools/test-tts-player.sh   # 生产TTS player的ASan/UBSan、背压/EOF/取消/资源清理
 tools/test-assistant-store.sh # 双bank NOR事务；需要已激活IDF的cJSON源码
@@ -141,3 +143,13 @@ C3无PSRAM。16 KiB采音环只在录音时分配，转写/回复缓冲分阶段
 
 
 实时ASR的WSS传输使用官方 `espressif/esp_websocket_client@1.8.0`（Apache-2.0；[来源提交](https://github.com/espressif/esp-protocols/tree/70bf122fc8bc74622dcf7e15233b5b2af9088df5/components/esp_websocket_client)），由 `dependencies.lock` 固定版本与校验。当前识别为豆包 binary 协议，MiniMax 仅 TTS；供应商字段、帧/事件和验证边界见 [asr-realtime.md](../docs/asr-realtime.md)。
+
+
+## 0.5文字回复与简化设备界面
+
+当前候选不再请求朗读：回复全文最多4096B由assistant单份缓冲持有，UI reader只保当前两行和页偏移，短▲/▼阅读全文、按住OK发起新轮。final ACK在完整reader校验并发布UI后才成功；clear0重置连接epoch，指定gen取消仍拒迟到。现有Noto覆盖GB2312常用两级汉字，emoji/缺字显式用□占位并按同宽分页；不扩字体资源。绿色常驻时间footer和线已删除，左右提示统一小尺寸中性路径，离线页大时钟保留。详见[device-reply.md](../docs/device-reply.md)。
+
+联合生产store/LVGL的ASan预览：`cmake -S tools/ui-preview -B tools/ui-preview/build -DIB_PREVIEW_SANITIZERS=ON`后运行`tools/test-display-ui.sh`；`tools/test-ui-labels.sh`另检查静态状态，`cmake --build tools/ui-preview/build --target ib_ui_reply_font_test && tools/ui-preview/build/ib_ui_reply_font_test`检查正文汉字/缺字和实际字宽。背光首帧调用`ib_ui_present_boot_frame`强制当前已加载资产填缓存、整屏刷新并等待BSP实际DMA完成，再由app点亮。
+
+
+0.5.1修复后台预擦录音槽发PREPARING而误清成功正文：生产store revision不变的final→DONE→PREPARING→IDLE序列仍可读/翻页。主画布全宽对称，caption按自然行高，无空回复框。真实codec reader flag驱动右Mic绿色小环呼吸，停止/睡眠/菜单立即停循环，idle不再常驻说话指令。新production离屏夹具与像素/动画回归在outputs/passport-ui-051，不能当设备照片；真机复测由主集成确认。

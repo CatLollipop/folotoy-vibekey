@@ -3,6 +3,7 @@
 #include "esp_err.h"
 #include "ib_link.h"
 #include "ib_transcript_view.h"
+#include "ib_reply_store.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -13,6 +14,8 @@ esp_err_t ib_assistant_init(ib_assistant_status_cb,void *);
 bool ib_assistant_handle_line(ib_link_t,const char *,size_t);
 bool ib_assistant_standalone(void);
 bool ib_assistant_busy(void);
+// app每tick采样，独立模式仅真实reader采音有效；松键后不包含Flash drain/WSS等待。
+bool ib_assistant_capture_active(void);
 ib_assistant_state_t ib_assistant_state(void);
 const char *ib_assistant_state_name(ib_assistant_state_t);
 void ib_assistant_press(void);
@@ -40,3 +43,9 @@ bool ib_assistant_companion_owned(void);
 
 // 网络/串口发布有界字幕邮箱；app任务读取快照再持有LVGL锁。
 void ib_assistant_transcript_snapshot(ib_transcript_view_t *,uint32_t *revision);
+
+// 相伴reply_final同步UI发布门禁；网络增量仍只提交邮箱，由app轮询。
+void ib_assistant_set_reply_apply(bool (*apply)(void *),void *context);
+
+// app空闲维护：与USB事务共用control，不在采音/同步中擦除退休bank。
+void ib_assistant_maintenance(void);

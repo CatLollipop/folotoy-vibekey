@@ -4,7 +4,7 @@
 #define COUNT(a) (sizeof(a)/sizeof((a)[0]))
 typedef struct { const char *id,*label; } label_entry_t;
 static const char *const phases[IB_UI_ASSIST_COUNT]={
-    [IB_UI_ASSIST_IDLE]="云端待机\n按住确认键说话",
+    [IB_UI_ASSIST_IDLE]="云端待机",
     [IB_UI_ASSIST_PREPARING]="正在准备\n请稍候",
     [IB_UI_ASSIST_LISTENING]="正在聆听\n松开确认键发送",
     [IB_UI_ASSIST_TRANSCRIBING]="正在识别",
@@ -112,7 +112,7 @@ static const label_entry_t errors[]={
     {"playback_underrun","语音播放缓冲不足\n请重试"}
 };
 static const label_entry_t pets[]={
-    {"idle","云端待机\n按住确认键说话"},{"sleeping","正在休息"},{"drowsy","有点困了"},
+    {"idle","云端待机"},{"sleeping","正在休息"},{"drowsy","有点困了"},
     {"bored","等待互动"},{"waking","正在醒来"},{"powering-down","准备休息"},
     {"listening","正在聆听"},{"thinking","正在思考"},{"searching","正在搜索"},
     {"reading","正在阅读"},{"writing","正在书写"},{"working","正在工作"},

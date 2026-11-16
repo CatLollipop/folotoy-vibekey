@@ -14,6 +14,7 @@ nonisolated enum AssistantPhase: String, Sendable {
     private(set) var transcript = ""
     private(set) var reply = ""
     private(set) var error: String?
+    private(set) var deviceReplyError: String?
     private(set) var truncated = false
     private(set) var inputTokens = 0
     private(set) var outputTokens = 0
@@ -22,13 +23,15 @@ nonisolated enum AssistantPhase: String, Sendable {
     @ObservationIgnored var onPhase: ((AssistantPhase) -> Void)?
     /// 句final仍是录音中的增量；只有finish和事件流完整收敛才发final=true。
     @ObservationIgnored var onTranscript: ((String, Bool) -> Void)?
+    /// 只发布最终回复正文；设备全文显示有独立协议，不混入ASR字幕。
+    @ObservationIgnored var onReply: ((String) -> Void)?
     @ObservationIgnored var willRecord: (() -> Void)?
     @ObservationIgnored var sendToApplication: ((String) async throws -> Void)?
     @ObservationIgnored private let store: AssistantStore
     @ObservationIgnored private let service: any AssistantCloudServing
     @ObservationIgnored private let makeSource: () -> any AudioSource
     @ObservationIgnored private let makeRecognition: (AssistantProfile, AssistantSecrets) throws -> any ASRSession
-    @ObservationIgnored private let player: any AssistantAudioPlaying
+    @ObservationIgnored private let player: (any AssistantAudioPlaying)?
     @ObservationIgnored private var source: (any AudioSource)?
     @ObservationIgnored private var capture: AssistantCaptureGate?
     @ObservationIgnored private var captureContext: (AssistantProfile, AssistantSecrets, Destination)?
@@ -47,7 +50,7 @@ nonisolated enum AssistantPhase: String, Sendable {
     @ObservationIgnored private var pendingApplicationOutcome: ApplicationTurnOutcome?
 
     init(store: AssistantStore, service: any AssistantCloudServing = AssistantCloudClient(),
-         player: any AssistantAudioPlaying = AssistantPCMPlayer(),
+         player: (any AssistantAudioPlaying)? = nil,
          makeRecognition: @escaping (AssistantProfile, AssistantSecrets) throws -> any ASRSession,
          makeSource: @escaping () -> any AudioSource) {
         self.store = store; self.service = service; self.player = player; self.makeSource = makeSource
@@ -61,7 +64,7 @@ nonisolated enum AssistantPhase: String, Sendable {
             let profile = store.profile, secrets = store.secrets
             try profile.validate(); try secrets.validateASR()
             let session = try makeRecognition(profile, secrets)
-            transcript = ""; reply = ""; error = nil; truncated = false
+            transcript = ""; reply = ""; error = nil; deviceReplyError = nil; truncated = false
             let token = generation
             let buffer = AssistantCaptureGate(limit: profile.recordLimitSeconds * 16_000)
             recognition = session; recognitionFailure = nil
@@ -143,7 +146,7 @@ nonisolated enum AssistantPhase: String, Sendable {
         guard !value.isEmpty else { return }
         cancel()
         let token = generation
-        transcript = value; reply = ""; error = nil; truncated = false
+        transcript = value; reply = ""; error = nil; deviceReplyError = nil; truncated = false
         let profile = store.profile
         let secrets = store.secrets
         let destination = destination
@@ -168,7 +171,7 @@ nonisolated enum AssistantPhase: String, Sendable {
             awaitingApplicationReceipt = false
             // accepted 是投递状态，不是 agent 完成；完成由原会话的正式事件驱动。
             setPhase(.replying)
-            // final回复可在onPhase中开始播放并更换generation，此时不能让稍早的终态截断它。
+            // 最终回复可在onPhase中发布并更换generation，稍早的终态不能覆盖它。
             if generation == token, let pending = pendingApplicationOutcome { finishApplicationTurn(pending) }
             return
         }
@@ -183,16 +186,11 @@ nonisolated enum AssistantPhase: String, Sendable {
         reply = result.text; truncated = result.truncated
         inputTokens = result.inputTokens; outputTokens = result.outputTokens
         history.append(user: text, assistant: result.text)
-        if profile.autoSpeakReplies {
-            setPhase(.speaking)
-            try check(token)
-            try await player.play(service.speech(text: result.text, profile: profile, secrets: secrets))
-            try check(token)
-        }
+        onReply?(result.text)
         setPhase(.completed)
     }
 
-    /// 原任务终止但没有正文也要结束等待；回执之前暂存，朗读期间不取消已经播放的最终回复。
+    /// 原任务终止但没有正文也要结束等待；回执之前暂存，不覆盖已经展示的最终回复。
     func finishApplicationTurn(_ outcome: ApplicationTurnOutcome) {
         guard applicationWaiting, phase == .thinking || phase == .replying else { return }
         if awaitingApplicationReceipt { pendingApplicationOutcome = outcome; return }
@@ -206,28 +204,17 @@ nonisolated enum AssistantPhase: String, Sendable {
         }
     }
 
-    /// 只由已去重的当前会话 final assistant 消息调用；切换会话会取消旧轮播放。
-    func speakApplicationReply(_ text: String) {
-        // 即使用户关掉朗读，新回复也必须取消旧轮的网络/播放，不能让迟到回调覆盖当前正文。
+    /// 只展示当前会话最终assistant正文；暂停朗读后任何旧偏好均不能触发TTS。
+    func showApplicationReply(_ text:String) {
         cancel()
         error = nil
-        guard store.profile.autoSpeakReplies else { reply = text; setPhase(.completed); return }
-        let token = generation
-        reply = text
-        let profile = store.profile; let secrets = store.secrets
-        operation = Task { [weak self] in
-            guard let self else { return }
-            do {
-                try check(token)
-                guard text.utf8.count <= 32_768 else { throw AssistantError.responseTooLarge }
-                setPhase(.speaking)
-                try check(token)
-                try await player.play(service.speech(text: text, profile: profile, secrets: secrets))
-                try check(token)
-                setPhase(.completed)
-            } catch { if generation == token, !Task.isCancelled { fail(error) } }
-        }
+        guard text.utf8.count <= 32_768 else { fail(AssistantError.responseTooLarge); return }
+        reply = text; deviceReplyError = nil
+        onReply?(text)
+        setPhase(.completed)
     }
+
+    func reportDeviceReplyError(_ message:String?) { deviceReplyError = message }
 
     func cancel() {
         generation = UUID()
@@ -236,11 +223,11 @@ nonisolated enum AssistantPhase: String, Sendable {
         _ = capture?.seal(); source?.stop(); source = nil; capture = nil; captureContext = nil
         recognition?.cancel(); recognition = nil; recognitionEvents?.cancel(); recognitionEvents = nil
         recognitionFailure = nil; recognitionFinals = []; recognitionPartial = ""
-        player.stop()
+        player?.stop()
         applicationWaiting = false; awaitingApplicationReceipt = false; pendingApplicationOutcome = nil
         if isBusy { setPhase(.stopped) }
     }
-    func newConversation() { cancel(); history.clear(); transcript = ""; reply = ""; error = nil; setPhase(.idle) }
+    func newConversation() { cancel(); history.clear(); transcript = ""; reply = ""; error = nil; deviceReplyError = nil; setPhase(.idle) }
     private func check(_ token: UUID) throws {
         try Task.checkCancellation()
         guard generation == token else { throw CancellationError() }

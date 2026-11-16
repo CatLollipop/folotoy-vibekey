@@ -1,8 +1,9 @@
 // main/ib_ui_hints.h: 屏幕两侧的微型实体键提示(UI 内部模块)。
 //
 // Passport 的三个键在机身右侧,自上而下为 上 / 下 / OK(电源键在左侧靠上)。右列使用已有的
-// Material Icons Round 12 px 字形:短按含义对齐实体键,长按含义在其下方,旁边的小圆环表示长按。
-// IB_ICON_NONE 留空该种操作;短按与长按均为空时才隐藏整组标记。按下时保留点列闪白 / 禁用反馈。
+// 10–12 px、1 px线宽的中性路径图标；既有少见keys图标回退到12px Material字形。
+// 短按对齐实体键；长按位于同键下方，只有长按时直接对齐主锚点，小圆环表示长按。
+// IB_ICON_NONE 留空；两种操作均空才隐藏。按下只短暂提亮，无三点装饰或水平抖动。
 // 左侧电源仅显示通用识别符,不表示固件支持短按或长按动作;不受右列显隐与禁用状态影响。
 // 所有函数运行在 LVGL 任务或持有 LVGL 锁的任务里。
 #pragma once
@@ -34,3 +35,6 @@ void ib_hints_press(ib_ui_key_t key);
 void ib_hints_set_visible(bool visible);
 // 禁用整列提示(PROC 页:上一句还在处理,OK 等键暂时不可用):图标与标记画成更暗的禁用色。
 void ib_hints_set_disabled(bool disabled);
+
+// 仅真实采集且提示可见/未禁用时呼吸；false删除循环动画，隐藏/休眠不持续刷新。
+void ib_hints_set_recording(bool active);

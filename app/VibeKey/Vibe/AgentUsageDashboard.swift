@@ -3,6 +3,7 @@ import SwiftUI
 /// 智能体页顶部的 Codex 用量看板。所有数字都来自 Codex 账户；没有数据时
 /// 明确显示不可用，不用 0 或示例值冒充额度。
 struct AgentUsageDashboard: View {
+    var compact = false
     @State private var model = AgentUsageModel()
 
     private let green = Color(red: 0.42, green: 0.98, blue: 0.62)
@@ -10,14 +11,21 @@ struct AgentUsageDashboard: View {
     private let panel = Color(red: 0.035, green: 0.062, blue: 0.047)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: compact ? 10 : 14) {
             header
             tabs
-            total
-            quota
+            if compact {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 16) {
+                        total.frame(minWidth: 150)
+                        quota.frame(minWidth: 210)
+                    }
+                    VStack(alignment: .leading, spacing: 10) { total; quota }
+                }
+            } else { total; quota }
             footer
         }
-        .padding(18)
+        .padding(compact ? 12 : 18)
         .background {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(panel)
@@ -96,7 +104,7 @@ struct AgentUsageDashboard: View {
                 .tracking(1.2)
                 .foregroundStyle(dim)
             Text(model.amountText)
-                .font(.system(size: 34, weight: .medium, design: .monospaced))
+                .font(.system(size: compact ? 28 : 34, weight: .medium, design: .monospaced))
                 .foregroundStyle(model.snapshot == nil ? dim : Color.white.opacity(0.96))
                 .lineLimit(1)
                 .minimumScaleFactor(0.55)

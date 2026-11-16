@@ -12,6 +12,8 @@ import Observation
     private(set) var state = "unknown"
     private(set) var error: String?
     private(set) var supportsAssistant = false
+    private(set) var supportsTextReplies = false
+    private(set) var retiredResourcesClean:Bool? = nil
     private(set) var restarting = false
     @ObservationIgnored private let link: DeviceLink
     @ObservationIgnored private var operation: Task<Void, Never>?
@@ -19,8 +21,10 @@ import Observation
     init(link: DeviceLink) { self.link = link }
 
     func receive(_ message: DeviceAssistantMessage) {
+        if let clean=message.retiredClean { retiredResourcesClean=clean }
         guard message.ok else { return }
         if message.schema == 1 { supportsAssistant = true }
+        if message.op == "capabilities" { supportsTextReplies = message.supportsReplyText }
         if !message.mode.isEmpty { mode = message.mode }
         if !message.state.isEmpty { state = message.state }
         if ["status", "capabilities", "clear"].contains(message.op) {
@@ -44,8 +48,7 @@ import Observation
         perform { [self] in
             let capability = try await request([], op: "capabilities")
             guard capability.schema == 1 else { throw AssistantError.upgradeRequired }
-            guard capability.profileSchema >= profile.schema, capability.asrProvider == "doubao-realtime",
-                  capability.supportsTranscript else { throw AssistantError.upgradeRequired }
+            guard capability.profileSchema >= profile.schema, DeviceAssistantProtocol.supportsTextAssistant(capability) else { throw AssistantError.upgradeRequired }
             supportsAssistant = true
             let data = try profile.deviceData(secrets: secrets)
             try await upload(data: data, kind: "profile", revision: profile.revision, maximum: capability.maximum)
@@ -72,7 +75,7 @@ import Observation
     private func transferPet(_ data:Data, revision:UInt32) async throws {
         let capability = try await request([], op:"capabilities")
         guard capability.schema == 1 else { throw AssistantError.upgradeRequired }
-        guard capability.petFormat == "aora-bundle-v2" else { throw AssistantError.upgradeRequired }
+        guard capability.petFormat == "aora-bundle-v2", capability.supportsSinglePetAsset else { throw AssistantError.upgradeRequired }
         try await upload(data:data,kind:"pet",revision:revision,maximum:capability.petMaximum)
         receive(try await request([],op:"status"))
         guard appliedPetRevision == revision else { throw AssistantError.deliveryUnknown }
@@ -80,6 +83,10 @@ import Observation
 
     func setMode(_ value: String) { perform { [self] in
         guard value == "standalone" || value == "companion" else { throw AssistantError.invalidProfile }
+        if value == "standalone" {
+            let capability=try await request([],op:"capabilities")
+            guard DeviceAssistantProtocol.supportsTextAssistant(capability) else { throw AssistantError.upgradeRequired }
+        }
         let boot = link.deviceBootID
         let acknowledgment = try await request([("value", .string(value))], op: "mode")
         receive(acknowledgment)
@@ -117,7 +124,8 @@ import Observation
             offset = end
             progress = Double(offset) / Double(data.count)
         }
-        _ = try await request([], op: "commit", revision: revision, offset: data.count)
+        let committed = try await request([], op: "commit", revision: revision, offset: data.count)
+        guard committed.retiredClean == true else { throw AssistantError.resourceCleanupPending }
     }
 
     /// 每次异步回执后检查取消，旧事务不得继续上传或覆盖新事务进度。

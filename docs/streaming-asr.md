@@ -1,12 +1,12 @@
 # AI 助理录音期实时识别
 
-Mac助手使用豆包 WebSocket实时识别，MiniMax仅用于朗读。正式调用链：
+Mac助手使用豆包 WebSocket实时识别，朗读在0.5暂停，回复只显示文字。正式调用链：
 
 `AppState → AssistantRecognitionFactory → StreamingCloudSession + VolcengineCodec → AssistantController.beginRecording → AudioSource.onSamples → ASRSession.feed → partial/句final → onTranscript(text,false)`。
 
 释放按键或达到录音上限后：
 
-`AssistantController.endRecording → 关闭采音gate → ASRSession.finish → 等协议终包与events关闭/消费收敛 → onTranscript(完整文本,true) → 原目的地AgentHub或DeepSeek → MiniMax TTS`。
+`AssistantController.endRecording → 关闭采音gate → ASRSession.finish → 等协议终包与events关闭/消费收敛 → onTranscript(完整文本,true) → 原目的地AgentHub或DeepSeek → 文字回复`。
 
 `TranscriptEvent.final`仅代表一句已定稿；录音期间累积句final和替换当前partial，仍只发`final=false`。完整session确认、无failure且非空后才发一次`final=true`，防止第一句提前冻结设备字幕。Controller不再缓存完整录音或调用MiniMax文件ASR。
 
@@ -22,7 +22,7 @@ Mac助手使用豆包 WebSocket实时识别，MiniMax仅用于朗读。正式调
 
 `BUILD_ONLY=1 app/scripts/test-cloud-live.sh <报告.json>`只编译live工具，不读取凭据、不调用服务。
 
-显式运行`app/scripts/test-cloud-live.sh <报告.json>`会调用少量DeepSeek与MiniMax TTS。豆包只在显式追加`--synthetic-realtime-asr-audio <合成测试音频.wav>`时调用；以20ms节奏流式发送，报告partial/句final/采音中更新次数和完整收敛结果，不保存识别正文或文件路径。以上真实服务调用会产生供应商用量，应只在专用合成夹具上运行。
+显式运行`app/scripts/test-cloud-live.sh <报告.json>`只调用少量DeepSeek，当前不调用TTS。豆包只在显式追加`--synthetic-realtime-asr-audio <合成测试音频.wav>`时调用；以20ms节奏流式发送，报告partial/句final/采音中更新次数和完整收敛结果，不保存识别正文或文件路径。以上真实服务调用会产生供应商用量，应只在专用合成夹具上运行。
 
 主机测试通过不代表服务账户、区域、网络、设备字幕或实机音质通过。真实豆包需本机配置有效Key及其已开通的资源ID，并分别验证partial、完整终包和取消。
 

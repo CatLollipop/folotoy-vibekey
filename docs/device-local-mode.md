@@ -40,3 +40,6 @@ SCALE=1 bash firmware/tools/ui-preview/run.sh run_mode
 ```
 
 当前静态文字121条、930次字形使用/221独立字符全部由现有Noto Sans SC/OFL字库解析，实际A8位图有墨迹，文本自然尺寸≤198×38。主机64位LVGL池峰值37520B，低于40KiB，仅作参考。手势/NVS/真实重启的测试属于固件模块；主机图不替代实体屏幕与按键验收。
+
+
+0.5候选的quiet边缘提示改用统一1px路径与暖中性色，无装饰点列或抖动；主锚点仍为70/170/270。正文显示时短上/下翻页，长上/下和OK语义不变。正文/模式菜单交互见[device-reply.md](device-reply.md)。

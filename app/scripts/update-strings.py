@@ -7,13 +7,18 @@
 - 缺少翻译的键会列出来并以非 0 退出,提醒补充 en.json。
 """
 import glob
+import argparse
 import json
 import re
 import sys
 from pathlib import Path
 
 root = Path(__file__).resolve().parent.parent
-derived = root / "build/DerivedData/Build/Intermediates.noindex/VibeKey.build/Debug/VibeKey.build/Objects-normal/arm64"
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--strings-dir", type=Path, help="使用隔离构建已提取的字符串，不重新构建应用")
+parser.add_argument("--output", type=Path, help="输出至指定路径，默认生成应用String Catalog")
+args = parser.parse_args()
+derived = args.strings_dir or root / "build/DerivedData/Build/Intermediates.noindex/VibeKey.build/Debug/VibeKey.build/Objects-normal/arm64"
 en = json.loads((root / "Localization/en.json").read_text(encoding="utf-8"))
 
 keys = set()
@@ -41,10 +46,10 @@ for key in sorted(keys):
     strings[key] = entry
 
 catalog = {"sourceLanguage": "zh-Hans", "strings": strings, "version": "1.0"}
-out = root / "VibeKey/Localizable.xcstrings"
+out = args.output or root / "VibeKey/Localizable.xcstrings"
 out.write_text(json.dumps(catalog, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 unused = sorted(set(en) - keys)
-print(f"{len(strings)} 条字符串写入 {out.relative_to(root)}")
+print(f"{len(strings)} 条字符串写入 {out.relative_to(root) if out.is_relative_to(root) else out}")
 if unused:
     print(f"en.json 里有 {len(unused)} 条已不再使用:", *unused, sep="\n  ")
 if missing:

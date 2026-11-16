@@ -140,6 +140,21 @@ nonisolated final class AgentMockURLProtocol: URLProtocol, @unchecked Sendable {
         try check(reducer.apply(pending,sessionID:"session_test")?.state == .waitingInput, "real approval not represented")
     }
     static func testDeviceAssistantProtocol() throws {
+        let replyText=String(repeating:"中文🙂\n\"\\\u{0001}",count:40)
+        let parts=try DeviceAssistantProtocol.replyChunks(replyText)
+        try check(parts.map{$0.text}.joined()==replyText,"Reply chunking changed UTF-8 text")
+        var replyOffset=0
+        for part in parts {
+            try check(part.offset==replyOffset && part.text.utf8.count<=64,"Reply offsets or chunk budget changed")
+            let fields=try DeviceAssistantProtocol.replyFields(.update,generation:UInt32.max,offset:part.offset,text:part.text)
+            let frame=try DeviceAssistantProtocol.encode(fields,op:"reply_update",requestID:UInt32.max)
+            try check(frame.count<=512,"Escaped reply frame exceeds device limit")
+            replyOffset += part.text.utf8.count
+        }
+        try check((try? DeviceAssistantProtocol.replyFields(.begin,generation:0)) == nil,"Reply generation zero accepted")
+        try check((try? DeviceAssistantProtocol.replyChunks(String(repeating:"x",count:4097))) == nil,"Oversized device reply accepted")
+        let bounded=DeviceAssistantProtocol.deviceReplyText(String(repeating:"中🙂",count:2000))
+        try check(bounded.utf8.count<=4096 && bounded.contains("电脑"),"Long desktop reply was silently truncated")
         let longText = String(repeating: "实时字幕🙂", count: 30) + "最后两个字"
         let subtitle = try DeviceAssistantProtocol.encodeTranscript(.update, generation: UInt32.max, text: longText, final: true)
         let subtitleValue = try JSONSerialization.jsonObject(with: subtitle) as! [String: Any]
@@ -149,9 +164,9 @@ nonisolated final class AgentMockURLProtocol: URLProtocol, @unchecked Sendable {
         try check(controls.count <= 512, "Transcript JSON escaping bypassed frame limit")
         do { _ = try DeviceAssistantProtocol.encodeTranscript(.begin, generation: 0); throw AgentAdapterError.invalidResponse }
         catch AssistantError.invalidProfile { }
-        let capabilityFrame = #"{"t":"assistant","op":"capabilities","ok":1,"rid":9,"schema":1,"profile_schema":2,"asr":"doubao-realtime","transcript":1}"#
+        let capabilityFrame = #"{"t":"assistant","op":"capabilities","ok":1,"rid":9,"schema":1,"profile_schema":2,"asr":"doubao-realtime","transcript":1,"reply_text":1,"tts":0,"single_pet":1,"retired_clean":1}"#
         guard case .assistant(let modern)? = DeviceMessage.parse(capabilityFrame) else { throw AgentAdapterError.invalidResponse }
-        try check(modern.profileSchema == 2 && modern.asrProvider == "doubao-realtime" && modern.supportsTranscript, "New streaming firmware capability lost")
+        try check(modern.profileSchema == 2 && modern.asrProvider == "doubao-realtime" && modern.supportsTranscript && modern.supportsReplyText && modern.supportsSinglePetAsset && modern.retiredClean == true && DeviceAssistantProtocol.supportsTextAssistant(modern), "New streaming firmware capability lost")
         let presentation = DeviceAssistantPresentation(target: .application, phase: .failed, error: .checkMac)
         let packet = try DeviceAssistantProtocol.encodePetState("alerting", presentation: presentation)
         let value = try JSONSerialization.jsonObject(with: packet) as! [String: Any]

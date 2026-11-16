@@ -6,15 +6,18 @@
 
 `AppState → PetController.start → NSPanel → PetWebRenderer → AoraPet.bundle/index.html → 安装全部主题 → createCharacter`。
 
-业务发布 `PetController.setState(PetState, caption:)`，只传语义状态。Mac 默认 `vector/solid`，可选择实际安装的全部 29 种官方画风：24 种 vector、3 种 pixel 与 2 种 kaomoji。`PetSettingsView → PetVisualSelector` 以用户参考图为依据，提供暗色中央实时预览、左侧画风栏、右侧颜色/脸型缩略图、下方四类 44 种表情及可搜索的全部 193 种外观横条；搜索支持中英角色名、主题名与 ID。画风偏好单独持久保存，仅影响桌面挂件；Passport 始终导出所选角色的 `pixel/dot`。改变外观先采用该角色的官方脸型和配色，之后仍可独立改选。选择表情会关闭“跟随会话状态”，固定显示该表情；重新打开跟随可恢复最新会话状态。选择进入持久偏好，桌面挂件和设备导出使用同一份角色/脸型/颜色/状态设置，不是仅修改预览。桌面显示、大小、置顶、穿透、减少动画以及设备显示、FPS/亮度保留原生控件；设置页的“同步到 Passport”复用 `AssistantDeviceSync.syncPet`，是否成功以事务 ACK/设备回读为准，未连接或正在同步时禁用。
+业务发布 `PetController.setState(PetState, caption:)`，只传语义状态。Mac 默认 `vector/solid`，可选择实际安装的全部 29 种官方画风：24 种 vector、3 种 pixel 与 2 种 kaomoji。`PetSettingsView → PetVisualSelector` 以用户参考图为依据，提供暗色中央实时预览、左侧画风栏、右侧颜色/脸型缩略图、下方四类 44 种表情及可搜索的全部 193 种外观横条；搜索支持中英角色名、主题名与 ID。画风偏好单独持久保存，仅影响桌面挂件；Passport 始终导出所选角色的 `pixel/dot`。改变外观先采用该角色的官方脸型和配色，之后仍可独立改选。选择表情会关闭“跟随会话状态”，固定显示该表情；重新打开跟随可恢复最新会话状态。选择进入持久偏好，桌面挂件和设备导出使用同一份角色/脸型/颜色/状态设置，不是仅修改预览。桌面显示、大小、置顶、穿透、减少动画以及设备显示、FPS/亮度都整合到同一暗色画布的设置抽屉；设置页的“同步到 Passport”复用 `AssistantDeviceSync.syncPet`，是否成功以事务 ACK/设备回读为准，未连接或正在同步时禁用。
 
-挂件是透明、不抢焦点的原生 `NSPanel`，支持显示、大小、置顶、鼠标穿透、减少动画、位置恢复。位置由 macOS 自动保存；隐藏、系统休眠或退出会暂停动画。挂件 WebView 是非持久数据容器，只加载随应用打包的资源，没有消息处理器。设置选择器使用独立的非持久 WKWebView，以严格白名单消息提交 cast/face/color/style/state/follow 六种选择意图；原生校验主 frame、本地页面 URL、键集合、字段类型/长度及目录 ID。只有中央角色持续播放；其余缩略图通过官方 `renderStaticSvgDataUrl` 静态生成，外观惰性加载，缓存最多 192 项。页面不接收对话正文、API 密钥或设备同步对象；两者 CSP 的 `connect-src 'none'` 均阻止联网。设置页关闭时销毁动画、观察器和消息 handler，拒绝外部导航，资源失败提供重新加载。选择舞台高 600px；低于 650px 的宿主启用紧凑行高和缩略图，在默认原生设置窗口首屏同时提供预览、表情和外观横条，其余原生配置在下方滚动。
+挂件是透明、不抢焦点的原生 `NSPanel`，支持显示、大小、置顶、鼠标穿透、减少动画、位置恢复。位置由 macOS 自动保存；隐藏、系统休眠或退出会暂停动画。挂件 WebView 是非持久数据容器，只加载随应用打包的资源，没有消息处理器。设置选择器使用独立的非持久 WKWebView，以严格白名单消息提交 cast/face/color/style/state/follow 六种选择意图；原生校验主 frame、本地页面 URL、键集合、字段类型/长度及目录 ID。只有中央角色持续播放；其余缩略图通过官方 `renderStaticSvgDataUrl` 静态生成，外观惰性加载，缓存最多 192 项。页面不接收对话正文、API 密钥或设备同步对象；两者 CSP 的 `connect-src 'none'` 均阻止联网。设置页关闭时销毁动画、观察器和消息 handler，拒绝外部导航，资源失败提供重新加载。画布高度由原生设置容器随窗口传入：`canvasHeight = max(560, min(820, settingsHeight - 98))`，逻辑高度范围为 560–820；组件未传参数时默认 600，默认窗口约 600，不再固定为 600。CSS 在宿主高度≤650px 时启用紧凑行高和缩略图，较高窗口使用宽松布局；目标是默认窗口首屏同时提供预览、表情和外观横条，抽屉设置在其内部有界滚动。高度来源为 `SettingsView → PetSettingsView(canvasHeight:) → PetVisualSelector`。
 
 ## 设备调用链
+
+桌面与设备的全部参数现位于选择器内“设置”抽屉，原生卡片已移除。桌面/Passport页签包含显示、大小、置顶、穿透、减少动画、恢复位置、FPS、亮度和同步/回执。设置写入通过额外的typed意图校验CFBoolean、整数范围与步进；不能选择任意UserDefaults键。位置恢复、同步和固定署名链接分别使用无参数白名单意图，页面拿不到事务对象或凭据。快速滑动保留本地待确认值，旧原生回推不能拉回滑块；抽屉有界滚动、关闭按钮固定，Esc/Tab边界和关闭焦点恢复完整。
 
 `PetController.makeDeviceConfiguration(revision:) async → 官方 createSimulation/关键轮廓导出 → AORAPET2 → 事务分片同步/Flash bank → mmap → ib_pet_load_bundle → C状态机 → 官方数值behaviour → 120Hz春簧积分 → 几何插值/眨眼 → 覆盖率栅格 → ib_pet_pixel_fn → LVGL点阵视图`。
 
 - `exporter.js` 从选中角色真实 `body.outline/body.parts` 与脸型 `frame.face.geometry` 导出轮廓、带孔图层、配色、每个状态的表情姿态池、眨眼和轮换区间。轮廓采用 Q6 坐标与有界简化；不是预烘动画帧，不需要 Mac 持续传帧。全部 193×16 组合均可导出，最大 83584 B，低于 128 KiB 上限。
+- 0.5设备同步要求 `single_pet` 能力，只有新资源提交、活动mmap切换并释放旧映射后，才擦除旧inactive bank并校验全量空白；`retired_clean=1` 才表示旧持久资源回收完成。清理失败保留新active与明确错误，不误报同步完成。Flash仍保留事务staging能力，不能把旧bank回收称为RAM扩容；不影响193角色的Mac离线选择目录。
 - `ib_pet_bundle.c` 是无 LVGL/IDF 依赖的纯格式验证器，检查总长、revision、设置范围、段顺序、计数、轮廓和姿态索引。验证失败不改变活动资产。
 - `ib_pet_load_bundle` 仅保留已提交只读 mmap 指针，缓存当前状态的小表；不分配或复制大包。调用方在 UI 锁内完成切换后才能解除旧映射。`ib_pet_load_bundle(NULL,0)` 恢复内置 Dot 并取消旧指针引用。旧设备 JSON 由外层存储模块兼容为内置 Dot；不接受用户此前 NX 表情 JSON。
 - `ib_pet_motion.c` 移植官方 `behaviours.ts` 与 `spring.ts` 公式，设备实时计算位移、倾斜、压缩、弹簧和眨眼；半隐式 Euler 子步长与上游相同为 `1/120 s`。`ib_pet.c` 支持动态身体部件、自有色配件、16 类脸型图层与关键姿态轮换。
@@ -50,8 +53,14 @@ Host 覆盖内置 44 态、132 组官方 motion 黄金值（误差<`1e-4`）、�
 
 2026-11-16 宠物选择器通过 Swift 6 类型检查和离线 WKWebView 的 527px 中文 / 840px 英文交互回归：角色、脸型、画风、固定表情、搜索均更新真实原生偏好；畸形/越权意图拒绝。29 种官方静态画风各不同，切换全部画风后设备样本包 29364 B 逐字节不变。机械 detector 无发现；暗色舞台说明文字对背景对比度为 8.38–9.15:1。证据为 `work/pet-qa/selector-527-zh-Hans.png`、`selector-840-en.png` 与 `selector-qa.json`；最终原生设置窗口与打包应用检查由主集成流程完成。
 
-此前实际离线 WKWebView 读取全目录、切换 Dot/capsule、Miso/shades、Christmas tree/sparkle、Goat/screen 的角色/脸型/状态并成功导出完整包，15–81 KiB 导出耗时37–82 ms（本机一次测量）。整页浅深主题截图使用真实窗口背景，小说明使用 `Color.primary.opacity(0.72)`，保留已验证的≥4.5:1对比度。固件同份 LVGL/C 主机预览验证七个内置状态、导航叠层和五个动态角色的在线/离线外观；主机64位 LVGL 池峰值36936 B，仅作参考。整机屏幕、音频与并发内存仍需真实设备验收。
+此前实际离线 WKWebView 读取全目录、切换 Dot/capsule、Miso/shades、Christmas tree/sparkle、Goat/screen 的角色/脸型/状态并成功导出完整包，15–81 KiB 导出耗时37–82 ms（本机一次测量）。早期原生设置卡片的浅深主题截图使用真实窗口背景，小说明使用 `Color.primary.opacity(0.72)`，保留已验证的≥4.5:1对比度。固件同份 LVGL/C 主机预览验证七个内置状态、导航叠层和五个动态角色的在线/离线外观；主机64位 LVGL 池峰值36936 B，仅作参考。整机屏幕、音频与并发内存仍需真实设备验收。
 
 ## 第三方许可
 
 保留 `vendor/aora-bot/LICENSE` 和 bundle 原许可，使用 Aora Bot License 1.1。个人与符合许可定义的免费使用者可集成到产品及硬件；公开分发时保留源码许可，并在关于、README 或第三方声明链接署名 **Powered by Aora Bot**。本项目其他代码的 MIT 许可不覆盖 Aora 内容。
+
+
+2026-11-16 内嵌设置回归使用独立偏好与模拟同步回调，不连接设备：真实离线WK覆盖527px中文/840px英文的全部开关/大小/FPS/亮度绑定、同步busy与重复/离线拦截、非法类型/范围拒绝和Esc焦点恢复。`work/pet-qa/drawer-qa.json`及`drawer-{desktop,device}-527-zh-Hans.png`、`drawer-device-840-en.png`为本轮证据；截图中的Fixture receipt仅为UI夹具，实际设备ACK由主集成验证。
+
+
+0.5交付范围说明：旧版浅深卡片图、0.3.x/0.4录音与朗读记录均为版本化历史证据。新暗色一体抽屉及自适应560–820高度、设备完整文字回复、移除时间栏、冷启动首帧与单宠物回收的当前真机结果，以主集成最终验收为准；既有离线WK/LVGL夹具不替代该结论。

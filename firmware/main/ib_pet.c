@@ -349,6 +349,10 @@ bool ib_pet_render(uint32_t now,ib_pet_pixel_fn pixel,void *context){
     ib_pet_step_spring(&pet.squash,dt);ib_pet_step_spring(&pet.blink,dt);ib_pet_step_spring(&pet.morph,dt);
     raster(false,pixel,context);return true;
 }
+bool ib_pet_render_current(ib_pet_pixel_fn pixel,void *context){
+    if(!pixel)return false;
+    raster(false,pixel,context);return true;
+}
 void ib_pet_render_static(ib_pet_state_t state,ib_pet_pixel_fn pixel,void *context){
     if(!pixel||state<0||state>=IB_PET_STATE_COUNT)return;
     ib_pet_state_t saved_state=pet.state;uint16_t saved=pet.pose;pet.state=state;refresh_definition();pet.pose=definition()->poses[0];raster(true,pixel,context);pet.state=saved_state;refresh_definition();pet.pose=saved;

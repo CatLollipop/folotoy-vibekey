@@ -31,10 +31,16 @@
 static const esp_partition_t *s_scratch;
 static ib_assistant_status_cb s_status;
 static void *s_context;
+static bool (*s_reply_apply)(void *);
+static void *s_reply_apply_context;
+static uint32_t s_reply_generation;
+static bool s_reply_invalid;
+void ib_assistant_set_reply_apply(bool (*apply)(void *),void *context){s_reply_apply=apply;s_reply_apply_context=context;}
 static SemaphoreHandle_t s_control;
 static TaskHandle_t s_worker,s_reader;
 static StreamBufferHandle_t s_samples;
 static volatile bool s_capture_done;
+static bool s_capture_active;
 static bool s_available;
 static bool s_comp_cloud,s_comp_has_phase,s_comp_owner;
 static const char *s_comp_error="";
@@ -82,13 +88,20 @@ bool ib_assistant_standalone(void){return s_mode;}
 bool ib_assistant_busy(void){return s_busy;}
 ib_assistant_state_t ib_assistant_state(void){return s_state;}
 static bool cancelled(void){return s_cancel||!s_mode;}
-static void text_update(const char *text){if(s_state!=IB_ASSIST_REPLYING)state(IB_ASSIST_REPLYING,text);else if(s_status)s_status(IB_ASSIST_REPLYING,text,s_context);}
+// 只描述reader采集期；松键/取消立即变灰，不把Flash drain或WSS等待误报为仍在录音。
+bool ib_assistant_capture_active(void){return s_mode&&!s_stop&&!cancelled()&&__atomic_load_n(&s_capture_active,__ATOMIC_ACQUIRE);}
+static void text_update(const char *text){
+    if(cancelled())return;
+    if(!ib_reply_store_publish(s_reply_generation,strlen(text)))s_reply_invalid=true;
+    if(s_state!=IB_ASSIST_REPLYING)state(IB_ASSIST_REPLYING,text);else if(s_status)s_status(IB_ASSIST_REPLYING,text,s_context);
+}
 // 采音与Flash写入分任务：6KiB预分配队列约192ms，加I2S DMA90ms覆盖实测140ms写延迟。
 // 只允许单producer/consumer；所有退出等写者drain后才释放队列/codec。
 static void reader(void *unused){
     (void)unused;int16_t pcm[PCM_BLOCK/2];size_t captured=0;
     size_t max=ib_assistant_profile()->record_limit_seconds*32000u;
     uint32_t overflow_start=bsp_audio_rx_overflows();
+    __atomic_store_n(&s_capture_active,true,__ATOMIC_RELEASE);
     while(!s_stop&&!cancelled()&&captured<max){
         if(bsp_audio_read(pcm,sizeof(pcm))!=ESP_OK){s_record_error=true;break;}
         size_t n=max-captured<sizeof(pcm)?max-captured:sizeof(pcm);
@@ -98,6 +111,7 @@ static void reader(void *unused){
         captured+=n;s_capture_overflows=bsp_audio_rx_overflows()-overflow_start;
         if(s_capture_overflows){s_record_error=true;break;}
     }
+    __atomic_store_n(&s_capture_active,false,__ATOMIC_RELEASE);
     s_capture_overflows=bsp_audio_rx_overflows()-overflow_start;if(s_capture_overflows)s_record_error=true;
     s_capture_stack_min_bytes=uxTaskGetStackHighWaterMark(NULL);
     s_reader=NULL;__atomic_store_n(&s_capture_done,true,__ATOMIC_RELEASE);vTaskDelete(NULL);
@@ -172,7 +186,7 @@ static void worker(void *unused){
         if(!s_mode||s_busy||ib_assistant_store_uploading()){xSemaphoreGive(s_control);continue;}
         if(!ib_assistant_store_configured()){state(IB_ASSIST_ERROR,"profile_required");xSemaphoreGive(s_control);continue;}
         if(!s_prepared){state(IB_ASSIST_ERROR,"recording_not_ready");xSemaphoreGive(s_control);continue;}
-        s_busy=true;last_error_clear();xSemaphoreGive(s_control);const char *error=NULL;char *transcript=NULL,*reply=NULL;size_t reply_capacity=4097;
+        s_busy=true;last_error_clear();ib_reply_store_clear(0);transcript_clear(0);xSemaphoreGive(s_control);const char *error=NULL;char *transcript=NULL,*reply=NULL;bool reply_started=false;
         if(!ib_wifi_is_ready())error="wifi_unavailable";
         if(!error && !ib_wifi_companion_released()) {
             ib_wifi_set_companion_enabled(false);
@@ -182,18 +196,19 @@ static void worker(void *unused){
         const ib_assistant_profile_t *p=ib_assistant_profile();
         if(!error){transcript=calloc(1,4096);if(!transcript)error="out_of_memory";}
         if(!error)error=record_realtime(p,transcript,4096);
-        if(!error){reply=calloc(1,4097);if(!reply)error="out_of_memory";}
+        if(!error){
+            ib_reply_snapshot_t prior;ib_reply_store_snapshot(&prior);s_reply_generation=prior.generation+1;if(!s_reply_generation)s_reply_generation=1;
+            error=ib_reply_store_begin(s_reply_generation,&reply);reply_started=!error;s_reply_invalid=false;
+        }
         if(!error){state(IB_ASSIST_THINKING,transcript);error=ib_assistant_cloud_reply(p,transcript,reply,4097,cancelled,text_update);}
         if(transcript){memset(transcript,0,4096);free(transcript);transcript=NULL;}
-        if(!error){
-            size_t needed=strlen(reply)+1;char *smaller=realloc(reply,needed);
-            if(smaller){reply=smaller;reply_capacity=needed;}
-            state(IB_ASSIST_SPEAKING,reply);
-            if(ib_audio_pcm_begin()!=ESP_OK)error="audio_busy";
-            else{error=ib_assistant_cloud_tts(p,reply,cancelled);ib_audio_pcm_end();}
+        if(!error&&cancelled())error="cancelled";
+        if(!error&&s_reply_invalid)error="invalid_reply";
+        if(reply_started){
+            if(!ib_reply_store_worker_end(s_reply_generation,!error)&&!error)error=cancelled()?"cancelled":"empty_reply";
+            reply=NULL; // 成功时store持有唯一4KiB正文；失败时store已安全释放。
         }
         s_slot=1-s_slot;s_prepared=false;s_busy=false;s_record=false;
-        if(reply){memset(reply,0,reply_capacity);free(reply);}
         if(error){transcript_clear(0);state(!strcmp(error,"cancelled")?IB_ASSIST_STOPPED:IB_ASSIST_ERROR,error);}
         else state(IB_ASSIST_DONE,"DONE");
         if(!(s_restart_while_held&&s_button_held))ulTaskNotifyTake(pdTRUE,pdMS_TO_TICKS(1200));
@@ -209,8 +224,8 @@ void ib_assistant_press(void){
     s_cancel=false;s_press_pending=true;if(s_worker)xTaskNotifyGive(s_worker);
 }
 void ib_assistant_release(void){s_button_held=false;s_stop=true;}
-void ib_assistant_cancel(void){s_restart_while_held=false;s_cancel=s_stop=true;ib_audio_pcm_interrupt();ib_assistant_cloud_cancel();ib_asr_realtime_cancel();transcript_clear(0);}
-void ib_assistant_clear_history(void){s_forget=true;if(s_worker)xTaskNotifyGive(s_worker);}
+void ib_assistant_cancel(void){s_restart_while_held=false;s_cancel=s_stop=true;ib_audio_pcm_interrupt();ib_assistant_cloud_cancel();ib_asr_realtime_cancel();transcript_clear(0);ib_reply_store_clear(0);}
+void ib_assistant_clear_history(void){s_forget=true;ib_reply_store_clear(0);transcript_clear(0);if(s_worker)xTaskNotifyGive(s_worker);}
 static void companion_present(const char *name,bool has_phase,ib_assistant_state_t phase){
     if(s_mode||s_busy||!s_status)return;
     ib_assistant_state_t st=IB_ASSIST_IDLE;
@@ -228,7 +243,7 @@ static void companion_present(const char *name,bool has_phase,ib_assistant_state
 void ib_assistant_companion_state(const char *name){if(!s_comp_owner)companion_present(name,false,IB_ASSIST_IDLE);}
 void ib_assistant_companion_release(void){
     bool changed=s_comp_owner||s_comp_cloud||s_comp_has_phase||s_comp_error[0];
-    s_comp_owner=s_comp_cloud=s_comp_has_phase=false;s_comp_error="";if(changed)transcript_clear(0);
+    s_comp_owner=s_comp_cloud=s_comp_has_phase=false;s_comp_error="";if(changed){transcript_clear(0);ib_reply_store_clear(0);}
     if(changed&&!s_mode&&!s_busy){s_state=IB_ASSIST_IDLE;if(s_status)s_status(s_state,"idle",s_context);}
 }
 bool ib_assistant_companion_cloud_target(void){return s_comp_cloud;}
@@ -253,6 +268,12 @@ const char *ib_assistant_request_mode(bool standalone){
     if(xSemaphoreTake(s_control,pdMS_TO_TICKS(50))!=pdTRUE)return "busy";
     const char *error=mode_request_locked(standalone);xSemaphoreGive(s_control);if(s_worker)xTaskNotifyGive(s_worker);return error;
 }
+void ib_assistant_maintenance(void){
+    if(!s_control||s_busy||ib_audio_mic_active())return;
+    if(xSemaphoreTake(s_control,0)!=pdTRUE)return;
+    if(!s_busy&&!ib_audio_mic_active()&&ib_assistant_store_apply())(void)ib_assistant_store_cleanup();
+    xSemaphoreGive(s_control);
+}
 bool ib_assistant_handle_line(ib_link_t link,const char *line,size_t length){
     if(!line||length>511)return false;
     cJSON *o=cJSON_ParseWithLength(line,length);if(!o)return false;
@@ -260,7 +281,7 @@ bool ib_assistant_handle_line(ib_link_t link,const char *line,size_t length){
     if(!cJSON_IsString(command)||strcmp(command->valuestring,"assistant")){cJSON_Delete(o);return false;}
     const char *op=cJSON_IsString(operation)?operation->valuestring:"invalid";
     for(const char *p=op;*p;p++)if(!((*p>='a'&&*p<='z')||*p=='_')){op="invalid";break;}
-    uint32_t rid=0;uint_field(o,"rid",&rid);
+    uint32_t rid=0,reply_request_generation=0;uint_field(o,"rid",&rid);uint_field(o,"generation",&reply_request_generation);
     const char *error=NULL;char response[511];
     if(link==IB_LINK_BLE){cJSON_Delete(o);return true;}
     if(!s_control){cJSON_Delete(o);return true;}
@@ -269,6 +290,13 @@ bool ib_assistant_handle_line(ib_link_t link,const char *line,size_t length){
         ib_asr_diagnostics_t d;ib_asr_realtime_diagnostics(&d);
         snprintf(response,sizeof(response),"{\"t\":\"assistant\",\"op\":\"asr_diagnostics\",\"rid\":%lu,\"ok\":1,\"port\":%d,\"connect_result\":%d,\"connect_errno\":%d,\"tls_error\":%d,\"tls_stack\":%d,\"tls_flags\":%d,\"http_code\":%d,\"error_type\":%d,\"ws_error\":%d,\"ws_stack\":%d,\"ws_flags\":%d,\"socket_errno\":%d,\"io_stage\":%d,\"io_result\":%d,\"io_errno\":%d}\n",
             (unsigned long)rid,d.connect_port,d.connect_result,d.connect_errno,d.tls_error,d.tls_stack,d.tls_flags,d.http_code,d.error_type,d.ws_error,d.ws_stack,d.ws_flags,d.socket_errno,d.io_stage,d.io_result,d.io_errno);
+        xSemaphoreGive(s_control);reply_to(link,response);cJSON_Delete(o);return true;
+    }
+    if(!strcmp(op,"reply_status")){
+        // 只读元数据，不读正文、不触碰LVGL；后台预擦除不改变这些保留状态。
+        ib_reply_snapshot_t view;ib_reply_store_snapshot(&view);
+        snprintf(response,sizeof(response),"{\"t\":\"assistant\",\"op\":\"reply_status\",\"rid\":%lu,\"ok\":1,\"generation\":%lu,\"revision\":%lu,\"length\":%u,\"active\":%d,\"final\":%d,\"state\":\"%s\",\"capture_active\":%d}\n",
+            (unsigned long)rid,(unsigned long)view.generation,(unsigned long)view.revision,(unsigned)view.length,view.active,view.final,ib_assistant_state_name(s_state),ib_assistant_capture_active());
         xSemaphoreGive(s_control);reply_to(link,response);cJSON_Delete(o);return true;
     }
     if(!strcmp(op,"asr_status")){
@@ -293,7 +321,7 @@ bool ib_assistant_handle_line(ib_link_t link,const char *line,size_t length){
     }
     if(!strcmp(op,"capabilities")){
         char last_error[48];last_error_copy(last_error);
-        snprintf(response,sizeof(response),"{\"t\":\"assistant\",\"op\":\"%s\",\"rid\":%lu,\"ok\":1,\"schema\":1,\"profile_schema\":2,\"asr\":\"doubao-realtime\",\"transcript\":1,\"max\":16384,\"pet_max\":131072,\"pet_format\":\"aora-bundle-v2\",\"chunk\":288,\"profile\":1,\"pet\":1,\"standalone\":%d,\"run_menu\":1,\"owner\":%d,\"mode\":\"%s\",\"state\":\"%s\",\"configured\":%d,\"rev\":%lu,\"pet_rev\":%lu,\"last_error\":\"%s\"}\n",op,(unsigned long)rid,s_available,s_comp_owner,s_mode?"standalone":"companion",ib_assistant_state_name(s_state),ib_assistant_store_configured(),(unsigned long)ib_assistant_store_revision(false),(unsigned long)ib_assistant_store_revision(true),last_error);
+        snprintf(response,sizeof(response),"{\"t\":\"assistant\",\"op\":\"%s\",\"rid\":%lu,\"ok\":1,\"schema\":1,\"profile_schema\":2,\"asr\":\"doubao-realtime\",\"transcript\":1,\"tts\":0,\"reply_text\":1,\"display_ready\":%d,\"retired_clean\":%d,\"single_pet\":1,\"max\":16384,\"pet_max\":131072,\"pet_format\":\"aora-bundle-v2\",\"chunk\":288,\"profile\":1,\"pet\":1,\"standalone\":%d,\"run_menu\":1,\"owner\":%d,\"mode\":\"%s\",\"state\":\"%s\",\"configured\":%d,\"rev\":%lu,\"pet_rev\":%lu,\"last_error\":\"%s\"}\n",op,(unsigned long)rid,ib_app_display_ready(),ib_assistant_store_retired_clean(),s_available,s_comp_owner,s_mode?"standalone":"companion",ib_assistant_state_name(s_state),ib_assistant_store_configured(),(unsigned long)ib_assistant_store_revision(false),(unsigned long)ib_assistant_store_revision(true),last_error);
         xSemaphoreGive(s_control);reply_to(link,response);cJSON_Delete(o);return true;
     }
     if(!s_available)error="unavailable";
@@ -309,7 +337,7 @@ bool ib_assistant_handle_line(ib_link_t link,const char *line,size_t length){
         else{
             s_comp_owner=target!=NULL;s_comp_cloud=target&&!strcmp(target->valuestring,"cloud");
             s_comp_error=detail&&detail->valuestring[0]?"check_mac":"";
-            if(selected==IB_ASSIST_ERROR||selected==IB_ASSIST_STOPPED)transcript_clear(0);
+            if(selected==IB_ASSIST_ERROR||selected==IB_ASSIST_STOPPED){transcript_clear(0);ib_reply_store_clear(0);}
             companion_present(value->valuestring,phase!=NULL,selected>=0?(ib_assistant_state_t)selected:IB_ASSIST_IDLE);
         }
 
@@ -324,6 +352,20 @@ bool ib_assistant_handle_line(ib_link_t link,const char *line,size_t length){
             bool valid_final=cJSON_IsBool(final)||uint_field(o,"final",&numeric);
             if(!cJSON_IsString(value)||strlen(value->valuestring)>IB_TRANSCRIPT_VIEW_BYTES||!valid_final||(!cJSON_IsBool(final)&&numeric>1))error="invalid_transcript";
             else if(!transcript_update(generation,value->valuestring,cJSON_IsBool(final)?cJSON_IsTrue(final):numeric==1))error="stale_generation";
+        }
+    }else if(!strcmp(op,"reply_begin")||!strcmp(op,"reply_update")||!strcmp(op,"reply_final")||!strcmp(op,"reply_clear")){
+        uint32_t generation=0;
+        if(s_mode||s_busy)error="busy";
+        else if(!uint_field(o,"generation",&generation)||(!generation&&strcmp(op,"reply_clear")))error="invalid_generation";
+        else if(!strcmp(op,"reply_begin"))error=ib_reply_store_begin(generation,NULL);
+        else if(!strcmp(op,"reply_clear")){ib_reply_store_clear(generation);if(s_reply_apply&&!s_reply_apply(s_reply_apply_context))error="reply_pending";}
+        else if(!strcmp(op,"reply_final")){
+            uint32_t size=0;if(!uint_field(o,"size",&size)||size>IB_REPLY_TEXT_MAX)error="invalid_size";
+            else{error=ib_reply_store_final(generation,size);if(!error&&(!s_reply_apply||!s_reply_apply(s_reply_apply_context)))error="reply_pending";}
+        }else{
+            cJSON *value=cJSON_GetObjectItemCaseSensitive(o,"text");uint32_t offset=0;
+            if(!cJSON_IsString(value)||!uint_field(o,"off",&offset))error="invalid_reply";
+            else error=ib_reply_store_append(generation,offset,value->valuestring,strlen(value->valuestring));
         }
     }else if(s_busy || ib_audio_mic_active())error="busy";
     else if(!strcmp(op,"begin")){
@@ -350,14 +392,19 @@ bool ib_assistant_handle_line(ib_link_t link,const char *line,size_t length){
     }else error="unknown_operation";
     xSemaphoreGive(s_control);
 respond:
+    if(!strncmp(op,"reply_",6)){
+        ib_reply_snapshot_t view;ib_reply_store_snapshot(&view);
+        snprintf(response,sizeof(response),"{\"t\":\"assistant\",\"op\":\"%s\",\"rid\":%lu,\"ok\":%d,\"generation\":%lu,\"off\":%u,\"final\":%d,\"error\":\"%s\"}\n",strlen(op)<24?op:"invalid",(unsigned long)rid,error?0:1,(unsigned long)reply_request_generation,(unsigned)view.length,view.final,error?error:"");
+        reply_to(link,response);cJSON_Delete(o);return true;
+    }
     bool upload_op=!strcmp(op,"begin")||!strcmp(op,"chunk")||!strcmp(op,"commit");
-    snprintf(response,sizeof(response),"{\"t\":\"assistant\",\"op\":\"%s\",\"rid\":%lu,\"ok\":%d,\"mode\":\"%s\",\"configured\":%d,\"rev\":%lu,\"pet_rev\":%lu,\"off\":%u,\"restarting\":%d,\"owner\":%d,\"error\":\"%s\"}\n",strlen(op)<24?op:"invalid",(unsigned long)rid,error?0:1,s_mode?"standalone":"companion",ib_assistant_store_configured(),(unsigned long)(upload_op?ib_assistant_store_upload_revision():ib_assistant_store_revision(false)),(unsigned long)ib_assistant_store_revision(true),(unsigned)ib_assistant_store_offset(),s_restart_requested,s_comp_owner,error?error:"");
+    snprintf(response,sizeof(response),"{\"t\":\"assistant\",\"op\":\"%s\",\"rid\":%lu,\"ok\":%d,\"mode\":\"%s\",\"configured\":%d,\"rev\":%lu,\"pet_rev\":%lu,\"off\":%u,\"restarting\":%d,\"owner\":%d,\"retired_clean\":%d,\"error\":\"%s\"}\n",strlen(op)<24?op:"invalid",(unsigned long)rid,error?0:1,s_mode?"standalone":"companion",ib_assistant_store_configured(),(unsigned long)(upload_op?ib_assistant_store_upload_revision():ib_assistant_store_revision(false)),(unsigned long)ib_assistant_store_revision(true),(unsigned)ib_assistant_store_offset(),s_restart_requested,s_comp_owner,ib_assistant_store_retired_clean(),error?error:"");
     reply_to(link,response);cJSON_Delete(o);if(s_worker)xTaskNotifyGive(s_worker);return true;
 }
 esp_err_t ib_assistant_init(ib_assistant_status_cb cb,void *context){
     ib_assistant_cloud_init();ib_asr_realtime_init();
     s_status=cb;s_context=context;s_control=xSemaphoreCreateMutex();if(!s_control)return ESP_ERR_NO_MEM;
-    esp_err_t e=ib_assistant_store_init();if(e!=ESP_OK)return e;
+    esp_err_t e=ib_assistant_store_ready()?ESP_OK:ib_assistant_store_init();if(e!=ESP_OK)return e;
     s_scratch=esp_partition_find_first(ESP_PARTITION_TYPE_DATA,0x42,"audio_scratch");
     if(!s_scratch||s_scratch->size!=2*SLOT_SIZE||s_scratch->address<0x35A000)return ESP_ERR_INVALID_SIZE;
     s_available=true;s_mode=ib_assistant_mode_load();ib_wifi_set_companion_enabled(!s_mode);

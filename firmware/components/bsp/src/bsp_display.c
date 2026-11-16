@@ -147,3 +147,9 @@ void bsp_display_backlight(uint8_t percent) {
     ledc_set_duty(BSP_BL_LEDC_MODE, BSP_BL_LEDC_CHANNEL, duty);
     ledc_update_duty(BSP_BL_LEDC_MODE, BSP_BL_LEDC_CHANNEL);
 }
+
+// IDF tx_param先回收所有queued SPI color事务；负cmd+空payload仅做完成屏障。
+esp_err_t bsp_display_wait_idle(void){
+    if(!s_io)return ESP_ERR_INVALID_STATE;
+    return esp_lcd_panel_io_tx_param(s_io,-1,NULL,0);
+}

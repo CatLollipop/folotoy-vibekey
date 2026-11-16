@@ -8,6 +8,9 @@
 #include "preview_scenarios.h"
 
 #include "ib_ui.h"
+#include "lvgl.h"
+#include "ib_reply_store.h"
+#include "ib_cloud_stream.h"
 #include "preview_host.h"
 
 #include <stdio.h>
@@ -488,5 +491,120 @@ int preview_run_scenarios(const char *out_dir, int scale, const char *filter)
     ib_ui_pet_assistant_state("powering-down",IB_UI_ASSIST_STOPPED,true,NULL);
     preview_advance(400);shot("transcript_fixture_cancel_clears");
 
+    // 真实生产store + LVGL reader生命周期；正文是明确的离线布局夹具，不是模型输出。
+    static const char reply[]="这是一段完整回复的离线布局测试正文。请使用上键和下键逐页阅读全部内容，不会只保留末尾两行。第二级汉字亍丕乜卮氐胤爰甬，与emoji🙂和生僻字龘也要占据明确字宽，缺字用方框显示。\n第二段包含完整的中文说明与EnglishWordsWithoutSpaces1234567890。页面应保持上方宠物完整可见，底部不再出现绿色时间栏和分隔线。";
+    ib_ui_set_awake(true);ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");
+    ib_ui_set_assistant_key_hints(true,IB_UI_ASSIST_REPLYING);ib_ui_pet_assistant_state("composing",IB_UI_ASSIST_REPLYING,true,NULL);
+    ib_reply_store_clear(0);
+    if(ib_reply_store_begin(200,NULL)||!ib_ui_reply_begin(200))s_failures++;
+    size_t partial=ib_utf8_prefix(reply,strlen(reply),90);
+    if(ib_reply_store_append(200,0,reply,partial)||!ib_ui_reply_update(200,partial,false,ib_reply_store_read,NULL))s_failures++;
+    preview_advance(400);shot("reply_quiet_partial");
+    for(size_t offset=partial;offset<strlen(reply);){size_t length=ib_utf8_prefix(reply+offset,strlen(reply)-offset,192);
+        if(!length||ib_reply_store_append(200,offset,reply+offset,length)){s_failures++;break;}offset+=length;}
+    if(ib_reply_store_final(200,strlen(reply))||!ib_ui_reply_update(200,strlen(reply),true,ib_reply_store_read,NULL))s_failures++;
+    ib_ui_pet_assistant_state("happy",IB_UI_ASSIST_DONE,true,NULL);ib_ui_set_assistant_key_hints(true,IB_UI_ASSIST_DONE);
+    preview_advance(400);shot("reply_quiet_first_page");
+    if(!ib_ui_reply_page(1))s_failures++;preview_advance(400);shot("reply_quiet_next_page");
+    ib_ui_reply_page(9999);preview_advance(400);shot("reply_quiet_last_page");
+    if(!ib_ui_reply_update(200,strlen(reply),true,ib_reply_store_read,NULL))s_failures++; // 同一final回执重试幂等。
+    ib_ui_set_awake(false);shot("reply_quiet_final_frozen");
+    if(ib_ui_reply_update(200,partial,false,ib_reply_store_read,NULL))s_failures++;
+    shot("reply_quiet_late_partial_ignored");
+    ib_reply_store_clear(200);
+    if(ib_ui_reply_page(-1)||ib_ui_reply_visible())s_failures++; // reader失效后不得UAF或保留旧正文。
+    if(!ib_ui_reply_clear(200)||ib_reply_store_begin(201,NULL)||!ib_ui_reply_begin(201))s_failures++;
+    static const char next[]="新一轮回复，旧正文已经清理。";
+    if(ib_reply_store_append(201,0,next,strlen(next))||ib_reply_store_final(201,strlen(next))||
+       !ib_ui_reply_update(201,strlen(next),true,ib_reply_store_read,NULL))s_failures++;
+    ib_ui_set_awake(true);preview_advance(400);shot("reply_quiet_new_generation");
+    ib_ui_run_mode_menu(true,1,IB_UI_RUN_MODE_NOTICE_NONE);preview_advance(400);shot("reply_quiet_mode_menu");
+    ib_ui_run_mode_menu_hide();ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");
+    ib_ui_reply_clear(0);ib_reply_store_clear(0);
+    if(ib_reply_store_begin(0xf0000000u,NULL)||!ib_ui_reply_begin(0xf0000000u))s_failures++;
+    if(ib_reply_store_append(0xf0000000u,0,next,strlen(next))||ib_reply_store_final(0xf0000000u,strlen(next))||
+       !ib_ui_reply_update(0xf0000000u,strlen(next),true,ib_reply_store_read,NULL))s_failures++;
+    ib_ui_reply_clear(0);ib_reply_store_clear(0);
+    if(ib_reply_store_begin(3,NULL)||!ib_ui_reply_begin(3))s_failures++;
+    if(ib_reply_store_append(3,0,next,strlen(next))||ib_reply_store_final(3,strlen(next))||
+       !ib_ui_reply_update(3,strlen(next),true,ib_reply_store_read,NULL))s_failures++;
+    if(ib_ui_reply_update(0xf0000000u,strlen(next),true,ib_reply_store_read,NULL))s_failures++;
+    preview_advance(100);shot("reply_quiet_new_connection_small_generation");
+    ib_ui_reply_clear(0);ib_reply_store_clear(0);
+    ib_ui_set_assistant_key_hints(true,IB_UI_ASSIST_IDLE);ib_ui_pet_assistant_state("idle",IB_UI_ASSIST_IDLE,true,NULL);
+    if(!ib_ui_present_boot_frame())s_failures++;
+    preview_advance(100);shot("reply_quiet_idle_no_footer");
+    // 背光开启前强制提交所选猫的缓存，不能把上一次Dot缓存当作已选资产首帧。
+    char boot_path[512];snprintf(boot_path,sizeof(boot_path),"%s/miso-shades.aorapet",PREVIEW_PET_ASSETS);
+    FILE *boot_file=fopen(boot_path,"rb");
+    if(boot_file){
+        fseek(boot_file,0,SEEK_END);long boot_size=ftell(boot_file);rewind(boot_file);void *boot_data=malloc((size_t)boot_size);
+        if(!boot_data||fread(boot_data,1,(size_t)boot_size,boot_file)!=(size_t)boot_size||!ib_ui_pet_load(boot_data,(size_t)boot_size)||!ib_ui_present_boot_frame())s_failures++;
+        else shot("reply_quiet_selected_pet_boot_frame");
+        fclose(boot_file);ib_ui_pet_load(NULL,0);free(boot_data);
+    }else s_failures++;
+    // 成功轮次后真实worker会后台预擦下一录音槽：store revision不变，UI不得清正文。
+    ib_ui_reply_clear(0);ib_reply_store_clear(0);
+    ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");ib_ui_set_assistant_key_hints(true,IB_UI_ASSIST_DONE);
+    if(ib_reply_store_begin(500,NULL)||!ib_ui_reply_begin(500))s_failures++;
+    for(size_t offset=0;offset<strlen(reply);){size_t length=ib_utf8_prefix(reply+offset,strlen(reply)-offset,192);
+        if(!length||ib_reply_store_append(500,offset,reply+offset,length)){s_failures++;break;}offset+=length;}
+    if(ib_reply_store_final(500,strlen(reply))||!ib_ui_reply_update(500,strlen(reply),true,ib_reply_store_read,NULL))s_failures++;
+    ib_ui_pet_assistant_state("happy",IB_UI_ASSIST_DONE,true,NULL);preview_advance(400);ib_ui_set_awake(false);
+    shot("reply_051_before_background_prepare");
+    uint32_t retained_pixels=preview_region_hash(20,240,200,80);
+    ib_reply_snapshot_t retained_before,retained_after;ib_reply_store_snapshot(&retained_before);
+    ib_ui_pet_assistant_state("loading",IB_UI_ASSIST_PREPARING,true,NULL);
+    ib_ui_set_assistant_key_hints(true,IB_UI_ASSIST_PREPARING);
+    ib_ui_pet_assistant_state("idle",IB_UI_ASSIST_IDLE,true,NULL);
+    ib_ui_set_assistant_key_hints(true,IB_UI_ASSIST_IDLE);
+    ib_reply_store_snapshot(&retained_after);
+    bool retained=ib_ui_reply_visible();
+    printf("Reply retained after DONE/PREPARING/IDLE: visible=%d store_final=%d revision_unchanged=%d\n",retained,retained_after.final,retained_after.revision==retained_before.revision);
+    if(!retained||!retained_after.final||retained_after.revision!=retained_before.revision)s_failures++;
+    shot("reply_051_after_background_prepare_idle");
+    if(preview_region_hash(20,240,200,80)!=retained_pixels)s_failures++;
+    if(!ib_ui_reply_page(1))s_failures++;
+    shot("reply_051_after_prepare_next_page");
+    uint32_t next_page_pixels=preview_region_hash(20,240,200,80);
+    if(next_page_pixels==retained_pixels)s_failures++;
+    ib_ui_run_mode_menu(true,1,IB_UI_RUN_MODE_NOTICE_NONE);preview_advance(400);
+    ib_ui_run_mode_menu_hide();ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");preview_advance(400);
+    if(!ib_ui_reply_visible())s_failures++;
+    shot("reply_051_after_prepare_menu_restore");
+    if(preview_region_hash(20,240,200,80)!=next_page_pixels)s_failures++;
+    // 旧pet_state入口不允许重写已发布正文，状态回放也不改变当前页。
+    ib_ui_pet_state("idle","旧接口不能覆盖正文",true);
+    if(!ib_ui_reply_visible())s_failures++;
+    shot("reply_051_legacy_state_keeps_body");
+    if(preview_region_hash(20,240,200,80)!=next_page_pixels)s_failures++;
+    ib_ui_reply_clear(0);ib_reply_store_clear(0);
+    ib_ui_set_capture_active(false);ib_ui_set_awake(true);
+    ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");
+    ib_ui_set_assistant_key_hints(true,IB_UI_ASSIST_IDLE);ib_ui_pet_assistant_state("idle",IB_UI_ASSIST_IDLE,true,NULL);
+    preview_advance(500);shot("layout_051_idle_centered_no_reply_box");
+    unsigned neutral_animations=lv_anim_count_running();
+    ib_ui_pet_assistant_state("listening",IB_UI_ASSIST_LISTENING,true,NULL);
+    ib_ui_set_assistant_key_hints(true,IB_UI_ASSIST_LISTENING);
+    if(lv_anim_count_running()!=neutral_animations)s_failures++;
+    shot("capture_051_phase_without_reader_neutral");
+    ib_ui_set_capture_active(true);
+    if(lv_anim_count_running()!=neutral_animations+1)s_failures++;
+    preview_advance(200);shot("capture_051_reader_active_green");
+    preview_advance(500);shot("capture_051_reader_active_green_pulse");
+    ib_ui_set_capture_active(false);
+    if(lv_anim_count_running()!=neutral_animations)s_failures++;
+    preview_advance(100);shot("capture_051_reader_stopped_neutral");
+    ib_ui_set_capture_active(true);ib_ui_set_awake(false);preview_advance(2000);
+    if(lv_anim_count_running()!=neutral_animations)s_failures++;
+    ib_ui_set_awake(true);
+    if(lv_anim_count_running()!=neutral_animations+1)s_failures++;
+    ib_ui_run_mode_menu(true,1,IB_UI_RUN_MODE_NOTICE_NONE);preview_advance(500);
+    if(lv_anim_count_running()!=neutral_animations)s_failures++;
+    ib_ui_run_mode_menu_hide();ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");preview_advance(500);
+    if(lv_anim_count_running()!=neutral_animations+1)s_failures++;
+    ib_ui_set_capture_active(false);
+    if(lv_anim_count_running()!=neutral_animations)s_failures++;
+    printf("Capture cue: real flag on/off, sleep/menu stop loop, wake restores only active reader; base animations=%u\n",neutral_animations);
     return s_failures;
 }

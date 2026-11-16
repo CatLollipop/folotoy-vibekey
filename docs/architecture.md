@@ -906,6 +906,38 @@ pet自绘使用当前layer clip先裁行/列，只为可见圆点创建draw任�
 
 ## 宠物可视选择器与桌面画风
 
-`PetSettingsView → PetVisualSelector单个离线WKWebView → 六种typed选择意图 → PetController / PetSettings持久偏好 → PetWebRenderer → 官方createCharacter.update(style,variant)`。中央一个动态角色，29画风/16脸型/44状态静态缩略图和193外观惰性缩略图共用固定官方引擎；搜索/分类无网络。原生只接收本地main-frame白名单消息并验证目录ID，页面拿不到对话或凭据；关闭时移除弱handler与动画。所有非外观设置保留原生控件；Pet设置页与助手页共用`AssistantDeviceSync.syncPet`导出/事务，状态来自回执。画风只影响Mac；`AoraPetExport → AORAPET2`固定pixel/dot，测试29种画风输出同一设备包。范围和验证见[pet-runtime.md](pet-runtime.md)。
+`PetSettingsView → PetVisualSelector单个离线WKWebView → 白名单typed选择/设置意图 → PetController / PetSettings持久偏好 → PetWebRenderer → 官方createCharacter.update(style,variant)`。中央一个动态角色，29画风/16脸型/44状态静态缩略图和193外观惰性缩略图共用固定官方引擎；搜索/分类无网络。原生只接收本地main-frame白名单消息并验证目录ID，页面拿不到对话或凭据；关闭时移除弱handler与动画。全部设置整合在同一暗色画布的桌面/Passport抽屉：typed设置校验布尔/整数/范围/步进后更新PetSettings，reset/sync/固定署名意图由原生执行，旧回推不覆盖待确认本地滑块值。抽屉有界滚动、Esc和焦点恢复不改变事务生命周期；Pet设置页与助手页共用`AssistantDeviceSync.syncPet`导出/事务，状态来自回执。画风只影响Mac；`AoraPetExport → AORAPET2`固定pixel/dot，测试29种画风输出同一设备包。范围和验证见[pet-runtime.md](pet-runtime.md)。
 
 设备实时WSS使用官方`espressif/esp_websocket_client@1.8.0`，来源提交`70bf122fc8bc74622dcf7e15233b5b2af9088df5`，Apache-2.0，依赖锁固定。ASR当前使用豆包binary协议，MiniMax仅TTS；网络/事件合同见[asr-realtime.md](asr-realtime.md)。
+
+
+## 0.5回复分页、quiet边缘提示与背光首帧
+
+`assistant单份ib_reply_store(≤4096B) → generation/length/final + 短锁reader → app/LVGL锁 → ib_reply_view完整前缀校验/真实字宽分页 → 当前193B页面 → ib_reply_font缺字□映射 → 中文阶段/页码+两行正文`。ASR窗口与reply状态独立，首个回复字出现后关闭旧ASR显示；增量默认尾页，手动翻页保当前，final未手翻则回首页。网络worker不持GUI锁；final线协议ACK必须同步UI发布成功，重复相同final幂等；clear0重置epoch后接受新连接小gen，指定gen clear拒迟到。模式菜单优先，正文键只翻页不落入清历史/停止。
+
+UI删除常驻绿色时间footer/线及三颗边缘装饰点，右短/长按和左被动电源统一小尺寸1px路径、中性暖白，不改变实体锚点。复用caption256B与现有Noto字库，无第二份全文/新增字体/逐帧malloc。`ib_ui_present_boot_frame → ib_pet_render_current → cached pixels → lv_refr_now → bsp_display_wait_idle`在GUI锁内完成当前宠物实际DMA后返回，由app门禁点亮，避免旧Dot缓存先显示。验证与限制见[device-reply.md](device-reply.md)。
+
+
+## 智能体接入组件与紧凑设置页
+
+`VibePane → AgentUsageDashboard(compact:true) → AgentDiagnosticsView`：Codex真实用量优先，七项Agent接入随后。每行只保留名称、宿主状态、组件状态、能力摘要和安装/卸载；能力明细、Kimi表单与会话测试按需展开。页面任务每10秒和NSWorkspace启动/退出通知触发 `AgentHub.refresh → AgentIntegrationManager.detect`，仅页面可见时定时检测。
+
+安装链：`AgentDiagnosticsView(意图) → AgentIntegrationManager → AgentBridgeInstaller / 内置AX启用 / Kimi连接登记 → AgentHub.setIntegrationEnabled → refresh`。宿主存在、组件文件存在与真实能力三者分别计算；DSH仅准备插件包，WorkBuddy首次要求选择实际配置，Kimi仍需用户填写原服务令牌。不会把准备完成当成原会话接入成功。
+
+卸载链：`AgentIntegrationManager → AgentComponentConfiguration.uninstall / 受控扩展文件删除 / Kimi.clearConfiguration → AgentIntegrationPreferences(false) → AgentHub`。Hub在发现、轮询、激活完成、命令查找及事件/最终回复入口检查启用状态；异步探测结果提交时再次过滤，卸载立即清理所选会话。旧偏好缺省为启用，保留升级前行为；已在宿主加载的扩展需宿主重新加载，但其迟到事件不会重新进入助手。
+
+`AgentComponentConfiguration`统一负责JSON Hook合并、逐命令卸载和私有文件原子替换；保留非本应用命令、共享matcher及其他设置，卸载前备份当前文件，不恢复旧快照覆盖用户后来修改。Codex兼容通知复用同一卸载规则并独立管理。详细范围和隔离测试见 `docs/agents/README.md`；本次未改设备协议或固件。
+
+
+### 智能体官方图标
+
+`AgentDiagnosticsView → AgentBrandIcon → AgentBrandIcons`：首帧读取官方图标，按运行中的Bundle ID、已注册应用、离线品牌PNG依次取图；CLI无宿主Bundle时使用对应品牌资源。NSWorkspace只读图标，不启动、激活或更改Agent。SwiftUI保留原色，统一28pt，文字、分隔线和展开内容同列对齐；解码结果留在行状态中，应用路径变化后更新。
+
+离线资源位于 `VibeKey/Resources/AgentIcons`，兼容Xcode平铺、CLT主Bundle文件夹及SwiftPM的Resources副本。来源和SHA-256登记于`sources.json`；品牌图标不重新声明为MIT。所有条目的离线资源须能解码，缺损时仅显示系统占位，不用其他Agent品牌冒充。
+
+
+## 0.5.1回复保留与真实采集指示修复
+
+成功DONE后的prepare_slot是后台录音槽预擦，不是新会话。UI不再在PREPARING/IDLE隐式清已发布reply；store revision不变时仍可保留final当前页和翻页。final标题固定完成，legacy pet_state也遵守已发布内容优先。真正新录音LISTENING、明确clear或错误/取消仍可清理。生产store→UI的DONE/PREPARING/IDLE序列和正文ROI独立像素回归覆盖该缺陷。
+
+codec实际reader flag→app→ib_ui_set_capture_active→hints绿色Mic循环；phase不决定绿色，停止/隐藏/休眠删除动画。主画布全宽240、宠物/198文字居中、caption自然1–3行，不用空回复框撑高；像素刷新只失效196×196宠物网格，背景统一。图与验证界限见device-reply.md和outputs/passport-ui-051。

@@ -28,19 +28,7 @@ extension Bundle { static var l10n: Bundle { .main } }
                 "milliseconds": Int(Date().timeIntervalSince(start) * 1000), "input_tokens": result.inputTokens, "output_tokens": result.outputTokens]
             print("DeepSeek: PASS")
         } catch { report["deepseek"] = ["ok": false, "error": error.localizedDescription]; failed = true; print("DeepSeek: FAIL") }
-        var pcm = Data()
-        do {
-            let start = Date()
-            for try await chunk in client.speech(text: "你好，我是AI助理。", profile: profile, secrets: secrets) {
-                guard pcm.count + chunk.count <= 320_000 else { throw AssistantError.responseTooLarge }
-                pcm.append(chunk)
-            }
-            guard !pcm.isEmpty, pcm.count.isMultiple(of: 2) else { throw AssistantError.malformedAudio }
-            report["minimax_tts"] = ["ok": true, "model": profile.ttsModel, "bytes": pcm.count,
-                "pcm_seconds_at_16k_s16le": Double(pcm.count) / 32_000,
-                "milliseconds": Int(Date().timeIntervalSince(start) * 1000)]
-            print("MiniMax TTS: PASS")
-        } catch { report["minimax_tts"] = ["ok": false, "error": error.localizedDescription]; failed = true; print("MiniMax TTS: FAIL") }
+        report["minimax_tts"] = ["skipped":true,"reason":"Speech playback is temporarily disabled; replies are text-only"]
         }
         if arguments.count == 4 {
             do {

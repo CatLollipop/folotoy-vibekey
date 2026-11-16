@@ -15,6 +15,37 @@ nonisolated struct DeviceAssistantPresentation: Equatable, Sendable {
 /// 配置事务的纯协议规则，供真实DeviceLink与无硬件测试共用。
 nonisolated enum DeviceAssistantProtocol {
     enum TranscriptAction: String { case begin = "transcript_begin", update = "transcript_update", clear = "transcript_clear" }
+    enum ReplyAction:String { case begin="reply_begin",update="reply_update",final="reply_final",clear="reply_clear" }
+    /// 最坏每个控制字符转义为六字节，64B分块仍能容纳rid/generation/off并满足511B整帧上限。
+    static func replyChunks(_ text:String) throws -> [(offset:Int,text:String)] {
+        guard text.utf8.count <= 4096 else { throw AssistantError.responseTooLarge }
+        var parts:[(offset:Int,text:String)]=[],current="",offset=0,bytes=0
+        for scalar in text.unicodeScalars {
+            let value=String(scalar),length=value.utf8.count
+            if bytes+length>64 { parts.append((offset,current));offset += bytes;current="";bytes=0 }
+            current += value;bytes += length
+        }
+        if !current.isEmpty { parts.append((offset,current)) }
+        return parts
+    }
+    static func replyFields(_ action:ReplyAction,generation:UInt32,offset:Int=0,text:String="",size:Int=0) throws -> [(String,FlatJSON.Value)] {
+        guard generation != 0 || action == .clear, (0...4096).contains(offset),(0...4096).contains(size),text.utf8.count<=192 else { throw AssistantError.invalidProfile }
+        var fields:[(String,FlatJSON.Value)]=[("generation",.int(Int(generation)))]
+        if action == .update { fields += [("off",.int(offset)),("text",.string(text))] }
+        if action == .final { fields.append(("size",.int(size))) }
+        return fields
+    }
+    /// Mac可显示更长的原应用回复；设备有4KiB预算，截断时明确提示在电脑查看全文。
+    static func deviceReplyText(_ text:String) -> String {
+        guard text.utf8.count>4096 else { return text }
+        var prefix="",bytes=0
+        for scalar in text.unicodeScalars {
+            let value=String(scalar)
+            guard bytes+value.utf8.count<=4000 else { break }
+            prefix += value;bytes += value.utf8.count
+        }
+        return prefix + String(localized:"\n…（完整回复请在电脑查看）",bundle:.l10n)
+    }
     static let maximumLineBytes = 511
     /// 转写快照只发送UTF-8尾部；同时约束JSON转义后的整帧长度，不把文字写进日志。
     static func encodeTranscript(_ action: TranscriptAction, generation: UInt32, text: String = "", final: Bool = false) throws -> Data {
@@ -48,6 +79,10 @@ nonisolated enum DeviceAssistantProtocol {
         let line = FlatJSON.encode(fields)
         guard line.utf8.count <= maximumLineBytes else { throw AssistantError.invalidProfile }
         return Data((line + "\n").utf8)
+    }
+    static func supportsTextAssistant(_ capability:DeviceAssistantMessage) -> Bool {
+        capability.schema == 1 && capability.profileSchema >= 2 && capability.asrProvider == "doubao-realtime" &&
+        capability.supportsTranscript && capability.supportsReplyText && capability.supportsSinglePetAsset && capability.supportsSpeech == false
     }
     static func acceptsUnsolicited(_ message: DeviceAssistantMessage) -> Bool { message.op == "state" && message.requestID == nil }
     static func encode(_ fields: [(String, FlatJSON.Value)], op: String, requestID: UInt32) throws -> Data {

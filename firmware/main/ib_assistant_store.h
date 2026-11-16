@@ -17,6 +17,7 @@ typedef struct {
     unsigned record_limit_seconds, max_output_tokens, history_bytes, reply_bytes;
 } ib_assistant_profile_t;
 esp_err_t ib_assistant_store_init(void);
+bool ib_assistant_store_ready(void);
 bool ib_assistant_store_configured(void);
 bool ib_assistant_store_usb_provisioned(void);
 const ib_assistant_profile_t *ib_assistant_profile(void);
@@ -41,3 +42,7 @@ typedef bool (*ib_assistant_store_apply_cb)(void *context);
 void ib_assistant_store_set_apply(ib_assistant_store_apply_cb,void *context);
 bool ib_assistant_store_apply(void);
 esp_err_t ib_assistant_pet_map(const void **data,size_t *size,esp_partition_mmap_handle_t *mapping);
+
+// 新active与宠物映射应用成功后才回收旧bank；调用方与事务共用control互斥，采音时不调用。
+const char *ib_assistant_store_cleanup(void);
+bool ib_assistant_store_retired_clean(void);

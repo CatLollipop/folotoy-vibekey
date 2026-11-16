@@ -113,6 +113,14 @@ nonisolated enum AgentHookInstaller {
         try data.write(to: file, options: .atomic)
     }
 
+    /// 仅卸载本应用为此Agent注册的通知命令，不恢复旧备份覆盖用户新配置。
+    static func uninstall(_ agent:Agent,at url:URL?=nil) throws {
+        let source=agent.name.replacingOccurrences(of:" ",with:"%20")
+        try AgentComponentConfiguration.uninstall(at:url ?? agent.configURL) { command in
+            command.contains(marker) && command.contains("source="+source)
+        }
+    }
+
     /// 首次安装时保存原配置;重复安装不覆盖这份备份。临时文件和备份均只允许本人读取。
     private static func backupOnce(_ data: Data, beside file: URL) throws {
         let backup = file.appendingPathExtension("folobutton-dev.bak")

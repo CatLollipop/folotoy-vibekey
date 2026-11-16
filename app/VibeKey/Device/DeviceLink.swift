@@ -1124,6 +1124,25 @@ import Security
         sendRaw(packet, via: active)
     }
 
+    /// 回复正文使用独立generation和逐块ACK，ASR字幕的final不会提前冻结回复。
+    func sendAssistantReply(_ text:String,generation:UInt32) async throws {
+        let text=DeviceAssistantProtocol.deviceReplyText(text)
+        let parts=try DeviceAssistantProtocol.replyChunks(text)
+        _ = try await assistantRequest(DeviceAssistantProtocol.replyFields(.begin,generation:generation),op:"reply_begin")
+        for part in parts {
+            try Task.checkCancellation()
+            _ = try await assistantRequest(DeviceAssistantProtocol.replyFields(.update,generation:generation,offset:part.offset,text:part.text),
+                op:"reply_update",offset:part.offset+part.text.utf8.count)
+        }
+        try Task.checkCancellation()
+        _ = try await assistantRequest(DeviceAssistantProtocol.replyFields(.final,generation:generation,size:text.utf8.count),op:"reply_final")
+    }
+    func clearAssistantReply() {
+        guard let active,let fields=try? DeviceAssistantProtocol.replyFields(.clear,generation:0),
+              let packet=try? DeviceAssistantProtocol.encode(fields,op:"reply_clear",requestID:UInt32.random(in:1...UInt32.max)) else { return }
+        sendRaw(packet,via:active)
+    }
+
     private func failAssistantRequest() {
         guard let pending = assistantPending else { return }
         assistantPending = nil

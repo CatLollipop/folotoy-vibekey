@@ -13,12 +13,13 @@ nonisolated struct AssistantProfile: Codable, Equatable, Sendable {
     var llmModel = "deepseek-flash"
     var ttsModel = "speech-2.8-turbo"
     var voiceID = "male-qn-qingse"
-    var systemPrompt = "你是友好、可靠的中文AI助理。优先给出简短、清楚、适合语音朗读的回答；除非用户要求，控制在约120个汉字内。"
+    static let defaultSystemPrompt = "你是友好、可靠的中文AI助理。优先给出简短、清楚、适合屏幕阅读的回答；除非用户要求，控制在约120个汉字内。"
+    var systemPrompt = Self.defaultSystemPrompt
     var recordLimitSeconds = 30
     var maxOutputTokens = 512
     var historyBytes = 8_192
     var replyBytes = 4_096
-    var autoSpeakReplies = true
+    var autoSpeakReplies = false
 
     init() {}
     private enum CodingKeys: String, CodingKey {
@@ -46,12 +47,12 @@ nonisolated struct AssistantProfile: Codable, Equatable, Sendable {
         maxOutputTokens = try c.decodeIfPresent(Int.self, forKey: .maxOutputTokens) ?? maxOutputTokens
         historyBytes = try c.decodeIfPresent(Int.self, forKey: .historyBytes) ?? historyBytes
         replyBytes = try c.decodeIfPresent(Int.self, forKey: .replyBytes) ?? replyBytes
-        autoSpeakReplies = try c.decodeIfPresent(Bool.self, forKey: .autoSpeakReplies) ?? autoSpeakReplies
+        autoSpeakReplies = false // 用户暂停朗读，旧的true偏好不能重新启用TTS。
     }
 
     /// 设备固定供应商适配器有明确上限，设置页与同步入口统一校验。
     func validate() throws {
-        for value in [minimaxBaseURL, deepseekBaseURL] {
+        for value in [deepseekBaseURL] {
             guard let url = URL(string: value), url.scheme == "https", url.host != nil,
                   url.user == nil, url.password == nil, url.query == nil, url.fragment == nil,
                   value.utf8.count <= 191 else { throw AssistantError.invalidEndpoint }
@@ -65,9 +66,7 @@ nonisolated struct AssistantProfile: Codable, Equatable, Sendable {
               (1...30).contains(recordLimitSeconds), (32...512).contains(maxOutputTokens),
               (1_024...8_192).contains(historyBytes), (512...4_096).contains(replyBytes),
               !systemPrompt.isEmpty, systemPrompt.utf8.count <= 2_048,
-              !voiceID.isEmpty, voiceID.utf8.count <= 95,
-              !llmModel.isEmpty, llmModel.utf8.count <= 63,
-              ttsModel == "speech-2.8-turbo" else {
+              !llmModel.isEmpty, llmModel.utf8.count <= 63 else {
             throw AssistantError.invalidProfile
         }
     }
@@ -79,10 +78,10 @@ nonisolated struct AssistantProfile: Codable, Equatable, Sendable {
         try secrets.validateASR()
         let object: [String: Any] = [
             "schema": schema, "revision": revision,
-            "minimax_base_url": minimaxBaseURL, "deepseek_base_url": deepseekBaseURL,
-            "minimax_key": secrets.minimaxKey, "deepseek_key": secrets.deepseekKey,
+            "deepseek_base_url": deepseekBaseURL,
+            "deepseek_key": secrets.deepseekKey,
             "asr_provider": asrProvider, "asr_model": asrModel, "asr_resource_id": asrResourceID, "asr_ws_url": asrWebSocketURL, "asr_key": secrets.asrKey,
-            "llm_model": llmModel, "voice_id": voiceID, "system_prompt": systemPrompt,
+            "llm_model": llmModel, "system_prompt": systemPrompt,
             "record_limit_seconds": recordLimitSeconds, "max_output_tokens": maxOutputTokens,
             "history_bytes": historyBytes, "reply_bytes": replyBytes,
         ]
@@ -103,9 +102,8 @@ nonisolated struct AssistantSecrets: Sendable {
     }
 
     func validate() throws {
-        guard !minimaxKey.isEmpty, !deepseekKey.isEmpty,
-              minimaxKey.utf8.count <= 511, deepseekKey.utf8.count <= 255,
-              !minimaxKey.contains(where: { $0.isNewline }),
+        guard !deepseekKey.isEmpty,
+              deepseekKey.utf8.count <= 255,
               !deepseekKey.contains(where: { $0.isNewline }) else { throw AssistantError.missingKey }
     }
 }
@@ -113,7 +111,7 @@ nonisolated struct AssistantSecrets: Sendable {
 /// 所有错误只包含可展示的信息，不转存服务响应体，避免供应商回显请求中的凭据。
 nonisolated enum AssistantError: LocalizedError, Equatable {
     case invalidEndpoint, invalidASREndpoint, invalidProfile, missingKey, missingASRKey, noSpeech, emptyReply, incompleteStream
-    case responseTooLarge, malformedAudio, cancelled, deviceUnavailable, upgradeRequired, deliveryUnknown
+    case responseTooLarge, malformedAudio, cancelled, deviceUnavailable, upgradeRequired, deliveryUnknown, resourceCleanupPending
     case http(Int), provider(Int), device(String)
 
     var errorDescription: String? {
@@ -122,7 +120,7 @@ nonisolated enum AssistantError: LocalizedError, Equatable {
         case .invalidASREndpoint: String(localized: "实时识别地址必须是有效的 WSS 地址，且不能包含凭据或查询参数。", bundle: .l10n)
         case .missingASRKey: String(localized: "请先在识别模型中填写豆包实时识别 API Key。", bundle: .l10n)
         case .invalidProfile: String(localized: "助手配置超出设备支持范围，请检查模型、音色和长度限制。", bundle: .l10n)
-        case .missingKey: String(localized: "请在本机填写有效的 MiniMax 和 DeepSeek API Key。", bundle: .l10n)
+        case .missingKey: String(localized: "请在本机填写有效的 DeepSeek API Key。", bundle: .l10n)
         case .noSpeech: String(localized: "没有检测到有效语音，请按住说话后重试。", bundle: .l10n)
         case .emptyReply: String(localized: "服务没有返回可用的回复。", bundle: .l10n)
         case .incompleteStream: String(localized: "回复流意外中断，本轮不会自动重发。", bundle: .l10n)
@@ -131,6 +129,7 @@ nonisolated enum AssistantError: LocalizedError, Equatable {
         case .cancelled: String(localized: "已停止。", bundle: .l10n)
         case .deviceUnavailable: String(localized: "请先通过 USB 或已配对的 Wi-Fi 连接 Passport。", bundle: .l10n)
         case .upgradeRequired: String(localized: "设备未提供助手能力，请升级到本项目固件。", bundle: .l10n)
+        case .resourceCleanupPending: String(localized:"旧宠物资源尚未清理完成，请稍后读取设备状态。",bundle:.l10n)
         case .deliveryUnknown: String(localized: "设备回执超时，结果未知；请重新查询状态，避免重复操作。", bundle: .l10n)
         case .http(let code): String(localized: "云服务请求失败（HTTP \(code)），请检查密钥、余额和网络。", bundle: .l10n)
         case .provider(let code): String(localized: "云服务返回错误（\(code)），请检查账户与配置。", bundle: .l10n)

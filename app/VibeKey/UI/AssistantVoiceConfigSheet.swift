@@ -3,7 +3,7 @@ import AppKit
 import AVFoundation
 import UniformTypeIdentifiers
 
-/// 识别模型页统一保存实时ASR与TTS；识别不再走MiniMax文件接口。
+/// 识别模型页配置实时ASR；当前回复只显示文字，不暴露或调用暂停的朗读服务。
 struct AssistantVoiceConfigSheet: View {
     let assistant: AssistantStore
     let cloud: CloudASRStore
@@ -11,12 +11,10 @@ struct AssistantVoiceConfigSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var profile = AssistantProfile()
     @State private var asrKey = ""
-    @State private var ttsKey = ""
     @State private var result: String?
     @State private var testing = false
     @State private var task: Task<Void, Never>?
     @State private var testGeneration = UUID()
-    @State private var player = AssistantPCMPlayer()
     @State private var recognition: ASRSession?
     @State private var recognitionEvents: Task<Void, Never>?
 
@@ -26,8 +24,8 @@ struct AssistantVoiceConfigSheet: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.m) {
-            Text("AI 助理 · 实时识别与朗读").font(.system(size: 16, weight: .semibold))
-            Text("豆包边说边转写；MiniMax 负责朗读。配置供听写、字幕和设备共用。")
+            Text("AI 助理 · 实时识别").font(.system(size: 16, weight: .semibold))
+            Text("豆包边说边转写；AI 回复以文字显示。配置供听写、字幕和设备共用。")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
             ScrollView {
                 VStack(alignment: .leading, spacing: DS.Space.m) {
@@ -50,30 +48,10 @@ struct AssistantVoiceConfigSheet: View {
                         Spacer()
                         Link("获取豆包 API Key", destination: CloudProvider.volcengine.consoleURL)
                     }
-                    Text("MiniMax · 语音朗读").font(.headline)
                     Card {
-                        VStack(spacing: DS.Space.m) {
-                            row("API Key") { SecureField("粘贴 MiniMax 朗读 API Key", text: $ttsKey).textContentType(.password) }
-                            Divider()
-                            row("接口地址") { TextField("https://api.minimax.cn", text: $profile.minimaxBaseURL) }
-                            row("朗读模型") { Text(verbatim: profile.ttsModel); Spacer() }
-                            Divider()
-                            row("系统音色") { TextField("male-qn-qingse", text: $profile.voiceID) }
-                        }
+                        Stepper("单句录音上限：\(profile.recordLimitSeconds) 秒", value:$profile.recordLimitSeconds,in:1...30)
                     }
-                    HStack {
-                        Button("试听语音", action: testSpeech).disabled(testing || ttsKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        Spacer()
-                        Link("获取 MiniMax API Key", destination: URL(string: "https://platform.minimax.cn/console/keys")!)
-                    }
-                    Card {
-                        VStack(spacing: DS.Space.m) {
-                            Toggle("自动朗读当前会话回复", isOn: $profile.autoSpeakReplies)
-                            Divider()
-                            Stepper("单句录音上限：\(profile.recordLimitSeconds) 秒", value: $profile.recordLimitSeconds, in: 1...30)
-                        }
-                    }
-                    Hint("实时识别使用豆包，朗读使用 MiniMax。测试会产生相应服务用量；设备首次通过 USB 同步配置。")
+                    Hint("朗读已暂停，回复显示为文字。识别测试会产生豆包服务用量；设备首次通过 USB 同步配置。")
                     if let result { Text(result).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
                 }.padding(.trailing, 4)
             }.frame(maxHeight: 570)
@@ -92,7 +70,7 @@ struct AssistantVoiceConfigSheet: View {
         }.padding(DS.Space.l).frame(width: 580)
             .textFieldStyle(.plain).buttonStyle(SecondaryButtonStyle())
             .onAppear {
-                profile = assistant.profile; asrKey = assistant.asrKey; ttsKey = assistant.minimaxKey
+                profile = assistant.profile; asrKey = assistant.asrKey
                 asrKey = cloud.config(.volcengine).apiKey
                 profile.asrResourceID = cloud.config(.volcengine).model
             }
@@ -107,9 +85,8 @@ struct AssistantVoiceConfigSheet: View {
             var merged = assistant.profile
             merged.asrProvider = profile.asrProvider; merged.asrModel = profile.asrModel; merged.asrWebSocketURL = profile.asrWebSocketURL
             merged.asrResourceID = profile.asrResourceID
-            merged.minimaxBaseURL = profile.minimaxBaseURL; merged.voiceID = profile.voiceID
-            merged.autoSpeakReplies = profile.autoSpeakReplies; merged.recordLimitSeconds = profile.recordLimitSeconds
-            assistant.profile = merged; assistant.asrKey = config.apiKey; assistant.minimaxKey = ttsKey
+            merged.autoSpeakReplies = false; merged.recordLimitSeconds = profile.recordLimitSeconds
+            assistant.profile = merged; assistant.asrKey = config.apiKey
             guard assistant.save() else { result = assistant.saveError; return }
             cloud.update(.volcengine, config); onSaved(); dismiss()
         } catch { result = error.localizedDescription }
@@ -157,15 +134,6 @@ struct AssistantVoiceConfigSheet: View {
             return text
         }
     }
-    private func testSpeech() {
-        let profile = profile, key = ttsKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        test {
-            try profile.validate()
-            try await player.play(AssistantCloudClient().speech(text: "你好，我是你的AI助理。", profile: profile,
-                secrets: .init(minimaxKey: key, deepseekKey: "")))
-            return String(localized: "语音播放完成", bundle: .l10n)
-        }
-    }
     private func test(_ operation: @escaping @MainActor () async throws -> String) {
         cancelTest(); result = nil; testing = true
         let token = UUID(); testGeneration = token
@@ -179,6 +147,6 @@ struct AssistantVoiceConfigSheet: View {
     private func cancelTest() {
         testGeneration = UUID(); task?.cancel(); task = nil
         recognition?.cancel(); recognition = nil; recognitionEvents?.cancel(); recognitionEvents = nil
-        player.stop(); testing = false
+        testing = false
     }
 }

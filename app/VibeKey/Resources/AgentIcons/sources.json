@@ -1,0 +1,69 @@
+{
+  "retrieved": "2026-11-16",
+  "notice": "Brand marks remain the property of their respective owners. Bundled only to identify supported integrations; not relicensed under this project MIT license.",
+  "icons": [
+    {
+      "file": "agent-claude.png",
+      "agents": [
+        "claudeCode",
+        "claudeDesktop"
+      ],
+      "source": "Claude.app official macOS application icon",
+      "website": "https://claude.com/",
+      "version": "5.11492.2",
+      "conversion": "NSWorkspace official app icon rendered at 128x128; shared Claude brand mark for CLI",
+      "sha256": "efc6c8fe0b934cffae7d0faa6fbc5ddab11f14a11abc6f235ca3e11d42b6228f"
+    },
+    {
+      "file": "agent-codex.png",
+      "agents": [
+        "chatGPT"
+      ],
+      "source": "ChatGPT.app official macOS application icon (com.openai.codex)",
+      "website": "https://chatgpt.com/",
+      "version": "26.1111.21308",
+      "conversion": "NSWorkspace official app icon rendered at 128x128",
+      "sha256": "a2a1e0459c9c81832c8a9c071751b58cf0ba8e7a70b3465e005b3463a9ac46da"
+    },
+    {
+      "file": "agent-deepseek-harness.png",
+      "agents": [
+        "deepseekHarness"
+      ],
+      "source": "DeepSeek Harness.app official macOS application icon",
+      "version": "0.2.1-rc.2",
+      "conversion": "NSWorkspace official app icon rendered at 128x128",
+      "sha256": "24c626885190b8a7f6a9014be2eff3189e810eb1ae0835da9c094ea86378ac0f"
+    },
+    {
+      "file": "agent-omp.png",
+      "agents": [
+        "omp"
+      ],
+      "source": "https://omp.sh/favicon.png",
+      "website": "https://github.com/can1357/oh-my-pi",
+      "conversion": "Unmodified official website PNG",
+      "sha256": "36b1bfb9ab058ce3e982aca7f6cd36e042deed81a626b2fc402486512b8f219c"
+    },
+    {
+      "file": "agent-kimi.png",
+      "agents": [
+        "kimiCode"
+      ],
+      "source": "https://www.kimi.com/pwa-192.png",
+      "website": "https://www.kimi.com/code",
+      "conversion": "Unmodified official website PNG",
+      "sha256": "6c14f9c3062e953b3ed57ae3e19db931c1c1bba38d4d8d55550544f31d55e469"
+    },
+    {
+      "file": "agent-workbuddy.png",
+      "agents": [
+        "workBuddy"
+      ],
+      "source": "https://assets.workbuddy.cn/web/workbuddy/8e036eb06f87c6b08437546b3cbd58e60af45b10/assets/logo.svg",
+      "website": "https://www.workbuddy.cn/",
+      "conversion": "Official SVG rendered by AppKit at 128x128; original retained as workbuddy.svg",
+      "sha256": "f377a9ac99744ce35f3145815a8e3060aef900bf68243e7c74552b7476fd0d76"
+    }
+  ]
+}

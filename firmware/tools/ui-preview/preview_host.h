@@ -22,3 +22,6 @@ uint32_t preview_now(void);
 bool preview_capture(const char *path, int scale);
 // LVGL 内存池峰值使用(字节),用于粗略观察内存占用。
 uint32_t preview_mem_max_used(void);
+
+// 生产label区域的独立RGB565像素指纹；正文回归不受无关边缘图标抗锯齿影响。
+uint32_t preview_region_hash(int x,int y,int width,int height);

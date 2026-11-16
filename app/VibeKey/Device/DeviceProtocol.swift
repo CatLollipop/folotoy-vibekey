@@ -39,6 +39,10 @@ nonisolated struct DeviceAssistantMessage: Equatable, Sendable {
     var profileSchema: Int = 1
     var asrProvider: String = ""
     var supportsTranscript: Bool = false
+    var supportsReplyText: Bool = false
+    var supportsSinglePetAsset: Bool = false
+    var supportsSpeech:Bool? = nil
+    var retiredClean: Bool? = nil
 }
 
 // MARK: - 设备 → Mac
@@ -150,6 +154,10 @@ nonisolated enum DeviceMessage: Equatable, Sendable {
             assistant.profileSchema = int("profile_schema") ?? 1
             assistant.asrProvider = string("asr") ?? ""
             assistant.supportsTranscript = (int("transcript") ?? 0) != 0
+            assistant.supportsReplyText = (int("reply_text") ?? 0) != 0
+            assistant.supportsSinglePetAsset = (int("single_pet") ?? 0) != 0
+            if let speech=int("tts") { assistant.supportsSpeech = speech != 0 }
+            if let clean=int("retired_clean") { assistant.retiredClean = clean != 0 }
             return .assistant(assistant)
         case "wifi":
             guard let stage = string("stage") else { return nil }

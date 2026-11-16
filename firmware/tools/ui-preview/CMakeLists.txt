@@ -46,6 +46,8 @@ set(UI_SOURCES
     "${UI_DIR}/ib_ui.c"
     "${UI_DIR}/ib_ui_labels.c"
     "${UI_DIR}/ib_transcript_view.c"
+    "${UI_DIR}/ib_reply_view.c"
+    "${UI_DIR}/ib_reply_font.c"
     "${UI_DIR}/ib_ui_gfx.c"
     "${UI_DIR}/ib_ui_wave.c"
     "${UI_DIR}/ib_ui_dots.c"
@@ -75,12 +77,15 @@ add_executable(ib_ui_preview
     preview_host.c
     preview_scenarios.c
     preview_main.c
+    "${UI_DIR}/ib_reply_store.c"
+    "${UI_DIR}/ib_cloud_stream.c"
     ${UI_SOURCES})
 target_include_directories(ib_ui_preview PRIVATE
     "${UI_DIR}"
     "${CMAKE_CURRENT_BINARY_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}"
-    "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+    "${FW_DIR}/tests/tts_fakes")
 target_link_libraries(ib_ui_preview PRIVATE lvgl_host m)
 target_compile_definitions(ib_ui_preview PRIVATE PREVIEW_PET_ASSETS="${FW_DIR}/build/host-pet/catalog")
 target_compile_options(ib_ui_preview PRIVATE -Wall -Wextra -O1)
@@ -96,3 +101,17 @@ target_link_libraries(ib_ui_labels_test PRIVATE lvgl_host m)
 target_compile_options(ib_ui_labels_test PRIVATE -Wall -Wextra -Werror -UNDEBUG)
 enable_testing()
 add_test(NAME chinese_status_glyphs COMMAND ib_ui_labels_test)
+
+# 正文使用同份生产分页核/字体，缺字显式映射方框，不扩充字体资源。
+add_executable(ib_ui_reply_font_test "${FW_DIR}/tests/test_ib_reply_font.c"
+    "${UI_DIR}/ib_reply_font.c" "${UI_DIR}/ib_reply_view.c" "${UI_DIR}/fonts/ib_cjk_font_12.c")
+target_include_directories(ib_ui_reply_font_test PRIVATE "${UI_DIR}")
+target_link_libraries(ib_ui_reply_font_test PRIVATE lvgl_host m)
+target_compile_options(ib_ui_reply_font_test PRIVATE -Wall -Wextra -Werror -UNDEBUG)
+add_test(NAME reply_chinese_font COMMAND ib_ui_reply_font_test)
+
+option(IB_PREVIEW_SANITIZERS "Instrument production UI/store lifecycle with ASan and UBSan" OFF)
+if(IB_PREVIEW_SANITIZERS)
+    target_compile_options(ib_ui_preview PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+    target_link_options(ib_ui_preview PRIVATE -fsanitize=address,undefined)
+endif()

@@ -20,6 +20,9 @@ typedef struct {
     uint32_t pet_size, pet_crc, pet_rev, usb, header_crc;
 } bank_header_t;
 static const esp_partition_t *s_partition;
+static bool s_ready,s_cleanup_pending,s_retired_clean,s_committed;
+static volatile bool s_flash_busy;
+bool ib_assistant_store_ready(void){return s_ready;}
 static bank_header_t s_header;
 static unsigned s_bank;
 static bool s_apply_pending;
@@ -58,7 +61,7 @@ static bool parse_profile(const char *json, size_t size, uint32_t rev, ib_assist
     const cJSON *schema = item(o, "schema"), *revision = item(o, "revision");
     bool ok = cJSON_IsNumber(schema) && (schema->valuedouble == 1 || schema->valuedouble == 2) && cJSON_IsNumber(revision) && revision->valuedouble == rev;
     p->schema=ok?(unsigned)schema->valueint:0;
-    ok = ok && string_field(o,"minimax_key",p->minimax_key,sizeof(p->minimax_key),NULL)
+    ok = ok && string_field(o,"minimax_key",p->minimax_key,sizeof(p->minimax_key),"")
         && string_field(o,"deepseek_key",p->deepseek_key,sizeof(p->deepseek_key),NULL)
         && string_field(o,"minimax_base_url",p->minimax_base_url,sizeof(p->minimax_base_url),"https://api.minimax.cn")
         && string_field(o,"deepseek_base_url",p->deepseek_base_url,sizeof(p->deepseek_base_url),"https://api.deepseek.com")
@@ -81,8 +84,8 @@ static bool parse_profile(const char *json, size_t size, uint32_t rev, ib_assist
     p->history_bytes = number(o,"history_bytes",8192,8192);
     p->reply_bytes = number(o,"reply_bytes",4096,4096);
     p->revision = rev;
-    ok = ok && p->minimax_key[0] && p->deepseek_key[0] && p->voice_id[0] && p->llm_model[0]
-        && https_base(p->minimax_base_url) && https_base(p->deepseek_base_url)
+    ok = ok && p->deepseek_key[0] && p->llm_model[0]
+        && https_base(p->deepseek_base_url)
         && p->record_limit_seconds && p->max_output_tokens && p->history_bytes && p->reply_bytes;
     cJSON_Delete(o); if (!ok) memset(p,0,sizeof(*p)); return ok;
 }
@@ -127,11 +130,30 @@ static bool load_profile(void){
     bool ok=parse_profile(data,s_header.profile_size,s_header.profile_rev,&s_profile);
     esp_partition_munmap(mapping);return ok;
 }
+static bool erased_bank(unsigned bank){
+    uint8_t bytes[512];
+    for(size_t off=0;off<BANK_SIZE;off+=sizeof(bytes)){
+        if(esp_partition_read(s_partition,bank*BANK_SIZE+off,bytes,sizeof(bytes))!=ESP_OK)return false;
+        for(size_t i=0;i<sizeof(bytes);i++)if(bytes[i]!=0xff)return false;
+    }return true;
+}
+bool ib_assistant_store_retired_clean(void){return s_retired_clean;}
+const char *ib_assistant_store_cleanup(void){
+    if(!s_cleanup_pending)return NULL;
+    if(s_upload.active)return "upload_active";
+    if(s_apply_pending)return "pet_pending";
+    if(!s_ready||s_header.magic!=STORE_MAGIC)return "storage_unavailable";
+    // 只擦inactive；当前头/配置/宠物已在另一bank，任何中途掉电都不影响active。
+    unsigned old=1-s_bank;
+    if(esp_partition_erase_range(s_partition,old*BANK_SIZE,BANK_SIZE)!=ESP_OK||!erased_bank(old))return "cleanup_failed";
+    s_cleanup_pending=false;s_retired_clean=true;return NULL;
+}
 static bool write_header(unsigned bank,bank_header_t *h){
     h->magic=STORE_MAGIC;h->header_crc=ib_crc32(h,offsetof(bank_header_t,header_crc));
     return esp_partition_write(s_partition,bank*BANK_SIZE,h,sizeof(*h))==ESP_OK;
 }
 esp_err_t ib_assistant_store_init(void){
+    s_ready=s_cleanup_pending=s_retired_clean=s_committed=s_flash_busy=false;
     s_partition=esp_partition_find_first(ESP_PARTITION_TYPE_DATA,0x41,"assistant");
     if(!s_partition||s_partition->address!=0x360000||s_partition->size!=2*BANK_SIZE)return ESP_ERR_INVALID_SIZE;
     bank_header_t a,b;bool va=valid_bank_at(0,STORE_MAGIC,IB_PET_CONFIG_MAX,&a);
@@ -152,10 +174,15 @@ esp_err_t ib_assistant_store_init(void){
             s_header=h;s_bank=1;
         }
     }
-    return load_profile()?ESP_OK:ESP_ERR_INVALID_STATE;
+    s_ready=load_profile();
+    if(s_ready){
+        if(s_header.magic==STORE_MAGIC){s_retired_clean=erased_bank(1-s_bank);s_cleanup_pending=!s_retired_clean;}
+        else s_retired_clean=erased_bank(0)&&erased_bank(1);
+    }
+    return s_ready?ESP_OK:ESP_ERR_INVALID_STATE;
 }
 // 旧schema1仍是有效存储，不能因此丢掉同bank宠物；只禁止旧ASR继续联网。
-bool ib_assistant_store_configured(void){return s_profile.schema==2&&s_profile.asr_key[0]&&s_profile.minimax_key[0]&&s_profile.deepseek_key[0];}
+bool ib_assistant_store_configured(void){return s_profile.schema==2&&s_profile.asr_key[0]&&s_profile.deepseek_key[0];}
 bool ib_assistant_store_usb_provisioned(void){return s_header.usb==1;}
 const ib_assistant_profile_t *ib_assistant_profile(void){return &s_profile;}
 uint32_t ib_assistant_store_revision(bool pet){return pet?s_header.pet_rev:s_header.profile_rev;}
@@ -169,13 +196,16 @@ const char *ib_assistant_store_begin(bool pet,uint32_t rev,size_t size,uint32_t 
     if(!s_partition)return "storage_unavailable";
     if(s_apply_pending)return "pet_pending";
     if(s_upload.active)return "upload_active";
+    const char *cleanup=ib_assistant_store_cleanup();if(cleanup)return cleanup;
     if(!rev||!size||size>(pet?IB_PET_CONFIG_MAX:IB_PROFILE_MAX))return "invalid_size";
     if(!usb&&!ib_assistant_store_usb_provisioned())return "usb_required";
+    s_committed=false;s_retired_clean=false;
     memset(&s_upload,0,sizeof(s_upload));s_upload.pet=pet;s_upload.revision=rev;s_upload.size=size;s_upload.crc=crc;
     s_upload.bank=1-s_bank;s_upload.header=s_header;s_upload.usb=usb;
-    if(esp_partition_erase_range(s_partition,s_upload.bank*BANK_SIZE,BANK_SIZE)!=ESP_OK)return "erase_failed";
-    if(!copy_region_at(s_bank*BANK_SIZE,s_upload.bank*BANK_SIZE,pet?PROFILE_OFFSET:PET_OFFSET,pet?s_header.profile_size:s_header.pet_size))return "copy_failed";
-    s_upload.active=true;return NULL;
+    s_flash_busy=true;
+    if(esp_partition_erase_range(s_partition,s_upload.bank*BANK_SIZE,BANK_SIZE)!=ESP_OK){s_flash_busy=false;s_cleanup_pending=s_header.magic==STORE_MAGIC;return "erase_failed";}
+    if(!copy_region_at(s_bank*BANK_SIZE,s_upload.bank*BANK_SIZE,pet?PROFILE_OFFSET:PET_OFFSET,pet?s_header.profile_size:s_header.pet_size)){s_flash_busy=false;s_cleanup_pending=s_header.magic==STORE_MAGIC;return "copy_failed";}
+    s_upload.active=true;s_flash_busy=false;return NULL;
 }
 const char *ib_assistant_store_chunk(size_t offset,const void *data,size_t size){
     if(!s_upload.active)return "no_upload";
@@ -194,7 +224,11 @@ static bool validate_pet_upload(void){
     esp_partition_munmap(mapping);return ok;
 }
 const char *ib_assistant_store_commit(void){
-    if(!s_upload.active)return "no_upload";
+    if(!s_upload.active){
+        if(!s_committed)return "no_upload";
+        if(!ib_assistant_store_apply())return "pet_apply_failed";
+        return ib_assistant_store_cleanup();
+    }
     if(s_upload.offset!=s_upload.size||s_upload.crc!=s_upload.computed)return "checksum_mismatch";
     bool ok=false;ib_assistant_profile_t *next_profile=NULL;
     if(s_upload.pet)ok=validate_pet_upload();
@@ -211,26 +245,31 @@ const char *ib_assistant_store_commit(void){
     else{h.profile_size=s_upload.size;h.profile_crc=s_upload.crc;h.profile_rev=s_upload.revision;}
     if(s_upload.usb)h.usb=1;
     if(!write_header(s_upload.bank,&h)){if(next_profile){memset(next_profile,0,sizeof(*next_profile));free(next_profile);}return "commit_failed";}
-    s_bank=s_upload.bank;s_header=h;s_upload.active=false;s_apply_pending=true;
+    s_bank=s_upload.bank;s_header=h;s_upload.active=false;s_apply_pending=true;s_cleanup_pending=true;s_retired_clean=false;s_committed=true;
     if(next_profile){s_profile=*next_profile;memset(next_profile,0,sizeof(*next_profile));free(next_profile);}
     // 新几何切换并释放旧mmap后才回执；下一次begin不能提前擦除旧渲染源。
-    return ib_assistant_store_apply()?NULL:"pet_apply_failed";
+    if(!ib_assistant_store_apply())return "pet_apply_failed";
+    return ib_assistant_store_cleanup();
 }
-void ib_assistant_store_abort(void){memset(&s_upload,0,sizeof(s_upload));}
+void ib_assistant_store_abort(void){
+    memset(&s_upload,0,sizeof(s_upload));s_committed=false;
+    if(s_partition&&s_header.magic==STORE_MAGIC){s_retired_clean=erased_bank(1-s_bank);s_cleanup_pending=!s_retired_clean;}
+}
 size_t ib_assistant_store_offset(void){return s_upload.offset;}
-bool ib_assistant_store_uploading(void){return s_upload.active;}
+bool ib_assistant_store_uploading(void){return s_upload.active||s_apply_pending||s_cleanup_pending||s_flash_busy;}
 esp_err_t ib_assistant_store_clear(void){
     if(!s_partition)return ESP_ERR_INVALID_STATE;
     if(s_apply_pending)return ESP_ERR_INVALID_STATE;
-    ib_assistant_store_abort();unsigned old=s_bank,next=1-s_bank;
-    esp_err_t e=esp_partition_erase_range(s_partition,next*BANK_SIZE,BANK_SIZE);if(e!=ESP_OK)return e;
-    if(!copy_region_at(old*BANK_SIZE,next*BANK_SIZE,PET_OFFSET,s_header.pet_size))return ESP_FAIL;
+    if(ib_assistant_store_cleanup())return ESP_FAIL;
+    ib_assistant_store_abort();unsigned old=s_bank,next=1-s_bank;s_flash_busy=true;s_retired_clean=false;
+    esp_err_t e=esp_partition_erase_range(s_partition,next*BANK_SIZE,BANK_SIZE);if(e!=ESP_OK){s_flash_busy=false;s_cleanup_pending=s_header.magic==STORE_MAGIC;return e;}
+    if(!copy_region_at(old*BANK_SIZE,next*BANK_SIZE,PET_OFFSET,s_header.pet_size)){s_flash_busy=false;s_cleanup_pending=s_header.magic==STORE_MAGIC;return ESP_FAIL;}
     bank_header_t h=s_header;h.generation=s_header.generation+1;
     h.profile_size=h.profile_crc=h.profile_rev=h.usb=0;
-    if(!write_header(next,&h))return ESP_FAIL;
-    s_bank=next;s_header=h;memset(&s_profile,0,sizeof(s_profile));s_apply_pending=true;
+    if(!write_header(next,&h)){s_flash_busy=false;s_cleanup_pending=s_header.magic==STORE_MAGIC;return ESP_FAIL;}
+    s_bank=next;s_header=h;memset(&s_profile,0,sizeof(s_profile));s_apply_pending=true;s_cleanup_pending=true;s_retired_clean=false;s_flash_busy=false;
     if(!ib_assistant_store_apply())return ESP_FAIL;
-    return esp_partition_erase_range(s_partition,old*BANK_SIZE,BANK_SIZE);
+    return ib_assistant_store_cleanup()?ESP_FAIL:ESP_OK;
 }
 bool ib_assistant_mode_load(void){nvs_handle_t n;uint8_t v=0;if(nvs_open("ib_assistant",NVS_READONLY,&n)==ESP_OK){nvs_get_u8(n,"standalone",&v);nvs_close(n);}return v==1;}
 esp_err_t ib_assistant_mode_save(bool v){nvs_handle_t n;esp_err_t e=nvs_open("ib_assistant",NVS_READWRITE,&n);if(e!=ESP_OK)return e;e=nvs_set_u8(n,"standalone",v?1:0);if(e==ESP_OK)e=nvs_commit(n);nvs_close(n);return e;}

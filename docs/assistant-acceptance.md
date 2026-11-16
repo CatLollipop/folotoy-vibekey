@@ -1,53 +1,37 @@
-# AI 助理开发版验收记录
+# AI 助理当前开发版验收记录
 
-基线：`nexsjournal/folotoy-vibekey@0eb628bf7a563e67d76fc9e7841bbfdb768b7473`。个人Fork：`CatLollipop/folotoy-vibekey`，开发分支`codex/ai-assistant`。本记录只列实际完成的检查，构建和模拟结果不替代原应用或设备验收。
+上游基线为 `nexsjournal/folotoy-vibekey@0eb628bf7a563e67d76fc9e7841bbfdb768b7473`，个人 Fork 为 `CatLollipop/folotoy-vibekey`，分支 `codex/ai-assistant`。历史过程见 [阶段记录](assistant-acceptance-history.md)。本页区分自动化、真实服务和设备可见行为。
 
-## 构建与自动化
+## 当前产品行为
 
-- 改造前基线：原ESP32-C3固件构建、主机测试通过。CLT环境下原AppUpdateKit测试因缺少Apple Testing模块无法编译；没有把这一基线限制计为新增功能通过。
-- 当前Mac：SwiftPM编译真实完整应用，资源打包、ad-hoc严格签名通过；最低macOS26、arm64。8个Mach-O头的动态依赖与rpath检查未发现开发目录或Homebrew绝对依赖。
-- 完整Xcode26.2尚未安装。官方Apple下载需要登录，本轮CLT路径可构建应用；Xcode宿主XCTest没有执行。
-- Assistant核心：DeepSeek SSE合法结束、usage、推理隔离、UTF-8长度、hex解码、完整历史轮次淘汰、WAV、配置无密钥、URL版本段与网关前缀、取消generation、无声拒绝、应用投递/终态/正文先后序及TTS不被迟到终态打断，通过。
-- Agent桥接：真实Swift核心、正式Node/Python桥接模块4/4；原实例/会话/轮次、accepted/applied、错误或过期请求、最终正文过滤、Kimi REST/WS夹具、原编辑器草稿归属、硬件短/长按/通知ACK隔离、共享豆包识别与MiniMax朗读配置、设备rid/rev/off/帧上限，通过。
-- Flash布局Python单元测试6项通过。固件真实store在模拟NOR1→0写约束和ASan/UBSan下验证双bank断电、迁移、失败恢复、凭据清除保留pet、映射生命周期，通过。
-- Aora：全部193外观×16脸型=3088组合、43配色导出通过；最大83584B。37真实资产×44态、原44态栅格和132 motion黄金值通过；41态逐格相同，其余共5格量化阈值差异，单态不超过2/784格。
+- 豆包流式 ASR 边说边转写，DeepSeek Flash 生成回复。用户已取消 MiniMax ASR，并暂时取消全部助手朗读。新设备 profile 不再携带 MiniMax Key/base/voice；Mac 历史配置保留。
+- Mac 云对话和原应用最终正文以文字显示；设备正文最大4096 UTF-8字节，短▲/▼分页，新一轮录音/取消/清历史清除旧正文。原应用超出设备预算时明确提示在电脑查看全文。
+- 设置窗口统一暗色。193外观、16脸型、44表情、43颜色、29桌面画风，桌面和Passport控制合在宠物选择画布的设置抽屉中；设备固定点阵。
+- 当前同步仅保留一份有效宠物资源，下一次更新短暂使用空白bank暂存。新资源校验、生效、释放旧mmap后擦除旧bank并全量读回空白，`retired_clean=1`才完成同步。该回收主要减少Flash中旧副本，不能等同RAM扩容。
 
-## 真实云服务
+## 已实际验证
 
-2026-11-16使用用户在本机填写的配置，只发送固定合成测试内容：DeepSeek Flash关闭thinking返回“连接成功”；MiniMax TTS产生78390B的16kHz S16LE PCM，解码后再送MiniMax ASR，识别为“你好，我是AI助理。”。三个服务均成功。此结果验证本次账号/端点/样本，不代表所有音色、额度错误或设备音频已测。
+- CLT/SwiftPM完整Mac应用编译、离线资源打包和ad-hoc深层严格签名通过。版本0.5.1/build31；1003条界面字符串无缺失英文。完整Xcode26.2未安装，Xcode宿主XCTest尚未执行。
+- Assistant核心通过：DeepSeek SSE完整终态、UTF-8分块、失败解析、取消与旧事件、完整历史轮次淘汰、纯文字模式。即使旧autoSpeakReplies=true，speech调用与播放器启动仍为0。
+- Agent Swift核心及正式Node/Python桥接4/4通过。组件专项覆盖合并/逐命令卸载/备份/幂等/畸形文件保留/0600/隔离偏好；缺失API已补齐，全应用编译通过。七类宿主的真实能力仍单独验收。
+- 固件生产store、reply store/pager、ASR协议及Flash保护测试通过：单副本NOR中断/部分擦除/重启恢复，旧reader失效、clear0重置epoch、4KiB预算、终态与UTF-8、有界队列等。
+- Mac真实豆包流式测试约6.25秒合成PCM，在发送期间13次更新，最终28字符；真实DeepSeek Flash文本测试成功，0.5未调用TTS。
+- 真实Mac窗口检查：深色侧栏和主画布无白色卡片，画布随窗口高度调整，桌面/Passport抽屉保留用户水灵/柔软/snow/胶囊偏好；识别模型入口只显示豆包实时识别与文本回复说明。
+- 0.5.0真实USB同步 profile revision5与宠物revision1794817063后，客户端显示新版本。设备capabilities给出single_pet1、retired_clean1、display_ready1、reply_text1、tts0。
+- 0.5.0读取assistant分区0x80000字节后核对：两个256KiB bank中恰有一个全FF、一个有效活动bank，头/profile/pet CRC全部有效；当前profile659B、pet15488B。活动profile无MiniMax字段。原始回读含凭据，仅私有保存；交付报告只含布尔与字节数。
+- 0.5.0合成3129B正文分块及final实际UI发布ACK通过，clear0后较小generation3通过。此测试未覆盖DONE后后台预擦状态，不能代替真实会话完成保留验证。
+- 0.5.0用户复测：字幕正常，但正文一闪而过且不能翻页，底部黑条过大、两侧留白不对称。串口真实经历listening→transcribing→thinking→replying→done→preparing→idle，录音113920B、ASR4partial/1final、DMA与ring overflow均0；播放器received0。PREPARING被UI误认为新轮清正文，是本次明确缺陷，不记为文字回复通过。
 
-## 真机分阶段记录
+## 0.5.1修正与本轮验证
 
-- USB识别到ESP32-C3/8MiB；首次刷写前完成整片备份并核对SHA-256。每轮只写bootloader、分区表和app，回读cardid与原备份逐字节相同；备份和日志含私密设备资料，仅本机私有存放。
-- 初始增强候选发现RAM不足导致主任务无法创建，仅capabilities可回复；没有将其记为启动成功。
-- 修复后候选确认app_ready/buttons为1、hello/状态可回复，Wi-Fi已配置并连接；云配置revision4在V1→V2迁移后保留。
-- 切换独立模式通过持久化和重启，重新打开USB后确认standalone、主任务、按键与Wi-Fi正常。
-- 完整AORAPET2约81136B通过USB分块/CRC/提交，设备pet_rev=42且云profile仍为4。此项证明资源接受和切换；真实屏幕视觉仍需人眼确认。
-- 复杂宠物/小显示缓冲暴露出LVGL刷新调度饥饿，已按clip裁剪、复用绘图描述符并在完整刷新后安排下一帧，保留watchdog。最新0.3.0候选重新刷写、身份回读及USB启动通过；独立模式下heap约51356B、min_free47636B、最大连续块38912B、LVGL峰值23712B，复杂宠物最近帧35–50ms，峰值105ms。Wi-Fi、云配置、完整宠物跨固件重启保留。
-- 最终固件2645408B，SHA-256 `3d79283bcc7c410ebb1e7260f6e1a745f2d91c6d969a7d92cb8e4d2974ef14d7`，仍适配3MiB应用分区。
+修复后台预擦PREPARING清UI正文，保持完整正文及分页；统一宠物画布宽度、背景与两侧留白，正文按真实行数布局；去常驻“按住确认键说话”，右侧麦克风仅在真实采音时绿色呼吸。
 
-## 界面
+0.5.1生产store/真实LVGL回归通过：没有新revision或重新发布的情况下，final→DONE→PREPARING→IDLE正文ROI像素不变，可翻页、模式菜单返回及legacy更新仍保页。背景左右一致、文字中心x120；实际capture true时Mic绿色像素79/103，false及仅LISTENING phase均为0，停止/睡眠/菜单后循环动画归0。143文案、1221字形使用、222独立字符检查通过；主机LVGL峰35712B仅供参考，不当C3实测。
 
-- 侧栏合并为单一“智能体”，语音设置迁入“识别模型”MiniMax服务卡片；旧integrations深链转向智能体。AI助理仅保留DeepSeek、对话/试用、权限和设备同步。
-- 宠物设置的真实原生浅深主题整页截图通过独立复查；无裁切碰撞，七处小字对比度约6.01:1/7.01:1。实际离线WK加载全目录、四种角色/脸型/状态切换和完整导出通过。
-- 用户解锁后已检查真实运行窗口：侧栏只有单一智能体入口，应用能力卡片/会话/用量/兼容通知同页；AI助理“前往语音设置”正确跳到识别模型；MiniMax弹窗包含共享Key/base、ASR/TTS模型、音色、自动朗读、30秒上限与测试按钮，无裁切。未在检查中修改用户密钥。
+最终固件2701392B，SHA256 `e95e1764d4f46cd3a97f20dda2e827afde015de5e80bbbb96532dedf3a669642`，IDF5.5.3 build/size/layout通过且无warning/error，仍适配3MiB app分区。真实受保护刷写成功，cardid0x4000字节与原始备份一致；合并回读验证一活动bank与一全FF bank，profile5/pet1794817063及CRC保留。设备独立模式、Wi-Fi、app_ready/buttons/display_ready均正常，空闲heap56928B、largest45056B、min_free52396B、LVGL峰22708B。此后停止所有刷写、同步与重启，只读metadata等待用户实际检查正文保留、物理翻页及绿色动画。
 
-## 尚未验收通过
+## 仍未完成的完整验收
 
-- 用户已实际按OK完成独立云语音并听到回复；串口观察到listening→transcribing→thinking→replying→done。该轮录音115840B，record_error=0、overflows=0、ring_peak=5760B、Flash写峰3311µs、min_free=11752B。用户反馈播放断续，音频连续性未通过，正在增加TTS阶段有界预缓冲和独立消费。30秒上限、打断、多轮/弱网/断电及Mac关机矩阵仍未完成。
-- Claude Code现有终端正式停止回执缺失，完整能力仍阻塞。OMP/DeepSeek Harness需在原实例加载扩展；Kimi Code需连接原本机服务及访问令牌。三类均需实际原会话投递、停止、状态和回复验收。
-- Claude Desktop、ChatGPT.app与WorkBuddy需辅助功能权限、可靠的实际版本AX回复边界和停止控件；未在私人聊天发送测试。七类应用均未宣称全部端到端验收。
-- 设备使用有界原生特效，未逐项移植完整主题特效/球面gaze；点阵与Mac不宣称逐帧等同。
-
-
-## 0.4 豆包实时识别与宠物选择器
-
-- 用户取消MiniMax ASR，最终明确选择豆包。复用本机已有豆包Key与`volc.seedasr.sauc.duration`，MiniMax仅保留TTS；未要求用户重新填写阿里云凭据。
-- Mac正式Factory/Codec/StreamingCloudSession以20ms节奏发送专用合成PCM 99964样本（约6.25秒），录音期间13次字幕更新，完整终态后得到28字符；总耗时8760ms，实际账号/WSS通过。未保存识别正文或服务trace。
-- 真实服务终包为flags3、正序号+13，旧表符号硬限制曾误拒绝。已依据新官方解析示例按flags bit1判终态，保留长度/UTF-8/JSON等校验，并补16条合成跨端帧回归；不是通过放弃终态确认来通过测试。
-- 新宠物选择器使用单个离线WKWebView，提供193外观、16脸型、44表情、43颜色和29真实画风，画风驱动Mac挂件，设备固定点阵。静态画风各不相同，切换画风不改变同一设备样本的29364B资源。527px中文/840px英文离线交互、畸形消息拒绝和Swift6检查通过。
-- 原生实际窗口已确认外观搜索和点阵画风切换有效，右侧三列色块无裁切。默认窗口下740px舞台过高，已修为600px紧凑布局；最后一次真实窗口确认尚待执行。
-- 0.4首个候选2693872B已受保护刷写，身份分区回读逐字节一致。schema1恢复保持pet/revision但configured0；USB profile2事务后configured1，Wi-Fi与独立模式正常，idle heap约57328B、最大连续45056B，LVGL峰23896B。
-- 设备首轮3次真实按键录音均未连上ASR，用户明确反馈无字幕。错误为`asr_connection_failed`，sent/messages均0；录音约97KB、DMA0、ring overflow0、ring peak640B、Flash写峰1579µs。未把Mac成功或设备启动算成设备实时识别成功。
-- 确认自建WS transport默认port0，只有其TLS父层设置443，官方client实际读取WS层默认端口。修正版为WS本身设置443，补真实端口模型回归及独立有界数字`asr_diagnostics`；writer实测只剩312B，栈从2048增至2560B。修正版镜像2695616B、SHA256 `7689db6d9b56ba674a13e382fc594532870b7a6d9de01c93908a0bf24a07a9d6`，仍待本轮刷写/真实验证。
-- 声音连续性仍未验收：0.3.1用户确认仍断续，0.4首次真机在ASR连接阶段失败，未进入TTS。不能用MiniMax云端返回成功代替设备扬声器质量验证。
+- 七类原应用尚未全部端到端验收。Claude Code原终端正式停止回执受限；OMP/DSH需原进程加载扩展，Kimi需连接原服务；Claude Desktop、ChatGPT.app、WorkBuddy依赖辅助功能授权和实际版本可靠消息/停止边界。
+- 30秒上限、打断、连续多轮资源水位、断网/无余额/掉电和Mac关机的完整矩阵未完成。历史扬声器断续仍未修复，当前按用户要求暂停朗读。
+- 设备使用有界原生特效，未宣称与Mac全部主题特效逐帧一致；缺字emoji/罕见汉字用□占位。

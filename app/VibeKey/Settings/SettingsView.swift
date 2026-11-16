@@ -5,6 +5,7 @@ struct SettingsView: View {
     let app: AppState
     /// 当前分类(由 WindowManager 持有,外部可以直接打开某个分类,如字幕条里的"翻译设置")。
     @Bindable var navigation: SettingsNavigation
+    @State private var settingsHeight:CGFloat = 700
 
     enum Pane: String, CaseIterable, Identifiable {
         case assistant, integrations, pet, general, dictation, subtitles, models, translation, ai, shortcuts, vocabulary, passport, vibe
@@ -63,9 +64,10 @@ struct SettingsView: View {
                 .tag(pane)
             }
             .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
             .padding(.top, 28)
             .frame(width: 236)
-            .background(.regularMaterial)
+            .background(DS.settingsSidebarFill)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -80,8 +82,15 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .background(GeometryReader { proxy in
+            Color.clear
+                .onAppear { settingsHeight=proxy.size.height }
+                .onChange(of:proxy.size.height) { _,height in settingsHeight=height }
+        })
+        .background(DS.settingsBackground)
         .ignoresSafeArea()
         .frame(minWidth: 820, minHeight: 560)
+        .preferredColorScheme(.dark)
         .onAppear { app.permissions.startPolling() }
         .onDisappear { app.permissions.stopPolling() }
     }
@@ -90,8 +99,9 @@ struct SettingsView: View {
         if let error = app.assistantSync.error { return error }
         if app.deviceLink.connection == .disconnected { return String(localized:"连接 Passport 后可同步。",bundle:.l10n) }
         if app.assistantSync.busy { return String(localized:"正在生成并同步宠物…",bundle:.l10n) }
+        if app.assistantSync.retiredResourcesClean == false { return AssistantError.resourceCleanupPending.localizedDescription }
         if app.assistantSync.appliedPetRevision > 0 {
-            return String(localized:"设备已应用版本：\(Int(app.assistantSync.appliedPetRevision))",bundle:.l10n)
+            return String(localized:"设备已应用版本：\(String(app.assistantSync.appliedPetRevision))",bundle:.l10n)
         }
         return String(localized:"选择后点击同步，设备收到完整资源后生效。",bundle:.l10n)
     }
@@ -101,7 +111,7 @@ struct SettingsView: View {
         switch pane {
         case .assistant: AssistantPane(app: app)
         case .integrations: VibePane(app: app)
-        case .pet: PetSettingsView(controller:app.pet,
+        case .pet: PetSettingsView(controller:app.pet, canvasHeight:max(560,min(820,settingsHeight-98)),
             onSyncPet:{ app.assistantSync.syncPet(controller:app.pet) },
             canSyncPet:app.deviceLink.connection != .disconnected,
             syncingPet:app.assistantSync.busy,

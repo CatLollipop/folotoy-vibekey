@@ -9,6 +9,7 @@
 #include "esp_err.h"
 #include "ib_icons.h"
 #include "ib_ui_labels.h"
+#include "ib_reply_view.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -107,6 +108,8 @@ bool ib_ui_show(ib_ui_screen_t screen, ib_ui_mode_t mode, const char *msg);
 
 // 音量电平 0..100,驱动 REC / SUB 动画(内部平滑)。
 void ib_ui_set_level(uint8_t level);
+// 真实codec reader活动标志，停止/取消立即false；只驱动麦克风采集提示，不猜phase时长。
+void ib_ui_set_capture_active(bool active);
 
 // SUB 页字幕:UTF-8 原文 / 译文 / 应用名。空字符串表示没有对应内容;
 // live=true 时译文最后一行还在变化(用略暗的颜色)。
@@ -145,6 +148,16 @@ bool ib_ui_transcript_begin(uint32_t generation);
 bool ib_ui_transcript_update(uint32_t generation,const char *utf8,bool final);
 // generation=0强制清理（断连/切目标）；已取消/已final轮次拒绝迟到partial。
 void ib_ui_transcript_clear(uint32_t generation);
+// 回复与ASR字幕独立；全文由assistant持有，reader只复制当前已发布前缀，不持有control/GUI锁。
+typedef ib_reply_reader_fn ib_ui_reply_reader_fn;
+bool ib_ui_reply_begin(uint32_t generation);
+// 完整校验length并发布当前页成功才true，可作为reply_final ACK门禁；最大4096B。
+bool ib_ui_reply_update(uint32_t generation,size_t length,bool final,ib_ui_reply_reader_fn reader,void *ctx);
+bool ib_ui_reply_clear(uint32_t generation);
+bool ib_ui_reply_page(int delta);
+bool ib_ui_reply_visible(void);
+// 背光仍关闭时强制当前资产栅格/整屏提交，并等待BSP实际DMA完成；true后调用方才点亮。
+bool ib_ui_present_boot_frame(void);
 
 // 更新列表页内容(列表页可见时选中高亮平滑滑动到新位置)。
 void ib_ui_set_list(const ib_ui_list_t *list);

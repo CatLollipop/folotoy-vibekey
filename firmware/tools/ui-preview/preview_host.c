@@ -110,3 +110,14 @@ const uint8_t *ib_wallpaper_pixels(void)
 {
     return NULL;
 }
+
+uint32_t preview_region_hash(int x,int y,int width,int height)
+{
+    if(x<0||y<0||width<1||height<1||x+width>PREVIEW_W||y+height>PREVIEW_H)return 0;
+    lv_refr_now(s_disp);uint32_t hash=2166136261u;
+    for(int row=y;row<y+height;row++)for(int col=x;col<x+width;col++){
+        hash=(hash^(s_fb[row][col]&255u))*16777619u;
+        hash=(hash^(s_fb[row][col]>>8))*16777619u;
+    }
+    return hash;
+}

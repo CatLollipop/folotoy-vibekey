@@ -18,7 +18,7 @@ static int64_t virtual_us;
 static bool overlap,transcribing,finished_command,record_failed;
 static uint8_t pcm[19200];
 static const esp_partition_t part={.address=0x400000,.size=sizeof(pcm)};
-enum {SUCCESS=0,CANCEL,AUTH,TASK_FAILED,SEND_FAILED,INVALID_JSON,EARLY_FINISH,MISSING_FINAL,TIMEOUT,REDIRECT,FLASH_FAILURE,RECORD_FAILURE};
+enum {SUCCESS=0,CANCEL,AUTH,TASK_FAILED,SEND_FAILED,INVALID_JSON,EARLY_FINISH,MISSING_FINAL,TIMEOUT,REDIRECT,FLASH_FAILURE,RECORD_FAILURE,EMPTY_TERMINAL};
 void esp_log_level_set(const char *tag,int level){CHECK_STR(tag,"transport_ws");CHECK(level==0);}
 SemaphoreHandle_t xSemaphoreCreateMutex(void){struct fake_semaphore *s=calloc(1,sizeof(*s));live_semaphores++;return s;}
 BaseType_t xSemaphoreTake(SemaphoreHandle_t s,TickType_t ticks){(void)ticks;CHECK(!s->locked);s->locked=true;return pdTRUE;}
@@ -84,12 +84,13 @@ int esp_websocket_client_send_bin(esp_websocket_client_handle_t c,const char *p,
         if(scenario==TASK_FAILED){uint8_t error[12]={0x11,0xf0,0,0};put32(error+4,45000001);frame(c,error,sizeof(error));}return n;}
     CHECK(type==2&&b[2]==0&&c->started&&!finished_command);
     if(b[1]&2){CHECK(!len&&bytes_sent==sizeof(pcm));finished_command=true;
-        if(scenario==MISSING_FINAL){static const uint8_t missing[]={0x11,0x92,0x10,0,0,0,0,2,'{','}'};frame(c,missing,sizeof(missing));}
+        if(scenario==MISSING_FINAL||scenario==EMPTY_TERMINAL){static const uint8_t missing[]={0x11,0x92,0x10,0,0,0,0,2,'{','}'};frame(c,missing,sizeof(missing));}
         else if(scenario!=TIMEOUT)result(c,"你好。今天。",true);
         return n;
     }
     if(scenario==SEND_FAILED)return -1;
     CHECK(bytes_sent+len<=sizeof(pcm));CHECK(!memcmp(pcm+bytes_sent,p+8,len));bytes_sent+=len;
+    if(scenario==EMPTY_TERMINAL)return n;
     if(bytes_sent==6400){if(scenario==INVALID_JSON){static const uint8_t invalid[]={0x11,0x90,0x10,0,0,0,0,2,'{','x'};frame(c,invalid,sizeof(invalid));}else if(scenario==EARLY_FINISH)result(c,"提前",true);else result(c,"你好",false);}
     if(bytes_sent==12800)result(c,"你好。今天",false);
     return n;
@@ -106,8 +107,8 @@ int main(void){
     ib_asr_realtime_init();CHECK(live_semaphores==1);
     const ib_asr_source_t source={available,recording,record_error,phase,transcript};
     ib_assistant_profile_t profile={.asr_key="fictional-asr-key",.asr_ws_url="wss://fixture.invalid/api/v3/sauc/bigmodel_async",.asr_model="bigmodel",.asr_resource_id="volc.seedasr.sauc.duration",.record_limit_seconds=30};
-    const char *errors[]={NULL,"cancelled","authentication_failed","asr_task_failed","asr_send_failed","asr_invalid_json","asr_early_finish","incomplete_response","asr_finish_timeout","asr_redirect_rejected","flash_read_failed","recording_overflow"};
-    for(scenario=0;scenario<=RECORD_FAILURE;scenario++){
+    const char *errors[]={NULL,"cancelled","authentication_failed","asr_task_failed","asr_send_failed","asr_invalid_json","asr_early_finish","incomplete_response","asr_finish_timeout","asr_redirect_rejected","flash_read_failed","recording_overflow","no_speech"};
+    for(scenario=0;scenario<=EMPTY_TERMINAL;scenario++){
         virtual_us=1000;checks=bytes_sent=tls_attempts=callbacks=finals=0;overlap=transcribing=finished_command=record_failed=false;char text[4096];
         const char *error=ib_asr_realtime_run(&profile,&part,0,&source,text,sizeof(text),cancelled);
         if(errors[scenario]){CHECK(error);if(error)CHECK_STR(error,errors[scenario]);}else{CHECK(!error);CHECK(overlap&&transcribing&&finals==1&&callbacks>=3);CHECK_STR(text,"你好。今天。");}

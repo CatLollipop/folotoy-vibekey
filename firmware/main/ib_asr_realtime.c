@@ -123,7 +123,7 @@ static void on_event(void *context,esp_event_base_t base,int32_t event,void *dat
                 if(!s->error){
                     s->stats.messages++;s->server_started=s->stats.task_started=true;
                     if(s->parser.last&&!s->finishing)s->error="asr_early_finish";
-                    else if(s->parser.last&&!s->parser.json.event.has_text)s->error="incomplete_response";
+                    else if(s->parser.last&&!s->parser.json.event.has_text){s->finished=s->stats.task_finished=true;s->stats.sentences++;s->error=s->text[0]?"incomplete_response":"no_speech";}
                     else if(s->parser.json.event.has_text){
                         const char *text=s->parser.json.event.text;size_t n=strlen(text);
                         if(n>=s->capacity)s->error="transcript_too_large";
@@ -167,7 +167,7 @@ const char *ib_asr_realtime_run(const ib_assistant_profile_t *p,const esp_partit
     esp_transport_set_default_port(s->ws,443);
     char headers[1024];snprintf(headers,sizeof(headers),"X-Api-Key: %s\r\nX-Api-Resource-Id: %s\r\nX-Api-Request-Id: %s\r\nX-Api-Connect-Id: %s\r\nX-Api-Sequence: -1\r\n",p->asr_key,p->asr_resource_id,s->task,s->task);
     const char *path=strchr(p->asr_ws_url+6,'/');
-    esp_transport_ws_config_t ws_config={.ws_path=path?path:"/",.user_agent="FoloVibe-Key/0.4.0",.headers=headers,.propagate_control_frames=true};
+    esp_transport_ws_config_t ws_config={.ws_path=path?path:"/",.user_agent="FoloVibe-Key/0.5.0",.headers=headers,.propagate_control_frames=true};
     esp_err_t configured=esp_transport_ws_set_config(s->ws,&ws_config);memset(headers,0,sizeof(headers));
     if(configured!=ESP_OK){error="out_of_memory";goto done;}
     esp_websocket_client_config_t config={.uri=p->asr_ws_url,.ext_transport=s->ws,.disable_auto_reconnect=true,

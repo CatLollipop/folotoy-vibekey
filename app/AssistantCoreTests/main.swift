@@ -47,6 +47,8 @@ extension Bundle { static var l10n: Bundle { .main } }
         try profile.validate()
         let wire = try profile.deviceData(secrets: .init(minimaxKey: "test-minimax", deepseekKey: "test-deepseek", asrKey:"test-doubao"))
         let object = try JSONSerialization.jsonObject(with: wire) as! [String: Any]
+        try expect(object["minimax_key"] == nil && object["minimax_base_url"] == nil && object["voice_id"] == nil,"Text-only device profile sent dormant speech credentials/settings")
+        _ = try profile.deviceData(secrets:.init(minimaxKey:"",deepseekKey:"test-deepseek",asrKey:"test-doubao"))
         try expect(object["llm_model"] as? String == "deepseek-flash", "Low-price model")
         try expect(object["asr_provider"] as? String == "volcengine_doubao_realtime" &&
                    object["asr_resource_id"] as? String == profile.asrResourceID &&
@@ -66,7 +68,7 @@ extension Bundle { static var l10n: Bundle { .main } }
         }
         let exported = String(decoding: try JSONEncoder().encode(profile), as: UTF8.self)
         try expect(!exported.contains("test-minimax") && !exported.contains("minimax_key"), "Public config cannot leak keys")
-        var bad = profile; bad.minimaxBaseURL = "http://example.invalid"
+        var bad = profile; bad.deepseekBaseURL = "http://example.invalid"
         rejects { try bad.validate() }
         bad = profile; bad.systemPrompt = String(repeating: "中", count: 700)
         rejects { try bad.validate() }
@@ -96,6 +98,19 @@ extension Bundle { static var l10n: Bundle { .main } }
         try expect(sharedStore.asrKey == "shared-doubao-fixture" && sharedStore.profile.asrResourceID == "volc.bigasr.sauc.duration",
                    "Assistant reuses the user's selected Doubao credentials and resource")
         defaults.removeObject(forKey:"cloud.volcengine.model")
+        var previous=profile
+        previous.autoSpeakReplies=true
+        previous.systemPrompt="你是友好、可靠的中文AI助理。优先给出简短、清楚、适合语音朗读的回答；除非用户要求，控制在约120个汉字内。"
+        defaults.set(try JSONEncoder().encode(previous),forKey:"assistant.profile")
+        let textMigrated=AssistantStore(credentials:sharedCredentials,defaults:defaults)
+        try expect(!textMigrated.profile.autoSpeakReplies && textMigrated.profile.systemPrompt == AssistantProfile.defaultSystemPrompt,
+                   "Legacy speech preference/default prompt was reenabled")
+        previous.systemPrompt="请保留用户的自定义提示词。"
+        defaults.set(try JSONEncoder().encode(previous),forKey:"assistant.profile")
+        let customMigrated=AssistantStore(credentials:sharedCredentials,defaults:defaults)
+        try expect(customMigrated.profile.systemPrompt == previous.systemPrompt,"Text-only migration overwrote custom prompt")
+        defaults.removeObject(forKey:"assistant.profile")
+
         store.minimaxKey = "fixture"; store.deepseekKey = "fixture"; store.asrKey = "fixture"; store.profile.autoSpeakReplies = false
         let source = FakeAudioSource()
         let controller = AssistantController(store: store, service: DelayedCloudFixture(), makeRecognition:{_,_ in ControlledRecognitionSession()}, makeSource: { source })
@@ -106,7 +121,7 @@ extension Bundle { static var l10n: Bundle { .main } }
         try expect(controller.reply == "new reply" && controller.phase == .completed, "Late cancelled callback must not overwrite new turn")
         controller.send(text: "old")
         try await Task.sleep(for: .milliseconds(10))
-        controller.speakApplicationReply("current app reply")
+        controller.showApplicationReply("current app reply")
         try await Task.sleep(for: .milliseconds(120))
         try expect(controller.reply == "current app reply" && controller.phase == .completed, "Silent app reply must cancel old generation too")
         controller.beginRecording()
@@ -120,7 +135,7 @@ extension Bundle { static var l10n: Bundle { .main } }
         try VolcengineCodecContracts.run()
         try await testOfficialDoubaoCompletion()
         try await testCancellationBeforeRequest(store:store)
-        print("Assistant core tests: PASS (SSE, hex, history, config, WAV, application ordering, playback isolation, recording-time ASR, finish drain/failure/cancel/generation)")
+        print("Assistant core tests: PASS (SSE, hex, history, config, WAV, application ordering, text-only final replies, recording-time ASR, finish drain/failure/cancel/generation)")
     }
 
     @MainActor static func until(_ condition: () -> Bool) async throws {
@@ -153,8 +168,8 @@ extension Bundle { static var l10n: Bundle { .main } }
         try await until { app.phase == .stopped }
         try expect(!app.isBusy,"Original stopped event did not end the applied application turn")
 
-        // 与Coordinator相同的顺序：最终正文先到，终态先暂存，applied后才播放最终正文。
-        app.onPhase = { phase in if phase == .replying { app.speakApplicationReply("final before receipt") } }
+        // 与Coordinator相同的顺序：最终正文先到，终态先暂存，applied后才显示最终正文。
+        app.onPhase = { phase in if phase == .replying { app.showApplicationReply("final before receipt") } }
         app.send(text:"fast final")
         try await until { app.phase == .thinking }
         app.finishApplicationTurn(.completed)
@@ -162,14 +177,21 @@ extension Bundle { static var l10n: Bundle { .main } }
         try expect(app.reply == "final before receipt","Pending terminal state overwrote an early final reply")
         app.onPhase = nil
 
-        store.profile.autoSpeakReplies = true
-        app.speakApplicationReply("read current final")
-        try await until { audio.started && app.phase == .speaking }
-        let stops = audio.stopCount
-        app.finishApplicationTurn(.completed); app.finishApplicationTurn(.stopped); app.finishApplicationTurn(.failed)
-        try expect(app.phase == .speaking && audio.stopCount == stops,"Terminal event interrupted a final reply already being read aloud")
-        audio.finish()
-        try await until { app.phase == .completed }
+        store.profile.autoSpeakReplies = true // 旧偏好也不能恢复已暂停的朗读。
+        let textOnlyCloud = CountingCloudFixture()
+        let textOnly = AssistantController(store:store,service:textOnlyCloud,player:audio,
+            makeRecognition:{_,_ in ControlledRecognitionSession()},makeSource:{FakeAudioSource()})
+        var replies:[String]=[];textOnly.onReply = { replies.append($0) }
+        textOnly.showApplicationReply("current final as text")
+        try expect(textOnly.phase == .completed && textOnly.reply == "current final as text" && !audio.started,
+                   "Application final was not shown as text")
+        textOnly.finishApplicationTurn(.failed);textOnly.finishApplicationTurn(.stopped)
+        try expect(textOnly.phase == .completed && textOnly.reply == "current final as text",
+                   "Late terminal event erased displayed final text")
+        textOnly.send(text:"cloud text")
+        try await until { textOnly.phase == .completed && textOnly.reply == "cloud text" }
+        try expect(textOnlyCloud.speechCalls == 0 && !audio.started && replies == ["current final as text","cloud text"],
+                   "Text-only mode called TTS or omitted final body despite legacy preference")
         store.profile.autoSpeakReplies = false
     }
 
@@ -289,9 +311,9 @@ extension Bundle { static var l10n: Bundle { .main } }
         try expect(cloud.requests == ["latest"],"A phase callback canceled the turn but the request was still sent")
         app.onPhase=nil
         store.profile.autoSpeakReplies=true
-        app.speakApplicationReply("cancel queued speech");app.cancel()
+        app.showApplicationReply("text-only reply");app.cancel()
         try await Task.sleep(for:.milliseconds(10))
-        try expect(cloud.speechCalls == 0 && !audio.started,"Canceled queued speech still opened the player/TTS service")
+        try expect(cloud.speechCalls == 0 && !audio.started,"Text-only application reply opened the player/TTS service")
         store.profile.autoSpeakReplies=false
     }
 }

@@ -3,6 +3,17 @@
 (() => {
   const $=id=>document.getElementById(id), C=globalThis.AoraPetCatalog;
   const copy={
+    settings:['设置','Settings'],petSettings:['宠物设置','Pet settings'],closeSettings:['关闭设置','Close settings'],settingsCategories:['宠物设置分类','Pet settings categories'],
+    desktop:['桌面','Desktop'],passport:['Passport','Passport'],
+    desktopIntro:['画风与表情即时应用到桌面挂件。','Styles and expressions update the desktop pet immediately.'],
+    showDesktop:['显示桌面宠物','Show desktop pet'],size:['挂件大小','Pet size'],alwaysOnTop:['始终置顶','Always on top'],
+    clickThrough:['鼠标穿透','Click through'],reducedMotion:['减少动画','Reduce motion'],resetPosition:['恢复挂件位置','Reset pet position'],
+    followHelp:['选择表情后固定显示；打开跟随会话可恢复自动联动。','Choosing an expression holds it. Turn on Follow session to restore automatic changes.'],
+    deviceIntro:['外观、脸型、颜色与表情同步到 Passport，设备保持点阵画风。','Sync the appearance, face, color and expression to Passport. Its rendering stays dot matrix.'],
+    showDevice:['显示设备宠物','Show device pet'],fps:['动画帧率','Animation frame rate'],brightness:['点阵亮度','Dot brightness'],
+    deviceHelp:['同步后生效。离线页始终显示当前宠物。按住设备 OK 说话，松开结束。','Changes take effect after sync. The offline page always shows the current pet. Hold OK to speak; release to finish.'],
+    syncPet:['同步到 Passport','Sync to Passport'],syncing:['正在同步宠物…','Syncing pet…'],connectPassport:['连接 Passport 后可同步。','Connect Passport to sync.'],
+    notSynced:['同步后以设备回执为准。','Sync is confirmed by the device receipt.'],version:['0.2.0 · 离线运行','0.2.0 · Offline'],
     stage:['宠物实时预览','Live pet preview'],desktopStyle:['桌面画风','Desktop style'],categories:['表情分类','Expression categories'],style:['画风','Style'],color:['颜色','Color'],face:['脸型','Face'],expression:['表情','Expression'],
     follow:['跟随会话','Follow session'],appearance:['外观','Appearance'],
     desktopOnly:['画风应用到桌面挂件，Passport 保持点阵。','Styles apply to the desktop pet. Passport stays dot matrix.'],
@@ -15,7 +26,10 @@
   };
   let locale='zh',appearance={castId:'dot',faceId:'capsule',colorId:'cream',style:'vector',variant:'solid'};
   let state='idle',follow=true,reduced=false,group='resting',pet=null,lastKey='',lookRevision=0,search='';
-  const imageCache=new Map(), watched=new Map();
+  let drawerOpen=false,activePane='desktop',restoreFocus=null;
+  let prefs={desktopEnabled:true,size:220,alwaysOnTop:true,clickThrough:false,reducedMotion:false,deviceEnabled:true,deviceFPS:12,deviceBrightness:80};
+  let syncState={available:false,connected:false,busy:false,status:''};
+  const imageCache=new Map(), watched=new Map(), pendingPrefs=new Map();
   const observer=new IntersectionObserver(entries=>{for(const entry of entries)if(entry.isIntersecting){const run=watched.get(entry.target);if(run){watched.delete(entry.target);observer.unobserve(entry.target);run();}}},{root:null,rootMargin:'50px'});
   const t=key=>copy[key]?.[locale==='zh'?0:1]||key;
   const name=entry=>locale==='zh'?entry.name:(entry.englishName||entry.id);
@@ -23,8 +37,9 @@
   const styleChoice=()=>C.styles.find(s=>s.style===appearance.style&&s.variant===appearance.variant)||C.styles[0];
   function post(action,value){
     const body=action==='follow'?{action,enabled:!!value}:{action,id:String(value)};
-    window.webkit?.messageHandlers?.petSelection?.postMessage(body);
+    send(body);
   }
+  function send(body){window.webkit?.messageHandlers?.petSelection?.postMessage(body);}
   function node(tag,className,text){const e=document.createElement(tag);if(className)e.className=className;if(text!==undefined)e.textContent=text;return e;}
   function button(className,label,action){const b=node('button',className);b.type='button';b.setAttribute('aria-label',label);b.title=label;b.addEventListener('click',action);return b;}
   function cacheImage(options){
@@ -98,7 +113,7 @@
     for(const key of [...host.style])if(key.startsWith('--aora-'))host.style.removeProperty(key);
     for(const [key,value]of Object.entries(Aora.getInkVars(appearance.colorId)))host.style.setProperty(key,value);
     const options={shape:selected.shape,face:appearance.faceId,style:appearance.style,variant:appearance.variant,state,
-      nose:selected.nose||Aora.autoNoseForKey('passport-pet'),reducedMotion:reduced,seed:'passport-selector',entryEffects:false,antics:false};
+      nose:selected.nose||Aora.autoNoseForKey('passport-pet'),reducedMotion:reduced,paused:drawerOpen||document.hidden,seed:'passport-selector',entryEffects:false,antics:false};
     if(!pet)pet=Aora.createCharacter(host,options);else pet.update(options);
     if(reduced)pet.settle();
   }
@@ -116,10 +131,46 @@
   }
   function localize(){
     document.documentElement.lang=locale==='zh'?'zh-CN':'en';
+    $('settingsOpen').setAttribute('aria-label',t('petSettings'));$('settingsClose').setAttribute('aria-label',t('closeSettings'));
+    document.querySelector('.settings-tabs').setAttribute('aria-label',t('settingsCategories'));
     for(const e of document.querySelectorAll('[data-copy]'))e.textContent=t(e.dataset.copy);
     document.querySelector('.stage').setAttribute('aria-label',t('stage'));$('styleOptions').setAttribute('aria-label',t('desktopStyle'));$('stateGroups').setAttribute('aria-label',t('categories'));
     $('castSearch').placeholder=t('search');$('castSearch').setAttribute('aria-label',t('search'));
     $('castPrevious').setAttribute('aria-label',t('previous'));$('castNext').setAttribute('aria-label',t('next'));
+  }
+  function renderSettings(){
+    for(const input of document.querySelectorAll('[data-setting]')){
+      const value=prefs[input.dataset.setting];
+      if(input.type==='checkbox')input.checked=!!value;else input.value=String(value);
+    }
+    $('sizeValue').textContent=prefs.size+' px';$('fpsValue').textContent=prefs.deviceFPS+' FPS';$('brightnessValue').textContent=prefs.deviceBrightness+'%';
+    const sync=$('syncPet');sync.hidden=!syncState.available;sync.disabled=!syncState.connected||syncState.busy;
+    sync.textContent=t(syncState.busy?'syncing':'syncPet');sync.setAttribute('aria-busy',String(syncState.busy));
+    $('syncStatus').textContent=syncState.busy?t('syncing'):(syncState.status||t(syncState.connected?'notSynced':'connectPassport'));
+  }
+  function selectPane(id){
+    activePane=id==='device'?'device':'desktop';
+    for(const tab of document.querySelectorAll('[data-pane]')){const selected=tab.dataset.pane===activePane;tab.setAttribute('aria-selected',String(selected));tab.tabIndex=selected?0:-1;}
+    $('desktopSettings').hidden=activePane!=='desktop';$('deviceSettings').hidden=activePane!=='device';
+    document.querySelector('.settings-scroll').scrollTop=0;
+  }
+  function setDrawer(open){
+    if(drawerOpen===open)return;
+    if(open)restoreFocus=document.activeElement;
+    drawerOpen=open;$('settingsBackdrop').hidden=!open;$('selector').inert=open;
+    $('settingsOpen').setAttribute('aria-expanded',String(open));
+    if(open){renderSettings();$('settingsClose').focus();}
+    else{const target=restoreFocus?.isConnected?restoreFocus:$('settingsOpen');target.focus();restoreFocus=null;}
+    paintPet();
+  }
+  function drawerKey(event){
+    if(!drawerOpen)return;
+    if(event.key==='Escape'){event.preventDefault();event.stopPropagation();setDrawer(false);return;}
+    if(event.key!=='Tab')return;
+    const items=[...$('settingsDrawer').querySelectorAll('button:not([disabled]),input:not([disabled]),[tabindex="0"]')].filter(e=>e.getClientRects().length&&e.tabIndex>=0);
+    const first=items[0],last=items.at(-1);if(!first)return;
+    if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
+    else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
   }
   function showError(){ $('loadState').hidden=true;$('loadError').hidden=false; }
   try{
@@ -129,8 +180,32 @@
     $('castPrevious').addEventListener('click',()=>$('castOptions').scrollBy({left:-250,behavior:reduced?'auto':'smooth'}));
     $('castNext').addEventListener('click',()=>$('castOptions').scrollBy({left:250,behavior:reduced?'auto':'smooth'}));
     $('reloadButton').addEventListener('click',()=>location.reload());
+    $('settingsOpen').setAttribute('aria-expanded','false');
+    $('settingsOpen').addEventListener('click',()=>setDrawer(true));$('settingsClose').addEventListener('click',()=>setDrawer(false));
+    $('settingsBackdrop').addEventListener('click',event=>{if(event.target===$('settingsBackdrop'))setDrawer(false);});
+    document.addEventListener('keydown',drawerKey);
+    for(const tab of document.querySelectorAll('[data-pane]'))tab.addEventListener('click',()=>selectPane(tab.dataset.pane));
+    document.querySelector('.settings-tabs').addEventListener('keydown',event=>{
+      if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+      event.preventDefault();selectPane(event.key==='Home'?'desktop':event.key==='End'?'device':activePane==='desktop'?'device':'desktop');
+      $(activePane==='desktop'?'desktopTab':'deviceTab').focus();
+    });
+    for(const input of document.querySelectorAll('[data-setting]'))input.addEventListener(input.type==='checkbox'?'change':'input',()=>{
+      const key=input.dataset.setting,value=input.type==='checkbox'?input.checked:Number(input.value);
+      pendingPrefs.set(key,value);prefs={...prefs,[key]:value};renderSettings();send({action:'setting',key,value});
+    });
+    $('resetPosition').addEventListener('click',()=>send({action:'resetPosition'}));
+    $('syncPet').addEventListener('click',()=>{if(!syncState.available||!syncState.connected||syncState.busy)return;syncState={...syncState,busy:true};renderSettings();send({action:'syncPet'});});
+    $('attributionButton').addEventListener('click',()=>send({action:'attribution'}));
     window.petSelector=Object.freeze({
       apply(payload){
+        if(payload.settings){for(const key of Object.keys(prefs)){
+          const value=payload.settings[key];if(typeof value!==typeof prefs[key])continue;
+          // 已入WebKit队列的旧回推不能撤销；保留本地意图直到收到同值原生确认。
+          if(pendingPrefs.has(key)&&pendingPrefs.get(key)!==value)continue;
+          pendingPrefs.delete(key);prefs[key]=value;
+        }}
+        if(payload.sync)syncState={available:!!payload.sync.available,connected:!!payload.sync.connected,busy:!!payload.sync.busy,status:typeof payload.sync.status==='string'?payload.sync.status:''};
         const next=payload.appearance||{}, selected=C.casts.find(c=>c.id===next.castId)||C.casts[0];
         const look=C.styles.find(s=>s.style===next.style&&s.variant===next.variant)||C.styles[0];
         const nextAppearance={castId:selected.id,faceId:C.faces.some(f=>f.id===next.faceId)?next.faceId:selected.face,
@@ -139,13 +214,15 @@
         const key=JSON.stringify([nextAppearance,nextState,nextLocale]);
         appearance=nextAppearance;state=nextState;follow=!!payload.followConversation;reduced=!!payload.reducedMotion;locale=nextLocale;
         if(key!==lastKey){lastKey=key;localize();renderAll();}else{updateHeading();paintPet();}
-        $('selector').setAttribute('aria-busy','false');$('loadState').hidden=true;
+        renderSettings();
+        $('selector').inert=drawerOpen;$('selector').setAttribute('aria-busy','false');$('loadState').hidden=true;
       },
-      diagnostics(){return {casts:C.casts.length,faces:C.faces.length,states:C.states.length,styles:C.styles.length,animatedCharacters:1,cacheSize:imageCache.size,appearance:{...appearance},state,follow};},
-      destroy(){observer.disconnect();watched.clear();pet?.destroy();pet=null;}
+      diagnostics(){return {casts:C.casts.length,faces:C.faces.length,states:C.states.length,styles:C.styles.length,animatedCharacters:1,cacheSize:imageCache.size,appearance:{...appearance},state,follow,drawerOpen,activePane,settings:{...prefs},sync:{...syncState}};},
+      destroy(){observer.disconnect();watched.clear();pendingPrefs.clear();document.removeEventListener('keydown',drawerKey);pet?.destroy();pet=null;}
     });
-    localize();renderAll();$('selector').setAttribute('aria-busy','false');$('loadState').hidden=true;
-    document.addEventListener('visibilitychange',()=>{if(document.hidden)pet?.pause();else pet?.resume();});
+    // 原生目录和首份设置快照到达前保留载入层，避免用户意图被ready门禁静默丢弃。
+    localize();renderAll();renderSettings();$('selector').inert=true;
+    document.addEventListener('visibilitychange',()=>{if(document.hidden||drawerOpen)pet?.pause();else pet?.resume();});
     window.addEventListener('pagehide',()=>window.petSelector.destroy(),{once:true});
   }catch{showError();}
 })();

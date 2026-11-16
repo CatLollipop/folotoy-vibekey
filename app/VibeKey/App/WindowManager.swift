@@ -53,6 +53,8 @@ final class WindowManager: NSObject, NSWindowDelegate {
                                         resizable: .init(minSize: NSSize(width: 820, height: 560), autosaveName: "VibeKeySettings"),
                                         content: LocalizedRoot(language: app.language) { SettingsView(app: self.app, navigation: self.settingsNavigation) })
         }
+        // 仅设置窗口固定深色，AppKit标题栏/侧栏材质与SwiftUI及其配置sheet一致。
+        settingsWindow?.appearance = NSAppearance(named:.darkAqua)
         present(settingsWindow)
     }
 

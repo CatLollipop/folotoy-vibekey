@@ -4,14 +4,14 @@
 
 ## 运行链路
 
-`OK 按下 → 16 kHz/16 bit/mono PCM → 采音ring → Flash writer提交tail → 豆包WSS流式识别与底部字幕 → 松开OK发送音频终包 → 识别终态 → DeepSeek SSE → MiniMax PCM SSE → ES8311扬声器`。
+`OK 按下 → 16 kHz/16 bit/mono PCM → 采音ring → Flash writer提交tail → 豆包WSS流式识别与底部字幕 → 松开OK发送音频终包 → 识别终态 → DeepSeek SSE → 全文文字回复分页显示`。
 
 - ASR：豆包 v3 双向 WebSocket `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async`，新版 `X-Api-Key` 鉴权，`X-Api-Resource-Id` 指定用户已开通的资源；request/connect UUID 每轮独立。协议1.0 binary帧，JSON和PCM不压缩（服务端按客户端压缩方式返回），避免设备分配gzip字典。`full`结果持续更新字幕；只有服务端合法终包flags bit1才能确认整轮完成（序号按signed Int32读取，可正可负，不作终态依据），不能用一句定稿冒充整轮完成。没有自动重连、跨区或请求重发。
 - LLM：`POST /v1/chat/completions`，默认 `model=deepseek-flash`、`stream=true`、`thinking={"type":"disabled"}`、`max_tokens=512`。同时收到 `finish_reason=stop` 与 `[DONE]` 才进入朗读；截断、工具调用、断流、空回复均明确失败。
-- TTS：`POST /v1/t2a_v2`，`model=speech-2.8-turbo`、PCM/16 kHz/mono、`stream=true`、`stream_options.exclude_aggregated_audio=true`。逐字符解析 SSE JSON 中的 hex 音频并写扬声器，元数据固定上限 4096 字节，不分配整条音频 JSON/PCM。
+- 原TTS实现（0.5暂停，不调用）：`POST /v1/t2a_v2`，`model=speech-2.8-turbo`、PCM/16 kHz/mono、`stream=true`、`stream_options.exclude_aggregated_audio=true`。逐字符解析 SSE JSON 中的 hex 音频并写扬声器，元数据固定上限 4096 字节，不分配整条音频 JSON/PCM。
 - 录音默认最多 30 秒（960000 字节）；录音期已开始ASR流；少于250ms或能量不足时取消，不调用LLM/TTS。每 20 ms 采样块先减去直流分量，要求至少三块 RMS ≥120 且 peak ≥500。此门限是防纯静音的轻量门限，仍需实际麦克风/距离验收，不是语音语义检测。
 - 历史只在 RAM 中保留完整成功轮次，按 UTF-8 字节预算丢弃最旧完整轮次。默认/硬上限 8192 字节、最多 12 轮；system prompt 和当前输入也占上下文预算。回复硬上限 4096 字节，超限不朗读。历史容量按实际成功轮次以1KiB增量分配，TLS cleanup后才扩容，不在首轮预占8KiB；分配紧张时裁掉最旧完整轮次，必要时不保留该轮历史。重启、清历史、退出独立模式清空历史。
-- 独立模式保留已配网的 STA，暂停 Mac 的局域网 TLS 服务及其队列/任务，避免它和公网 TLS 同时占内存。三个云阶段顺序 cleanup，最多一个公网 TLS。切回相伴模式恢复局域网 TLS。
+- 独立模式保留已配网的 STA，暂停 Mac 的局域网 TLS 服务及其队列/任务，避免它和公网 TLS 同时占内存。当前ASR与LLM两个云阶段顺序 cleanup，最多一个公网 TLS。切回相伴模式恢复局域网 TLS。
 - 公网 HTTPS 校验 CA 和主机名；首次联网使用 SNTP 校时。设备端不接受 HTTP 或带 userinfo/query/fragment 的 base URL，也不跟随重定向。TLS 初始连接 timeout 3 秒，握手后登记 socket；取消通过受互斥锁保护的 `shutdown` 唤醒 I/O，正文读取每秒检查取消，总阶段期限分别 60/90/180 秒。DNS/网络栈和真实 TLS 的取消延迟仍应在真机故障注入中测量。
 
 ## 帧、请求关联与回执
@@ -20,7 +20,7 @@
 
 ```json
 {"cmd":"assistant","op":"capabilities","rid":101}
-{"t":"assistant","op":"capabilities","rid":101,"ok":1,"schema":1,"profile_schema":2,"asr":"doubao-realtime","transcript":1,"max":16384,"pet_max":131072,"pet_format":"aora-bundle-v2","chunk":288,"profile":1,"pet":1,"standalone":1,"mode":"companion","state":"idle","configured":0,"rev":0,"pet_rev":0}
+{"t":"assistant","op":"capabilities","rid":101,"ok":1,"schema":1,"profile_schema":2,"asr":"doubao-realtime","transcript":1,"tts":0,"reply_text":1,"max":16384,"pet_max":131072,"pet_format":"aora-bundle-v2","chunk":288,"profile":1,"pet":1,"standalone":1,"mode":"companion","state":"idle","configured":0,"rev":0,"pet_rev":0}
 ```
 
 `standalone=0` 表示当前分区/运行器初始化失败，不能启动独立模式。`status` 返回当前 mode/state/configured/rev/pet_rev，以及 `heap`、`min_free`、`largest`（8-bit heap 字节）、`record_bytes`、`record_error`、`overflows`、`ring_peak`、`flash_write_max_us`、`voice_blocks`、`voice_peak`、`pet_ms`（点阵栅格计算最慢帧毫秒数）。另外app_ready/buttons分别确认核心任务已运行和按键驱动初始化成功，wifi_configured/wifi_ready/ble区分配网记录、取得IP和BLE实际启动。capabilities可由USB直接响应，不能替代app_ready/hello/pong的启动验证。pet_last_ms显示最近一帧wall time，pet_ms峰值可能包含Flash擦除/任务抢占；lvgl_peak是LVGL分配池峰值（0表示暂不可得），不能将wall time当纯CPU耗时。这些诊断不含音频、转写文本或密钥。
@@ -48,7 +48,7 @@
 - begin/chunk/commit 回执 `rev` 对应上传 revision；`pet_rev` 是当前生效的宠物 revision。只有 commit 的 `ok=1` 才表示完整配置已原子生效。错误不会伪装成功，也不把半个新配置激活。
 - begin 绑定发起链路；其它链路的 chunk/commit 返回 `upload_owner`。原链路或 USB 可 abort。上传没有跨重启续传，断连后应 abort 并完整重传。
 - 第一次成功 USB 提交记录 USB 初始化标记；在此之前 Wi-Fi begin 返回 `usb_required`。TLS 的配对 key 与 Wi-Fi 信息仍由原有 USB 配网流程建立。
-- profile 与 pet 使用两个 256 KiB bank 中独立的区域。更新任一类型时复制另一类型；CRC/格式/字段校验通过后最后写新头，掉电后选取最新有效 generation。同一 revision 重传也会创建新 generation 并重新应用设置。
+- profile 与 pet 使用两个 256 KiB bank 中独立的区域。更新任一类型时复制另一类型；CRC/格式/字段校验通过后最后写新头，掉电后选取最新有效 generation。0.5按用户要求，在新资源已应用后回收旧bank，不再长期保留上一只宠物副本；暂存区仅用于更新事务。同一 revision 重传也会创建新 generation 并重新应用设置。
 - 稳定错误包括 `busy/upload_active/no_upload/upload_owner/invalid_size/invalid_offset/invalid_chunk/checksum_mismatch/invalid_config/usb_required/erase_failed/copy_failed/write_failed/commit_failed/out_of_memory`。
 
 普通回执形状：
@@ -69,12 +69,12 @@ profile 最大 16384 字节，字符串限制按 UTF-8 字节计算：
 | `asr_resource_id` | 默认 `volc.seedasr.sauc.duration`，1…127字节ASCII字母、数字、`._-` |
 | `asr_ws_url` | 豆包WSS地址，最多191字节；严格wss，无userinfo/query/fragment |
 | `asr_key` | 豆包新版API Key，1…511字节，与MiniMax TTS凭据隔离 |
-| `minimax_key` | 必填，1…511 字节 |
+| `minimax_key` | 0.5不要求且客户端不发送；旧本机/设备数据不主动删除 |
 | `deepseek_key` | 必填，1…255 字节 |
-| `minimax_base_url` | `https://api.minimax.cn`，最多191字节 |
+| `minimax_base_url` | 历史TTS偏好，当前不发送或使用 |
 | `deepseek_base_url` | `https://api.deepseek.com`，最多191字节 |
 | `llm_model` | `deepseek-flash`，最多64字节 |
-| `voice_id` | `male-qn-qingse`，最多95字节 |
+| `voice_id` | 历史TTS偏好，当前不发送或使用 |
 | `system_prompt` | 简短中文随身助手提示，最多2048字节 |
 | `record_limit_seconds` | 默认30，范围1…30 |
 | `max_output_tokens` | 默认512，范围1…512 |
@@ -185,3 +185,37 @@ TTS阶段独立创建4096B ring和2560B栈的priority6消费者，云worker生�
 传输协议schema仍为1，凭据profile升级为2。客户端在上传前必须检查`profile_schema>=2`、`asr=doubao-realtime`和`transcript=1`。旧schema1数据仍可读取以保留宠物、版本与其它偏好，但configured=0，必须通过USB同步新的豆包配置；不再调用MiniMax ASR。
 
 `asr_status`以独立有界回执返回发送/接收包数、partial数量、连接和首次字幕耗时、最小free/largest heap、WSS/采音/writer剩余栈、DMA/ring溢出和6144B采音容量，不包含语音或转写正文。字幕generation/UTF-8/终态冻结协议见[字幕显示](transcript-display.md)。
+
+
+## 0.5回复正文与首次显示
+
+当前capabilities明确`tts:0, reply_text:1`。客户端同步纯文字profile前要求reply_text；有效配置只需豆包和DeepSeek，不需要MiniMax Key。设备原TTS代码保留但worker不调用、不创建播放队列。
+
+电脑模式的正文协议独立于录音字幕：
+
+```json
+{"cmd":"assistant","op":"reply_begin","rid":201,"generation":100}
+{"cmd":"assistant","op":"reply_update","rid":202,"generation":100,"off":0,"text":"你好。"}
+{"cmd":"assistant","op":"reply_final","rid":203,"generation":100,"size":9}
+{"cmd":"assistant","op":"reply_clear","rid":204,"generation":0}
+```
+
+update的off按UTF-8字节计算且必须连续；单块最多192B，Mac使用64B以覆盖最坏JSON转义，全文最多4096B。ACK回显rid/generation/off/final，final的size需与已收字节相同且UI完成发布，不能仅凭上传结束显示成功。旧代/结束后追加被拒绝；clear0强制关闭显示并建立新客户端epoch，worker在途时仍等待其释放旧buffer，不能提前free。
+
+独立LLM增量使用唯一4KiB buffer，发布后的前缀不可变；UI只通过带generation的有界reader读取小块，没有第二份全文副本。完成后保留供短按▲/▼分页，新PTT、取消、错误或模式切换清理。未知字符以方框替代，常用中文使用既有完整GB2312字库。
+
+屏幕移除常驻TIME栏，左右按钮采用统一尺寸/线重/中性色，图标仍贴合实际实体键位置。首次wake受启动闸门控制，持久化宠物校验、应用和正确帧呈现后才点亮背光；没有有效资源才使用内置默认角色。
+
+
+## 单份宠物资源保留
+
+用户允许同步成功后删除旧宠物资源。更新中仍使用inactive bank暂存，以免上传中断损坏当前资源；新bank完整校验、提交并应用后再清理旧bank及其映射。稳态只保留当前一份宠物资产。清理掉电不得损坏新active bank，下一次启动或更新应恢复未完成的回收。
+
+这主要回收Flash上的旧副本；Flash分区保留为下一次事务暂存，并不会变成RAM。运行内存只引用当前资源，旧映射/缓存必须在新资源应用后释放。清理期间的busy/回执不得冒充已完成。
+
+
+## 回复只读诊断（0.5.1）
+
+请求 `{"cmd":"assistant","op":"reply_status","rid":1}` 返回相同rid、ok1以及generation(UInt32)、revision(UInt32)、length(0..4096)、active(0|1)、final(0|1)、state(既有状态枚举)、capture_active(0|1)。接口不返回正文、不改保留状态；active/final/length不等于UI可见，UI显示与翻页仍需实际验证。
+
+成功正文在DONE→后台预擦PREPARING→IDLE期间保留。真正新PTT、取消、错误、明确清历史/正文才清除，后台预擦不是新轮开始。`ib_assistant_capture_active`读取实际reader工作标志，且排除stop/cancel；app将真实采音状态送UI，右侧麦克风仅在采集期间显示绿色呼吸，不依据TLS准备或等待倒计时猜测。

@@ -32,7 +32,7 @@ struct AssistantPane: View {
                         SecureField("DeepSeek API Key", text: $store.deepseekKey)
                             .textContentType(.password)
                         endpoint("对话模型", text: $store.profile.llmModel)
-                        Text("默认关闭思考模式；识别和朗读统一在“识别模型”中配置。")
+                        Text("默认关闭思考模式；回复以文字显示，实时识别在“识别模型”中配置。")
                             .font(.caption).foregroundStyle(.secondary)
                         HStack {
                             Button("保存配置") { _ = store.save() }
@@ -84,6 +84,7 @@ struct AssistantPane: View {
                         }
                         if !assistant.transcript.isEmpty { Text(assistant.transcript).foregroundStyle(.secondary).textSelection(.enabled) }
                         if !assistant.reply.isEmpty { Text(assistant.reply).textSelection(.enabled) }
+                        if let notice = assistant.deviceReplyError { Text(notice).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
                         if assistant.truncated { Text("回复达到长度上限，可继续追问。").font(.caption).foregroundStyle(.orange) }
                         if let error = assistant.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
                     }

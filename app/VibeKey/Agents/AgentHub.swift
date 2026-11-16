@@ -15,6 +15,7 @@ import Foundation
     @ObservationIgnored private let mailbox: AgentMailbox
     @ObservationIgnored private let adapters: [any AgentAdapter]
     @ObservationIgnored private let kimi: KimiAgentAdapter
+    @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var eventFilter = AgentEventFilter()
     @ObservationIgnored private var replied = Set<String>()
     @ObservationIgnored private var replyOrder: [String] = []
@@ -22,7 +23,8 @@ import Foundation
     @ObservationIgnored private var assistantDrafts: Set<String> = []
     @ObservationIgnored private var selectionGeneration = UUID()
 
-    init() {
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         let mailbox = AgentMailbox()
         self.mailbox = mailbox
         let kimi = KimiAgentAdapter(); self.kimi = kimi
@@ -49,7 +51,7 @@ import Foundation
             await self?.refresh()
             while !Task.isCancelled {
                 guard let self else { return }
-                for adapter in adapters { await adapter.poll(selectedSession) }
+                for adapter in adapters where integrationEnabled(adapter.id) { await adapter.poll(selectedSession) }
                 try? await Task.sleep(for: .milliseconds(400))
             }
         }
@@ -61,11 +63,20 @@ import Foundation
         isRefreshing = true; defer { isRefreshing = false }
         var nextDiagnostics: [AgentDiagnostic] = [], nextSessions: [AssistantAgentSession] = []
         for adapter in adapters {
+            guard integrationEnabled(adapter.id) else {
+                nextDiagnostics.append(disabledDiagnostic(adapter)); continue
+            }
             nextDiagnostics.append(await adapter.diagnose())
+            guard integrationEnabled(adapter.id) else { continue }
             do { nextSessions += try await adapter.discover() }
             catch { lastError = error.localizedDescription }
         }
-        diagnostics = nextDiagnostics; sessions = nextSessions
+        // 安装/卸载可发生在异步探测期间；提交前再过滤，避免旧结果恢复已卸载会话。
+        diagnostics = nextDiagnostics.map { diagnostic in
+            guard !integrationEnabled(diagnostic.id), let adapter = adapters.first(where: { $0.id == diagnostic.id }) else { return diagnostic }
+            return disabledDiagnostic(adapter)
+        }
+        sessions = nextSessions.filter { integrationEnabled($0.applicationID) }
         if let current = selectedSession, !sessions.contains(current) { clearSelection() }
     }
     func select(_ session: AssistantAgentSession) async throws {
@@ -73,7 +84,7 @@ import Foundation
         let token = UUID(); selectionGeneration = token
         try await adapter.activate(session)
         try Task.checkCancellation()
-        guard token == selectionGeneration else { throw CancellationError() }
+        guard token == selectionGeneration, integrationEnabled(session.applicationID) else { throw CancellationError() }
         if selectedSession != session {
             selectedSession = session; latestEvent = nil; lastError = nil
             onSelectionChange?(session)
@@ -114,16 +125,39 @@ import Foundation
     }
     func configureKimi(endpoint: String, token: String) throws { try kimi.configure(endpoint: endpoint, token: token) }
     var kimiEndpoint: String { kimi.endpoint }
+    func clearKimiConfiguration() { kimi.clearConfiguration() }
 
-    private func adapter(_ session: AssistantAgentSession) -> (any AgentAdapter)? { adapters.first { $0.id == session.applicationID } }
+    /// 卸载只停用本应用适配器；不终止宿主进程，也不停止原应用的任务。
+    func setIntegrationEnabled(_ enabled: Bool, id: String) {
+        AgentIntegrationPreferences.setEnabled(enabled, for: id, defaults: defaults)
+        if !enabled {
+            sessions.removeAll { $0.applicationID == id }
+            assistantDrafts = assistantDrafts.filter { draft in !draft.hasPrefix(id + ":") }
+            if selectedSession?.applicationID == id { clearSelection() }
+            if id == "kimiCode" { kimi.disconnect() }
+            if let adapter = adapters.first(where: { $0.id == id }), let index = diagnostics.firstIndex(where: { $0.id == id }) {
+                diagnostics[index] = disabledDiagnostic(adapter)
+            }
+        }
+    }
+    private func integrationEnabled(_ id: String) -> Bool { AgentIntegrationPreferences.isEnabled(id, defaults: defaults) }
+    private func disabledDiagnostic(_ adapter: any AgentAdapter) -> AgentDiagnostic {
+        AgentDiagnostic(id: adapter.id, name: adapter.name, capabilities: [],
+                        detail: String(localized: "接入组件已卸载；安装后重新检测。", bundle: .l10n), installed: false, verifiedAt: Date())
+    }
+
+    private func adapter(_ session: AssistantAgentSession) -> (any AgentAdapter)? {
+        guard integrationEnabled(session.applicationID) else { return nil }
+        return adapters.first { $0.id == session.applicationID }
+    }
     private func receive(_ event: ConversationEvent) {
-        guard eventFilter.accepts(event), let selected = selectedSession,
+        guard integrationEnabled(event.applicationID), eventFilter.accepts(event), let selected = selectedSession,
               event.applicationID == selected.applicationID, event.instanceID == selected.instanceID,
               event.sessionID == selected.sessionID else { return }
         latestEvent = event; onEvent?(event)
     }
     private func receive(_ reply: AgentReply) {
-        guard reply.isFinal, reply.session == selectedSession, !reply.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard integrationEnabled(reply.session.applicationID), reply.isFinal, reply.session == selectedSession, !reply.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let identity = reply.session.id + ":" + reply.turnID + ":" + reply.messageID
         guard replied.insert(identity).inserted else { return }
         replyOrder.append(identity)

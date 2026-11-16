@@ -25,6 +25,10 @@ import Observation
         if let savedURL = defaults.string(forKey:"cloud.volcengine.baseURL"), URL(string:savedURL)?.scheme == "wss" {
             restoredProfile.asrWebSocketURL = savedURL
         }
+        if restoredProfile.systemPrompt == "你是友好、可靠的中文AI助理。优先给出简短、清楚、适合语音朗读的回答；除非用户要求，控制在约120个汉字内。" {
+            restoredProfile.systemPrompt = AssistantProfile.defaultSystemPrompt
+        }
+        restoredProfile.autoSpeakReplies = false
         profile = restoredProfile
         minimaxKey = credentials.value(for: "assistant.minimaxKey") ?? ""
         deepseekKey = credentials.value(for: "assistant.deepseekKey") ?? ""

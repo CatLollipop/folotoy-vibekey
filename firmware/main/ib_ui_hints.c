@@ -1,205 +1,150 @@
-// main/ib_ui_hints.c: 两侧微型按键提示实现(见 ib_ui_hints.h)。
-//
-// 每个键:12 px 图标 + 贴屏幕右边缘、对准实体键的 3 颗竖排小圆点(像按键的"指示灯",与界面的点阵语言一致)。
-// 长按字形与小圆环复用同一个自绘标记控件;左侧电源用一段弧和竖线,不新增字体或位图资源。
-// 按下时 60 ms 冲到白、上下各多出一颗点,再用 240 ms 回落;只 invalidate 图标和标记。
-// 禁用时(PROC 页,上一句还在处理)图标与点画成更暗的禁用色;按下改为"不可用"反馈:点闪红并左右抖动,
-// 让用户知道这次按键没有生效、不会开始新的一句。
+// 两侧实体键提示：统一10px/1px线宽和低调暖白，不加装饰点列或错位抖动。
+// 右侧物理UP/DOWN/OK的主图标中心固定y70/170/270；长按仅在同键下方以小圆环标记。
 #include "ib_ui_hints.h"
-
 #include "ib_ui_gfx.h"
 #include "ib_ui_page.h"
 
-#define PRESS_MS    300
-#define PRESS_PEAK  20          // 前 20% 时间冲到最亮,后 80% 回落
-#define ICON_SIZE   14          // 图标标签的宽高(字形 12 px;屏幕很小,提示只需要能认出来)
-#define ICON_CX     8           // 图标中心(列内坐标;屏幕 x = 226)
-#define MARK_H      42          // 复用点列控件容纳长按字形,不增加每键 LVGL 对象
-#define MARK_CY     12          // 点列中心相对控件顶部,与原先的实体键锚点不变
-#define HOLD_DY     14          // 长按含义在短按字形下方 14 px
-#define HOLD_RING_X 17
-#define DOT         2           // 标记点 2x2,屏幕 x 234..235
-#define DOT_X       16
-#define DOT_PITCH   5           // 静止 3 颗:Y-5、Y、Y+5;按下时再加 Y±10
-#define DENY_MS     360         // 不可用反馈时长
-#define DENY_PX     2           // 抖动幅度
-#define ICON_DISABLED 0x303030  // 禁用时的图标颜色
-#define MARK_DISABLED 0x181818  // 禁用时的标记点颜色
+#define PRESS_MS 240
+#define MAIN_CX 10
+#define MAIN_CY 10
+#define HOLD_DY 14
+#define HINT_IDLE 0xB8B4A8
+#define HINT_HOLD 0x888478
+#define HINT_LIGHT 0xE8E4D8
+#define HINT_DISABLED 0x484840
 
-typedef struct {
-    lv_obj_t *icon;
-    lv_obj_t *mark;
-    ib_icon_t press_icon;       // 短按 / 长按独立存储,避免设置其中之一误隐藏另一项
-    ib_icon_t hold_icon;
-    int32_t flash;              // 0..IB_P_ONE:按下反馈的强度
-    int32_t deny;               // 0..IB_P_ONE:"不可用"反馈的强度
-    int32_t shake;              // 不可用反馈的水平偏移(px)
-} hint_t;
-
+typedef struct {lv_obj_t *view;ib_icon_t press,hold;int32_t flash,deny;} hint_t;
 static lv_obj_t *s_layer;
-static bool s_disabled;
+static bool s_disabled,s_visible=true,s_recording;
+static int32_t s_recording_phase;
 static hint_t s_hints[IB_UI_KEY_COUNT];
 
-static lv_color_t icon_color(const hint_t *h)
+/* 常用动作全部采用相同1px路径，其他既有协议图标保留12px Material字形语义。 */
+static void glyph(const ib_fx_t *f,int x,int y,ib_icon_t icon,lv_color_t c)
 {
-    if (s_disabled) return IB_C(ICON_DISABLED);
-    return ib_gray_lerp(IB_COLOR_TEXT_DIM, IB_COLOR_TEXT, h->flash);
-}
-
-static void mark_draw(lv_event_t *e)
-{
-    const hint_t *h = lv_event_get_user_data(e);
-    ib_fx_t fx;
-    ib_fx_begin(&fx, e);
-    int32_t cy = MARK_CY;
-    lv_color_t c = s_disabled ? IB_C(MARK_DISABLED) : ib_gray_lerp(IB_COLOR_MUTE, IB_COLOR_TEXT, h->flash);
-    // 不可用反馈:点向错误红过渡(彩色叠在精确灰上,不涉及灰色偏色)。
-    if (h->deny > 0) c = lv_color_mix(IB_C(IB_COLOR_ERR), c, (uint8_t)(h->deny * 255 / IB_P_ONE));
-    for (int i = -1; i <= 1; i++) {
-        ib_fx_rect(&fx, DOT_X + h->shake, cy + i * DOT_PITCH - DOT / 2, DOT, DOT, 0, c, LV_OPA_COVER);
+#define LINE(a,b,d,e) ib_fx_line(f,x+(a),y+(b),x+(d),y+(e),1,c,LV_OPA_COVER)
+    switch(icon){
+    case IB_ICON_NONE: break;
+    case IB_ICON_MIC:
+        ib_fx_frame(f,x-2,y-5,5,7,2,1,c,LV_OPA_COVER);
+        ib_fx_arc(f,x,y,4,1,0,180,c,LV_OPA_COVER);LINE(0,4,0,6);LINE(-2,6,2,6);break;
+    case IB_ICON_UP: LINE(-4,2,0,-2);LINE(0,-2,4,2);break;
+    case IB_ICON_DOWN: LINE(-4,-2,0,2);LINE(0,2,4,-2);break;
+    case IB_ICON_CHECK: LINE(-4,0,-1,3);LINE(-1,3,4,-3);break;
+    case IB_ICON_STOP: ib_fx_frame(f,x-4,y-4,9,9,1,1,c,LV_OPA_COVER);break;
+    case IB_ICON_ESC: case IB_ICON_CANCEL: LINE(-3,-3,3,3);LINE(-3,3,3,-3);break;
+    case IB_ICON_MODE:
+        LINE(-2,4,-2,-4);LINE(-4,-2,-2,-4);LINE(-2,-4,0,-2);
+        LINE(2,-4,2,4);LINE(0,2,2,4);LINE(2,4,4,2);break;
+    case IB_ICON_APPS:
+        for(int dy=-4;dy<=2;dy+=6){
+            for(int dx=-4;dx<=2;dx+=6){
+                ib_fx_frame(f,x+dx,y+dy,3,3,0,1,c,LV_OPA_COVER);
+            }
+        }
+        break;
+    case IB_ICON_DEL: case IB_ICON_BKSP:
+        LINE(-5,0,-2,-4);LINE(-2,-4,4,-4);LINE(4,-4,4,4);LINE(4,4,-2,4);LINE(-2,4,-5,0);
+        LINE(-1,-2,2,2);LINE(-1,2,2,-2);break;
+    case IB_ICON_SEND: case IB_ICON_PLAY:
+        LINE(-4,-4,5,0);LINE(5,0,-4,4);LINE(-4,4,-4,-4);if(icon==IB_ICON_SEND)LINE(-4,0,5,0);break;
+    case IB_ICON_REPEAT: case IB_ICON_UNDO:
+        ib_fx_arc(f,x,y,4,1,240,540,c,LV_OPA_COVER);LINE(-4,-4,-4,0);LINE(-4,-4,0,-4);break;
+    case IB_ICON_ENTER: LINE(4,-4,4,1);LINE(4,1,-4,1);LINE(-4,1,-1,-2);LINE(-4,1,-1,4);break;
+    case IB_ICON_TAB: case IB_ICON_STAB:
+        LINE(-4,0,3,0);LINE(0,-3,3,0);LINE(3,0,0,3);if(icon==IB_ICON_STAB)LINE(5,-4,5,4);break;
+    case IB_ICON_OPEN:
+        LINE(-4,-3,-4,4);LINE(-4,4,3,4);LINE(0,-4,4,-4);LINE(4,-4,4,0);LINE(4,-4,-1,1);break;
+    default: ib_fx_text(f,x,y,ib_icon_glyph(icon),&ib_icon_font_12,c,LV_OPA_COVER);break;
     }
-    // 按下时上下各多出一颗点,随反馈强度淡入淡出(精确灰,黑 → 白)。
-    if (h->flash > 0) {
-        lv_color_t extra = ib_gray_lerp(IB_COLOR_BG, IB_COLOR_TEXT, h->flash);
-        for (int i = -2; i <= 2; i += 4) ib_fx_rect(&fx, DOT_X, cy + i * DOT_PITCH - DOT / 2, DOT, DOT, 0, extra, LV_OPA_COVER);
+#undef LINE
+}
+static void hint_draw(lv_event_t *event)
+{
+    hint_t *h=lv_event_get_user_data(event);ib_fx_t f;ib_fx_begin(&f,event);
+    lv_color_t main=lv_color_mix(IB_C(HINT_LIGHT),IB_C(s_disabled?HINT_DISABLED:HINT_IDLE),(uint8_t)(h->flash*255/IB_P_ONE));
+    if(h->deny)main=lv_color_mix(IB_C(IB_COLOR_ERR),main,(uint8_t)(h->deny*180/IB_P_ONE));
+    if(s_recording&&h==&s_hints[IB_UI_KEY_OK]){
+        main=lv_color_mix(IB_C(0x58E898),IB_C(0x208850),(uint8_t)(s_recording_phase*255/IB_P_ONE));
+        ib_fx_ring(&f,MAIN_CX,MAIN_CY,7+(s_recording_phase>IB_P_ONE/2),1,main,LV_OPA_COVER);
     }
-    if (h->hold_icon != IB_ICON_NONE) {
-        // 沿用 12 px 字形和按键反馈颜色;小圆环只标识长按,不承载新的交互状态。
-        ib_fx_text(&fx, ICON_CX, cy + HOLD_DY, ib_icon_glyph(h->hold_icon), &ib_icon_font_12,
-                   icon_color(h), LV_OPA_COVER);
-        ib_fx_ring(&fx, HOLD_RING_X, cy + HOLD_DY, 2, 1, c, LV_OPA_COVER);
+    glyph(&f,MAIN_CX,MAIN_CY,h->press,main);
+    if(h->hold!=IB_ICON_NONE){
+        int y=MAIN_CY+(h->press==IB_ICON_NONE?0:HOLD_DY);
+        lv_color_t hold=IB_C(s_disabled?HINT_DISABLED:HINT_HOLD);
+        glyph(&f,MAIN_CX,y,h->hold,hold);
+        ib_fx_ring(&f,18,y,1,1,hold,LV_OPA_COVER);
     }
 }
-
-// 电源键由硬件管理,这里只画通用识别符;独立于右列以便离线页仍可辨认实体位置。
-static void power_draw(lv_event_t *e)
+static void power_draw(lv_event_t *event)
 {
-    ib_fx_t fx;
-    ib_fx_begin(&fx, e);
-    lv_color_t c = IB_C(IB_COLOR_TEXT_DIM);
-    ib_fx_arc(&fx, 6, 8, 4, 1, 315, 585, c, LV_OPA_COVER);
-    ib_fx_line(&fx, 6, 2, 6, 7, 1, c, LV_OPA_COVER);
+    ib_fx_t f;ib_fx_begin(&f,event);lv_color_t c=IB_C(HINT_HOLD);
+    ib_fx_arc(&f,6,7,4,1,315,585,c,LV_OPA_COVER);ib_fx_line(&f,6,1,6,6,1,c,LV_OPA_COVER);
 }
-
-// 两种操作均为空才隐藏点列,允许只有长按动作的键保留实体位置提示。
-static void hint_visibility(hint_t *h)
+static void visibility(hint_t *h)
 {
-    if (h->press_icon == IB_ICON_NONE) lv_obj_add_flag(h->icon, LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_remove_flag(h->icon, LV_OBJ_FLAG_HIDDEN);
-    if (h->press_icon == IB_ICON_NONE && h->hold_icon == IB_ICON_NONE)
-        lv_obj_add_flag(h->mark, LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_remove_flag(h->mark, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_invalidate(h->mark);
+    if(h->press==IB_ICON_NONE&&h->hold==IB_ICON_NONE)lv_obj_add_flag(h->view,LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_remove_flag(h->view,LV_OBJ_FLAG_HIDDEN);
+    lv_obj_invalidate(h->view);
 }
-
-// 动画值 0..IB_P_ONE 是时间进度:前 PRESS_PEAK% 以 ease-out 升到 1,其余以 ease-in 回落到 0。
-static void press_cb(void *var, int32_t t)
+static void flash_cb(void *var,int32_t progress)
 {
-    hint_t *h = var;
-    int32_t peak = IB_P_ONE * PRESS_PEAK / 100;
-    h->flash = t < peak ? ib_ease_out_cubic(t * IB_P_ONE / peak)
-                        : ib_ease_out_cubic((IB_P_ONE - t) * IB_P_ONE / (IB_P_ONE - peak));   // = 1 - ease_in(u)
-    lv_obj_set_style_text_color(h->icon, icon_color(h), 0);
-    lv_obj_invalidate(h->mark);
+    hint_t *h=var;h->flash=s_disabled?0:IB_P_ONE-progress;h->deny=s_disabled?IB_P_ONE-progress:0;lv_obj_invalidate(h->view);
 }
-
 void ib_hints_create(lv_obj_t *screen)
 {
-    static const int32_t YS[IB_UI_KEY_COUNT] = {
-        [IB_UI_KEY_UP] = IB_HINT_Y_UP, [IB_UI_KEY_DOWN] = IB_HINT_Y_DOWN, [IB_UI_KEY_OK] = IB_HINT_Y_OK,
-    };
-    s_layer = ib_box_create(screen, IB_UI_W - IB_HINT_COL_W, 0, IB_HINT_COL_W, IB_UI_H);
-    for (int k = 0; k < IB_UI_KEY_COUNT; k++) {
-        hint_t *h = &s_hints[k];
-        h->icon = lv_label_create(s_layer);
-        lv_obj_set_style_text_font(h->icon, &ib_icon_font_12, 0);
-        lv_obj_set_style_text_color(h->icon, IB_C(IB_COLOR_TEXT_DIM), 0);
-        lv_obj_set_style_text_align(h->icon, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_size(h->icon, ICON_SIZE, ICON_SIZE);
-        // 按字体实际行高在标签里上下居中,图标中心落在 YS[k]。
-        lv_obj_set_style_pad_top(h->icon, (ICON_SIZE - lv_font_get_line_height(&ib_icon_font_12)) / 2, 0);
-        lv_obj_set_pos(h->icon, ICON_CX - ICON_SIZE / 2, YS[k] - ICON_SIZE / 2);
-        lv_label_set_text_static(h->icon, ib_icon_glyph(IB_ICON_NONE));
-        h->press_icon = h->hold_icon = IB_ICON_NONE;
-        h->mark = ib_fx_create(s_layer, 0, YS[k] - MARK_CY, IB_HINT_COL_W, MARK_H, mark_draw, h);
-        lv_obj_add_flag(h->icon, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(h->mark, LV_OBJ_FLAG_HIDDEN);
+    static const int ys[IB_UI_KEY_COUNT]={IB_HINT_Y_UP,IB_HINT_Y_DOWN,IB_HINT_Y_OK};
+    s_layer=ib_box_create(screen,IB_UI_W-IB_HINT_COL_W,0,IB_HINT_COL_W,IB_UI_H);
+    for(unsigned i=0;i<IB_UI_KEY_COUNT;i++){
+        hint_t *h=&s_hints[i];h->press=h->hold=IB_ICON_NONE;
+        h->view=ib_fx_create(s_layer,0,ys[i]-MAIN_CY,IB_HINT_COL_W,34,hint_draw,h);visibility(h);
     }
-    ib_fx_create(screen, 0, IB_HINT_Y_POWER - 7, 12, 14, power_draw, NULL);
+    ib_fx_create(screen,6,IB_HINT_Y_POWER-7,12,14,power_draw,NULL);
 }
-
-void ib_hints_set_icon(ib_ui_key_t key, ib_icon_t icon)
+void ib_hints_set_icon(ib_ui_key_t key,ib_icon_t icon)
 {
-    if ((unsigned)key >= IB_UI_KEY_COUNT) return;
-    hint_t *h = &s_hints[key];
-    if ((unsigned)icon >= IB_ICON_COUNT) icon = IB_ICON_NONE;
-    h->press_icon = icon;
-    lv_label_set_text_static(h->icon, ib_icon_glyph(icon));
-    hint_visibility(h);
+    if((unsigned)key>=IB_UI_KEY_COUNT)return;
+    s_hints[key].press=(unsigned)icon<IB_ICON_COUNT?icon:IB_ICON_NONE;visibility(&s_hints[key]);
 }
-
-void ib_hints_set_hold_icon(ib_ui_key_t key, ib_icon_t icon)
+void ib_hints_set_hold_icon(ib_ui_key_t key,ib_icon_t icon)
 {
-    if ((unsigned)key >= IB_UI_KEY_COUNT) return;
-    hint_t *h = &s_hints[key];
-    if ((unsigned)icon >= IB_ICON_COUNT) icon = IB_ICON_NONE;
-    h->hold_icon = icon;
-    hint_visibility(h);
+    if((unsigned)key>=IB_UI_KEY_COUNT)return;
+    s_hints[key].hold=(unsigned)icon<IB_ICON_COUNT?icon:IB_ICON_NONE;visibility(&s_hints[key]);
 }
-
-// "不可用"反馈:t 为 0..DENY_MS。点 60 ms 内变红,之后回落;同时左右抖动 3 次、幅度衰减。
-static void deny_cb(void *var, int32_t t)
-{
-    hint_t *h = var;
-    h->deny = t < 60 ? ib_ease_out_cubic(t * IB_P_ONE / 60) : IB_P_ONE - ib_progress((uint32_t)t, 60, DENY_MS - 60);
-    int32_t amp = DENY_PX * (DENY_MS - t) / DENY_MS;
-    h->shake = amp * ib_sin10(t * 3600 / 120) / 32768;            // 每 120 ms 一个来回
-    lv_obj_invalidate(h->mark);
-}
-
 void ib_hints_press(ib_ui_key_t key)
 {
-    if ((unsigned)key >= IB_UI_KEY_COUNT) return;
-    hint_t *h = &s_hints[key];
-    if (s_disabled) {
-        lv_anim_delete(h, deny_cb);
-        lv_anim_t a;
-        lv_anim_init(&a);
-        lv_anim_set_var(&a, h);
-        lv_anim_set_exec_cb(&a, deny_cb);
-        lv_anim_set_values(&a, 0, DENY_MS);
-        lv_anim_set_duration(&a, DENY_MS);
-        lv_anim_set_path_cb(&a, lv_anim_path_linear);
-        lv_anim_start(&a);
-        return;
-    }
-    lv_anim_delete(h, press_cb);
-    lv_anim_t a;
-    lv_anim_init(&a);
-    lv_anim_set_var(&a, h);
-    lv_anim_set_exec_cb(&a, press_cb);
-    lv_anim_set_values(&a, 0, IB_P_ONE);
-    lv_anim_set_duration(&a, PRESS_MS);
-    lv_anim_set_path_cb(&a, lv_anim_path_linear);
-    lv_anim_start(&a);
+    if((unsigned)key>=IB_UI_KEY_COUNT)return;
+    hint_t *h=&s_hints[key];lv_anim_delete(h,flash_cb);lv_anim_t a;lv_anim_init(&a);
+    lv_anim_set_var(&a,h);lv_anim_set_exec_cb(&a,flash_cb);lv_anim_set_values(&a,0,IB_P_ONE);
+    lv_anim_set_duration(&a,PRESS_MS);lv_anim_set_path_cb(&a,lv_anim_path_ease_out);lv_anim_start(&a);
 }
-
 void ib_hints_set_visible(bool visible)
 {
-    if (visible) lv_obj_remove_flag(s_layer, LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_add_flag(s_layer, LV_OBJ_FLAG_HIDDEN);
+    s_visible=visible;
+    if(!visible)ib_hints_set_recording(false);
+    if(visible)lv_obj_remove_flag(s_layer,LV_OBJ_FLAG_HIDDEN);else lv_obj_add_flag(s_layer,LV_OBJ_FLAG_HIDDEN);
 }
-
 void ib_hints_set_disabled(bool disabled)
 {
-    if (s_disabled == disabled) return;
-    s_disabled = disabled;
-    for (int k = 0; k < IB_UI_KEY_COUNT; k++) {
-        hint_t *h = &s_hints[k];
-        lv_anim_delete(h, press_cb);
-        lv_anim_delete(h, deny_cb);
-        h->flash = h->deny = h->shake = 0;
-        lv_obj_set_style_text_color(h->icon, icon_color(h), 0);
-        lv_obj_invalidate(h->mark);
-    }
+    if(s_disabled==disabled)return;
+    s_disabled=disabled;
+    if(disabled)ib_hints_set_recording(false);
+    for(unsigned i=0;i<IB_UI_KEY_COUNT;i++){lv_anim_delete(&s_hints[i],flash_cb);s_hints[i].flash=s_hints[i].deny=0;lv_obj_invalidate(s_hints[i].view);}
+}
+
+static void recording_cb(void *var,int32_t phase)
+{
+    hint_t *h=var;if(!s_recording)return;
+    s_recording_phase=phase;lv_obj_invalidate(h->view);
+}
+void ib_hints_set_recording(bool active)
+{
+    active=active&&s_visible&&!s_disabled;
+    if(active==s_recording)return;
+    s_recording=active;hint_t *h=&s_hints[IB_UI_KEY_OK];
+    lv_anim_delete(h,recording_cb);s_recording_phase=0;lv_obj_invalidate(h->view);
+    if(!active)return;
+    lv_anim_t a;lv_anim_init(&a);lv_anim_set_var(&a,h);lv_anim_set_exec_cb(&a,recording_cb);
+    lv_anim_set_values(&a,0,IB_P_ONE);lv_anim_set_duration(&a,700);lv_anim_set_reverse_duration(&a,700);
+    lv_anim_set_repeat_count(&a,LV_ANIM_REPEAT_INFINITE);lv_anim_set_path_cb(&a,lv_anim_path_ease_in_out);lv_anim_start(&a);
 }

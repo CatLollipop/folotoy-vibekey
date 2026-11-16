@@ -17,3 +17,5 @@ void ib_app_on_button(bsp_btn_t btn, bsp_btn_ev_t ev, void *user);
 void ib_app_finish_start(bool buttons_ready);
 bool ib_app_ready(void);
 bool ib_app_buttons_ready(void);
+
+bool ib_app_display_ready(void);

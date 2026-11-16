@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 显式调用DeepSeek/MiniMax TTS；豆包只有传合成夹具时才调用。BUILD_ONLY=1只编译，不读Key或联网。
+# 显式调用DeepSeek（朗读暂停，不调用TTS）；豆包只有传合成夹具时才调用。BUILD_ONLY=1只编译，不读Key或联网。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 [[ $# -eq 1 || ( $# -eq 3 && "$2" == '--synthetic-realtime-asr-audio' ) ]] || {

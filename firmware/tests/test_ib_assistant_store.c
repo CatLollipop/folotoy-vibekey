@@ -8,7 +8,7 @@
 static uint8_t flash[0x80000],mode;
 static struct {bool live;size_t offset,size;} mappings[16];
 static const esp_partition_t partition={.address=0x360000,.size=sizeof(flash)};
-static bool fail_header;
+static bool fail_header,fail_erase_once;
 const esp_partition_t *esp_partition_find_first(int t,int s,const char *name){(void)t;return s==0x41&&!strcmp(name,"assistant")?&partition:NULL;}
 esp_err_t esp_partition_read(const esp_partition_t *p,size_t off,void *out,size_t n){if(p!=&partition||off+n>sizeof(flash))return ESP_FAIL;memcpy(out,flash+off,n);return ESP_OK;}
 esp_err_t esp_partition_write(const esp_partition_t *p,size_t off,const void *bytes,size_t n){
@@ -19,6 +19,7 @@ esp_err_t esp_partition_write(const esp_partition_t *p,size_t off,const void *by
 esp_err_t esp_partition_erase_range(const esp_partition_t *p,size_t off,size_t n){
     if(p!=&partition||off+n>sizeof(flash)||off%4096||n%4096)return ESP_FAIL;
     for(unsigned i=0;i<16;i++)if(mappings[i].live&&off<mappings[i].offset+mappings[i].size&&off+n>mappings[i].offset)return ESP_FAIL;
+    if(fail_erase_once){memset(flash+off,255,4096);fail_erase_once=false;return ESP_FAIL;}
     memset(flash+off,255,n);return ESP_OK;
 }
 esp_err_t esp_partition_mmap(const esp_partition_t *p,size_t off,size_t n,esp_partition_mmap_memory_t type,const void **out,esp_partition_mmap_handle_t *handle){
@@ -37,6 +38,7 @@ static const char profile[]="{\"schema\":2,\"asr_provider\":\"volcengine_doubao_
 static const char pet[]="{\"schema\":1,\"revision\":2,\"enabled\":true,\"fps\":12,\"brightness\":80,\"color\":\"#EADBB9\"}";
 static const char *upload(bool is_pet,unsigned rev,const char *s,bool usb){size_t n=strlen(s);const char *e=ib_assistant_store_begin(is_pet,rev,n,ib_crc32(s,n),usb);if(e)return e;for(size_t off=0;off<n;off+=40){size_t take=n-off<40?n-off:40;e=ib_assistant_store_chunk(off,s+off,take);if(e)return e;}return ib_assistant_store_commit();}
 static void test_expanded_store(void);
+static void test_retirement(void);
 int main(void){
     memset(flash,255,sizeof(flash));CHECK(ib_assistant_store_init()==ESP_OK);CHECK(!ib_assistant_store_configured());
     CHECK_STR(ib_assistant_store_begin(false,1,strlen(profile),ib_crc32(profile,strlen(profile)),false),"usb_required");
@@ -49,6 +51,11 @@ int main(void){
     CHECK(!ib_assistant_store_configured());CHECK(ib_assistant_store_revision(false)==1);CHECK(ib_assistant_store_revision(true)==2);
     CHECK(ib_assistant_pet_config(actual,sizeof(actual)));CHECK_STR(actual,pet);
     CHECK(upload(false,1,profile,true)==NULL);CHECK(ib_assistant_store_configured());
+    // 纯文字profile不需要任何TTS字段，仍保留同bank宠物与ASR/DeepSeek配置。
+    const char text_profile[]="{\"schema\":2,\"revision\":1,\"asr_provider\":\"volcengine_doubao_realtime\",\"asr_key\":\"fictional-asr-key\",\"deepseek_key\":\"fictional-llm-key\"}";
+    CHECK(upload(false,1,text_profile,true)==NULL);CHECK(ib_assistant_store_init()==ESP_OK);CHECK(ib_assistant_store_configured());
+    CHECK(!ib_assistant_profile()->minimax_key[0]);CHECK(ib_assistant_store_revision(true)==2);
+    CHECK(ib_assistant_pet_config(actual,sizeof(actual)));CHECK_STR(actual,pet);
     // 半次上传后重启，旧profile与pet都还在。
     CHECK(ib_assistant_store_begin(false,3,strlen(profile),ib_crc32(profile,strlen(profile)),false)==NULL);
     CHECK(ib_assistant_store_chunk(0,profile,20)==NULL);ib_assistant_store_abort();CHECK(ib_assistant_store_init()==ESP_OK);
@@ -59,7 +66,7 @@ int main(void){
     fail_header=true;CHECK_STR(upload(true,2,pet,false),"commit_failed");fail_header=false;ib_assistant_store_abort();CHECK(ib_assistant_store_init()==ESP_OK);CHECK(ib_assistant_store_revision(true)==2);
     const char bad[]="{\"schema\":1,\"revision\":4,\"fps\":0}";CHECK_STR(upload(true,4,bad,false),"invalid_config");ib_assistant_store_abort();
     CHECK(ib_assistant_mode_save(true)==ESP_OK);CHECK(ib_assistant_mode_load());CHECK(ib_assistant_store_clear()==ESP_OK);CHECK(ib_assistant_store_init()==ESP_OK);CHECK(!ib_assistant_store_configured());CHECK(ib_assistant_store_revision(true)==2);CHECK(ib_assistant_mode_load());
-    test_expanded_store();
+    test_expanded_store();test_retirement();
     TEST_DONE("assistant_store");
 }
 static void w16(uint8_t *p,size_t at,unsigned n){p[at]=n;p[at+1]=n>>8;}
@@ -119,4 +126,30 @@ static void test_expanded_store(void){
     CHECK(ib_assistant_store_clear()==ESP_OK);CHECK(!ib_assistant_store_configured());CHECK(ib_assistant_store_revision(true)==6);
     if(active_mapping_live){esp_partition_munmap(active_mapping);active_mapping_live=false;}
     ib_assistant_store_set_apply(NULL,NULL);CHECK(ib_assistant_store_apply());
+}
+
+static bool blank_bank(unsigned bank){for(size_t i=0;i<0x40000;i++)if(flash[bank*0x40000+i]!=255)return false;return true;}
+static unsigned active_bank(void){return flash[0]=='V'&&flash[3]=='2'?0:1;}
+static void test_retirement(void){
+    memset(flash,255,sizeof(flash));CHECK(ib_assistant_store_init()==ESP_OK);ib_assistant_store_set_apply(NULL,NULL);CHECK(ib_assistant_store_apply());
+    CHECK(upload(false,1,profile,true)==NULL);CHECK(ib_assistant_store_retired_clean());CHECK(blank_bank(1-active_bank()));
+    CHECK(ib_assistant_store_commit()==NULL); // ACK重试幂等，不重新换bank。
+    CHECK(upload(true,2,pet,true)==NULL);CHECK(ib_assistant_store_retired_clean());CHECK(blank_bank(1-active_bank()));
+    const char newer[]="{\"schema\":1,\"revision\":9,\"enabled\":true,\"color\":\"#123456\"}";size_t n=strlen(newer);
+    CHECK(ib_assistant_store_begin(true,9,n,ib_crc32(newer,n),true)==NULL);
+    CHECK(ib_assistant_store_chunk(0,newer,n)==NULL);fail_erase_once=true;
+    CHECK_STR(ib_assistant_store_commit(),"cleanup_failed");CHECK(ib_assistant_store_revision(true)==9);CHECK(!ib_assistant_store_retired_clean());
+    char actual[512];CHECK(ib_assistant_pet_config(actual,sizeof(actual)));CHECK_STR(actual,newer);
+    // 旧bank头sector已擦但后面的旧pet尚在，重启必须扫描整bank而非只看头是否FF。
+    CHECK(ib_assistant_store_init()==ESP_OK);CHECK(!ib_assistant_store_retired_clean());CHECK(ib_assistant_store_revision(true)==9);
+    unsigned active=active_bank();uint8_t *snapshot=malloc(0x40000);CHECK(snapshot);memcpy(snapshot,flash+active*0x40000,0x40000);
+    ib_assistant_store_set_apply(NULL,NULL);CHECK(ib_assistant_store_apply());CHECK(ib_assistant_store_cleanup()==NULL);
+    CHECK(ib_assistant_store_retired_clean()&&blank_bank(1-active));CHECK(!memcmp(snapshot,flash+active*0x40000,0x40000));free(snapshot);
+    CHECK(ib_assistant_store_begin(true,9,n,ib_crc32(newer,n),true)==NULL);CHECK(ib_assistant_store_chunk(0,newer,20)==NULL);
+    ib_assistant_store_abort();CHECK(!ib_assistant_store_retired_clean());
+    // 下一begin先回收上次abort暂存，当前active宠物保持；clear也只保留一份当前pet。
+    CHECK(ib_assistant_store_begin(true,9,n,ib_crc32(newer,n),true)==NULL);ib_assistant_store_abort();CHECK(ib_assistant_store_cleanup()==NULL);
+    CHECK(ib_assistant_pet_config(actual,sizeof(actual)));CHECK_STR(actual,newer);
+    CHECK(ib_assistant_store_clear()==ESP_OK);CHECK(ib_assistant_store_retired_clean());CHECK(blank_bank(1-active_bank()));
+    CHECK(ib_assistant_store_revision(true)==9&&!ib_assistant_store_configured());CHECK(ib_assistant_pet_config(actual,sizeof(actual)));CHECK_STR(actual,newer);
 }

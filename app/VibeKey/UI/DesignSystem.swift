@@ -23,7 +23,11 @@ enum DS {
     static let warning = Color(nsColor: .systemOrange)
     static let danger = Color(nsColor: .systemRed)
 
-    /// 卡片背景:跟随系统浅色 / 深色。
+    /// 设置窗口固定暗色舞台；颜色与离线宠物选择器保持一致。
+    static let settingsSidebarFill = Color(red:23.0/255,green:27.0/255,blue:34.0/255)
+    static let settingsBackground = Color(red:17.0/255,green:20.0/255,blue:25.0/255)
+
+    /// 卡片背景:跟随所在窗口的浅色 / 深色。
     static let cardFill = Color(nsColor: .controlBackgroundColor)
     static let cardStroke = Color.primary.opacity(0.08)
 }

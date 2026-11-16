@@ -14,7 +14,9 @@
 
 ## 常用命令
 
-AI助理新增：`app/scripts/build-clt.sh`（CLT/SwiftPM构建）、`app/scripts/test-assistant-core.sh`、`app/scripts/test-agent-bridges.sh`；工具链用 `scripts/setup-dev.sh` 安装、`source scripts/dev-env.sh` 激活。运行链路见 `docs/assistant-desktop.md` / `docs/assistant-device-protocol.md`。
+AI助理新增：`app/scripts/build-clt.sh`（CLT/SwiftPM构建）、`app/scripts/test-assistant-core.sh`、`app/scripts/test-agent-bridges.sh`、`app/scripts/test-agent-components.sh`；工具链用 `scripts/setup-dev.sh` 安装、`source scripts/dev-env.sh` 激活。运行链路见 `docs/assistant-desktop.md` / `docs/assistant-device-protocol.md`。
+接入组件隔离测试：`bash app/scripts/test-agent-components.sh`（临时目录验证安装/卸载，不访问用户真实配置）；已有隔离提取产物可用 `app/scripts/update-strings.sh --strings-dir <目录>` 检查本地化，避免重打包运行中的客户端。
+
 
 ```bash
 cd app && ./scripts/build.sh                 # 编译 app → app/build/VibeKey.app(会顺带打包固件与 esptool)
@@ -24,6 +26,7 @@ cd app && ./scripts/update-strings.sh        # 改了界面文字后重新生成
 cd firmware && ./tools/validate.sh --host    # 固件主机测试
 cd firmware && ./tools/test-ui-labels.sh     # 中文状态字形/两行尺寸测试(需已有LVGL组件/sdkconfig)
 cd firmware && ./tools/test-ui-transcript.sh # 字幕generation/UTF-8/final纯状态测试
+cd firmware && ./tools/test-ui-reply.sh      # 独立完整回复/分页/reader/epoch/final ASan测试
 cd firmware && ./tools/test-display-ui.sh    # 菜单优先/字幕冻结同份LVGL像素回归
 ./scripts/flash-firmware.sh                  # 命令行烧录固件(先退出 VibeKey)
 cd app && ./scripts/release.sh               # 打包签名公证的 DMG + Sparkle 签名(凭据用环境变量或本机 app/Config/Release.local.env 传入,见 docs/website.md)
