@@ -38,7 +38,10 @@ export function perform(input) {
     const file=path.join(bridge.responses,input.requestID+'.json');
     const stat=fs.lstatSync(file);if(!stat.isFile()||stat.isSymbolicLink()||stat.uid!==process.getuid()||stat.size>1024)throw new Error('Unsafe receipt');
     const existing=JSON.parse(fs.readFileSync(file,'utf8'));if(existing.status!=='accepted')throw new Error('Receipt already final');
-    writePrivate(file,{requestID:input.requestID,status:input.status,error:typeof input.error==='string'?input.error.slice(0,200):undefined});
+    if(input.disposition!==undefined&&!['queued','accepted','admitted'].includes(input.disposition))throw new Error('Invalid disposition');
+    for(const key of ['promptID','turnID'])if(input[key]!==undefined&&(typeof input[key]!=='string'||!input[key]||Buffer.byteLength(input[key])>512))throw new Error('Invalid native identity');
+    writePrivate(file,{requestID:input.requestID,status:input.status,error:typeof input.error==='string'?input.error.slice(0,200):undefined,
+      disposition:input.disposition,promptID:input.promptID,turnID:input.turnID});
   }
   if(input.operation==='event'){
     if(!['thinking','working','searching','waitingInput','completed','stopped','error'].includes(input.state)||typeof input.turnID!=='string'||input.turnID.length>512)throw new Error('Invalid event');

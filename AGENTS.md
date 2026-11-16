@@ -27,7 +27,7 @@ cd firmware && ./tools/validate.sh --host    # 固件主机测试
 cd firmware && ./tools/test-ui-labels.sh     # 中文状态字形/两行尺寸测试(需已有LVGL组件/sdkconfig)
 cd firmware && ./tools/test-ui-transcript.sh # 字幕generation/UTF-8/final纯状态测试
 cd firmware && ./tools/test-ui-reply.sh      # 独立完整回复/分页/reader/epoch/final ASan测试
-cd firmware && ./tools/test-dialogue.sh       # 会话OK手势/绑定/双栏窗口/result生产协议ASan测试
+cd firmware && ./tools/test-dialogue.sh       # 会话OK手势/绑定/聊天窗口原子事务/result生产协议ASan测试
 cd firmware && ./tools/test-display-ui.sh    # 菜单优先/字幕冻结同份LVGL像素回归
 ./scripts/flash-firmware.sh                  # 命令行烧录固件(先退出 VibeKey)
 cd app && ./scripts/release.sh               # 打包签名公证的 DMG + Sparkle 签名(凭据用环境变量或本机 app/Config/Release.local.env 传入,见 docs/website.md)

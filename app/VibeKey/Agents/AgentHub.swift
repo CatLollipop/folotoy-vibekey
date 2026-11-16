@@ -147,6 +147,9 @@ import Foundation
         try await sendPrompt(text, in: selectedSession)
     }
     func sendPrompt(_ text: String, in session: AssistantAgentSession) async throws {
+        _ = try await deliverPrompt(text, in: session)
+    }
+    func deliverPrompt(_ text: String, in session: AssistantAgentSession) async throws -> AgentPromptReceipt {
         do {
             guard !isSending else { throw AgentAdapterError.blocked("上一条消息尚未取得投递回执") }
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf8.count <= 64_000 else {
@@ -155,8 +158,9 @@ import Foundation
             guard let adapter = adapter(session), capabilities(for: session).contains(.submit) else { throw AgentAdapterError.officialChannelRequired }
             isSending = true; defer { isSending = false }
             try Task.checkCancellation()
-            try await adapter.sendPrompt(text, in: session)
+            let receipt = try await adapter.deliverPrompt(text, in: session)
             lastError = nil
+            return receipt
         } catch { lastError = error.localizedDescription; throw error }
     }
     func stop() async throws {

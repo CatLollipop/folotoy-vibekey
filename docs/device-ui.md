@@ -214,6 +214,14 @@ Mac 下发 `agent` 时,在任何页面上方弹出全屏通知层(录音中不�
 长▼设备网络列表和Mac会话列表都使用LIST原子切换，不再先隐藏pet后淡出旧页。设备网络菜单有独立owner/有界内容，背景prepare/idle、Mac state/list及通知不会抢屏；关闭/超时按最新状态恢复，明确错误不丢。LIST优先显示导航glyph，底下reply/notification页点临时隐藏，返回恢复原页；上键模式菜单已修行为保持。生产API像素回归和边界见[device-menu-transitions.md](device-menu-transitions.md)，离屏通过不代表实体屏幕已验收。
 
 
-## 方案B电脑会话双栏
+## 历史0.7：方案B电脑会话双栏（已由0.8替代）
 
 正式绑定后可由长DOWN会话菜单选择对话/PET与焦点。对话屏左侧mini所选宠物+Agent正文、右侧ASR草稿，同屏并列；保留12px字、7点滚动页轨道。普通状态只有小动画icon，具体错误/只读说明保留。按住OK只采音，松开仅成草稿，新的短OK才确认；通知可见时双短OK只请求跳对应官方会话，单短OK延迟只dismiss，长持仍采音，不产生双请求。PET与DIALOGUE是同一输入owner，长UP/长DOWN菜单仍优先；见[device-conversation.md](device-conversation.md)。
+
+
+## 0.8 Passport标准聊天流（schema2）
+
+本次只观察新消息；用户/助手按观察顺序追加气泡，未发送ASR草稿位于流尾右侧，没有固定底栏和双栏。Mac分页完整有界观察内容，设备只保最多4×128B active+stage；window_begin/item完整收齐、GUI尺寸验证后commit原子ACK。cap为schema2/chat1，旧pane unsupported；所有非jump事件带wid，旧屏短OK只latest，当前版本可见草稿tail=true才确认。阅读窗244px、13scalar显式行、自然宽48…168px，状态icon/mini/7点分页与通知/菜单优先保持。queued只写“已排队”，不冒称完成。完整字段、资源/host与实机边界见[device-conversation.md](device-conversation.md)。
+
+
+PET确认安全门禁：宠物caption可能裁尾，因此PET短OK只请求latest（Mac展开dialogue/最新窗），不能发送；收到实际对话投影后下一次独立短按才可确认。设备can_confirm明确要求dialogue，并在物理首次按下锁定latest意图，迟到view ACK不改变该次松开。长持录音保持一次start/stop，生产模型+gesture联合ASan/UBSan及原UI回归覆盖；无新增界面文字、字体或布局。

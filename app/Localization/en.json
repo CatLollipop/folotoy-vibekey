@@ -1293,5 +1293,15 @@
   "（未下载）": " (Not Downloaded)",
   "（未配置）": " (Not Set Up)",
   "；当前会话 Hook 已绑定": "; hook bound to the current session",
-  "；未发现与当前会话身份匹配的 Hook": "; no hook matches the current session identity"
+  "；未发现与当前会话身份匹配的 Hook": "; no hook matches the current session identity",
+  "提交中": "Submitting",
+  "已排队": "Queued",
+  "已提交": "Submitted",
+  "已接收": "Received",
+  "发送失败": "Send failed",
+  "结果未知": "Result unknown",
+  "新消息": "New messages",
+  "截断": "Truncated",
+  "新": "New",
+  "选择原应用会话后，按住 Passport OK 说话，松开保存草稿，单独短按 OK 确认发送。上下键按屏翻阅聊天，长按下键打开会话与任务菜单。仅有官方发送能力的会话可提交，回复以文字显示。": "Select an existing app conversation, hold Passport OK to speak, release to save a draft, then press OK separately to confirm. Use Up and Down to scroll by screen, and hold Down for conversations and task actions. Sending requires an official channel; replies appear as text."
 }

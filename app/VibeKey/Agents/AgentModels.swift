@@ -31,6 +31,18 @@ nonisolated struct AssistantAgentSession: Codable, Equatable, Identifiable, Send
     var id: String { String(decoding: try! JSONEncoder().encode([applicationID, instanceID, sessionID]), as: UTF8.self) }
 }
 
+/// 发送回执只描述原API接纳到哪一步，不能替代任务生命周期或最终回复。
+/// 原生ID仅在宿主明确提供时填写；本机票据和正文hash不能冒充原生身份。
+nonisolated struct AgentPromptReceipt: Codable, Equatable, Sendable {
+    nonisolated enum Disposition: String, Codable, Sendable { case queued, accepted, admitted }
+    let disposition: Disposition
+    let nativePromptID: String?
+    let nativeTurnID: String?
+    init(disposition: Disposition, nativePromptID: String? = nil, nativeTurnID: String? = nil) {
+        self.disposition = disposition; self.nativePromptID = nativePromptID; self.nativeTurnID = nativeTurnID
+    }
+}
+
 nonisolated struct AgentReply: Equatable, Sendable {
     let session: AssistantAgentSession
     let turnID: String
@@ -91,6 +103,7 @@ nonisolated enum AgentText {
     func insertDraft(_ text: String, in session: AssistantAgentSession) async throws
     func submit(in session: AssistantAgentSession) async throws
     func sendPrompt(_ text: String, in session: AssistantAgentSession) async throws
+    func deliverPrompt(_ text: String, in session: AssistantAgentSession) async throws -> AgentPromptReceipt
     func stop(in session: AssistantAgentSession) async throws
     func poll(_ session: AssistantAgentSession?) async
 }
@@ -98,6 +111,12 @@ nonisolated enum AgentText {
 extension AgentAdapter {
     /// 未能针对原生实例和会话提供当前能力证据时，一律无控制能力。
     func capabilities(for session: AssistantAgentSession) -> Set<AgentCapability> { [] }
+
+    /// 兼容旧适配器仅证明其既有发送入口返回，不猜测排队、执行或原生turn身份。
+    func deliverPrompt(_ text: String, in session: AssistantAgentSession) async throws -> AgentPromptReceipt {
+        try await sendPrompt(text, in: session)
+        return .init(disposition: .accepted)
+    }
 
     func sendPrompt(_ text: String, in session: AssistantAgentSession) async throws {
         throw AgentAdapterError.officialChannelRequired

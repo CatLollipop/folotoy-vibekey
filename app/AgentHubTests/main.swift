@@ -45,7 +45,8 @@ import Foundation
         try require(hub.capabilities(for:second).isEmpty,"App union authorized another instance")
         do{try await hub.sendPrompt("must not be sent",in:second);throw Failure.failed("Unauthorized send accepted")}catch AgentAdapterError.officialChannelRequired{}
         try require(adapter.sends==0,"Blocked send reached adapter")
-        try await hub.sendPrompt("confirmed fixture",in:first)
+        let accepted = try await hub.deliverPrompt("confirmed fixture",in:first)
+        try require(accepted == .init(disposition:.accepted),"Legacy adapter invented native IDs or execution state")
         try require(adapter.sends==1 && adapter.sentSession==first,"Explicit send followed selection instead of pinned native identity")
         adapter.failUnknown=true
         do{try await hub.sendPrompt("unknown fixture",in:first);throw Failure.failed("Unknown result treated as success")}catch AgentAdapterError.deliveryUnknown{}
@@ -66,6 +67,7 @@ import Foundation
         try testMailboxAuthorization(mailbox)
         try await testCancelledMailbox(mailbox)
         try testClaudeSourcePreference(mailbox)
+        try await testTypedReceiptForwarding(mailbox, defaults:defaults)
         print("AgentHub contracts passed: local selection, notification-only identities, exact capabilities, no retries")
     }
     @MainActor static func testMailboxAuthorization(_ mailbox:AgentMailbox) throws {
@@ -109,7 +111,7 @@ import Foundation
         }
         try require(written,"Command fixture did not reach transport")
         pending.cancel()
-        do{try await pending.value;throw Failure.failed("Cancelled transport reported success")}catch AgentAdapterError.deliveryUnknown{}
+        do{_ = try await pending.value;throw Failure.failed("Cancelled transport reported success")}catch AgentAdapterError.deliveryUnknown{}
     }
     @MainActor static func testClaudeSourcePreference(_ mailbox:AgentMailbox) throws {
         let pid=ProcessInfo.processInfo.processIdentifier
@@ -132,6 +134,38 @@ import Foundation
         try mailbox.write(envelope(legacyID,sid,"different-process",pid+1),to:events.appendingPathComponent("04.json"))
         let received=mailbox.events(for:"claudeCode")
         try require(Set(received.map(\.event.eventID))==["mod","different-session","different-process"],"Claude source choice merged distinct native identities or emitted duplicate Hook")
+    }
+    @MainActor static func testTypedReceiptForwarding(_ mailbox:AgentMailbox, defaults:UserDefaults) async throws {
+        let instance="typed-native-instance"
+        let native=AssistantAgentSession(applicationID:"omp",instanceID:instance,sessionID:"existing-native",name:"Receipt fixture")
+        let folder=mailbox.root.appendingPathComponent("instances/"+instance)
+        try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
+        var registration=AgentMailbox.Registration(protocolVersion:1,adapterID:"omp",instanceID:instance,name:"Fixture",capabilities:[.submit],sessions:[native],updatedAt:Date(),processID:nil,terminalTTY:nil)
+        registration.controlTransport="omp-extension"
+        try mailbox.write(registration,to:folder.appendingPathComponent("registration.json"))
+        let bridge=MailboxAgentAdapter(id:"omp",name:"Fixture",mailbox:mailbox)
+        let hub=AgentHub(defaults:defaults,mailbox:mailbox,adapters:[bridge]);await hub.refresh()
+        var events=0;hub.onAnyEvent={_ in events += 1}
+        let peer=Task { @MainActor in
+            for _ in 0..<100 {
+                try Task.checkCancellation()
+                let requests=folder.appendingPathComponent("requests")
+                if let file=(try? FileManager.default.contentsOfDirectory(at:requests,includingPropertiesForKeys:nil))?.first,
+                   let command:AgentMailbox.Command=mailbox.read(file) {
+                    try require(command.sessionID==native.sessionID,"Typed receipt targeted another native session")
+                    let response=folder.appendingPathComponent("responses/"+command.requestID+".json")
+                    try mailbox.write(AgentMailbox.Receipt(requestID:command.requestID,status:"applied",error:nil,disposition:.queued,promptID:"native-prompt-exact",turnID:nil),to:response)
+                    return
+                }
+                try await Task.sleep(for:.milliseconds(10))
+            }
+            throw Failure.failed("Typed receipt fixture did not receive command")
+        }
+        defer {peer.cancel()}
+        let receipt=try await hub.deliverPrompt("confirmed isolated fixture",in:native)
+        try await peer.value
+        try require(receipt == .init(disposition:.queued,nativePromptID:"native-prompt-exact"),"Hub or Adapter lost typed native receipt")
+        try require(hub.latestEvent==nil && events==0,"Queued receipt synthesized a lifecycle event")
     }
     enum Failure:Error {case failed(String)}
     static func require(_ value:Bool,_ message:String)throws{if !value{throw Failure.failed(message)}}

@@ -140,15 +140,24 @@ import CoreFoundation
     func submit(in session: AssistantAgentSession) async throws {
         throw AgentAdapterError.blocked("Kimi Server API 不读取原应用未发送草稿，请使用直接发送")
     }
-    func sendPrompt(_ text: String, in session: AssistantAgentSession) async throws {
+    func sendPrompt(_ text: String, in session: AssistantAgentSession) async throws { _ = try await deliverPrompt(text, in: session) }
+    func deliverPrompt(_ text: String, in session: AssistantAgentSession) async throws -> AgentPromptReceipt {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf8.count <= 64_000 else { throw AgentAdapterError.blocked("消息为空或过长") }
         try await activate(session)
+        let promptID = UUID().uuidString
         let result = try await request("POST", "/api/v1/sessions/\(session.sessionID)/prompts", body: [
-            "prompt_id": UUID().uuidString, "content": [["type": "text", "text": text]],
+            "prompt_id": promptID, "content": [["type": "text", "text": text]],
         ])
-        guard let status = result["status"] as? String, ["running", "queued"].contains(status) else {
+        return try Self.promptReceipt(payload: result, submittedPromptID: promptID)
+    }
+    /// 官方running响应在原turn开始后返回；queued明确仅入队。没有返回的turnID不猜造。
+    nonisolated static func promptReceipt(payload: [String: Any], submittedPromptID: String) throws -> AgentPromptReceipt {
+        guard !submittedPromptID.isEmpty, submittedPromptID.utf8.count <= 512,
+              payload["prompt_id"].map({ ($0 as? String) == submittedPromptID }) ?? true,
+              let status = payload["status"] as? String, ["running", "queued"].contains(status) else {
             throw AgentAdapterError.deliveryUnknown
         }
+        return .init(disposition: status == "queued" ? .queued : .admitted, nativePromptID: submittedPromptID)
     }
     func stop(in session: AssistantAgentSession) async throws {
         guard capabilities(for: session).contains(.stop), selected?.sessionID == session.sessionID, selected?.instanceID == session.instanceID else { throw AgentAdapterError.sessionChanged }

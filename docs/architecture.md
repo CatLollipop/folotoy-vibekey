@@ -1001,6 +1001,20 @@ codec实际reader flag→app→ib_ui_set_capture_active→hints绿色Mic循环�
 当前电脑模式由 `AssistantCoordinator → ConversationRouter → AgentHub → 原进程官方Adapter` 统一接入。硬件不再共享Mac云端试用的destination；识别只stage，确认生成原会话不可变票据，通知双击只导航设备。`DeviceBridge.officialSessionsOnly` 使旧设备AX导航/聚焦/自动发送/停止及usage自动扫描退出运行路径；原通用Mac听写/字幕仍独立。草稿和未知票据为本次运行内存，不宣称重启恢复。所有官方能力按原实例/会话的新鲜声明判断，缺通道仅提醒。新协议、资源预算、失败与替代方案见[会话路由](conversation-routing.md)，应用可用边界见[接入](agents/README.md)。上文历史AX接入描述不再是0.7电脑模式的实现。
 
 
-### 统一会话双栏与固定草稿owner（方案B）
+### 历史0.7：统一会话双栏与固定草稿owner（已由0.8替代）
 
 `独立conversation flat packet → app唯一队列 → ib_conversation候选模型/cJSON字段与binding检查 → ib_ui_conversation字形/自然尺寸验证 → 模型提交/严格ACK`。全文在Mac，设备只保两个128B窗与title，模型432B；双栏懒建/standalone释放，mini直接复用当前Aora栅格缓存。`物理key_at → ib_dialogue_keys → 固定sid/rev/drev或nid/nrev → boot/gid专属事件`将短confirm、长持PTT、通知双击互斥；输入owner不依赖DIALOGUE/PET画面，PET也不回落legacy。UNKNOWN锁输入、result仅关联已发gid，菜单直切/通知独立分页保持。合同与未验证实机边界见[device-conversation.md](device-conversation.md)。
+
+### 0.8 逐条聊天所用 typed 发送回执
+
+`Coordinator → AgentHub.deliverPrompt(text,in:原session) → Adapter → AgentPromptReceipt → Router.resolve(ticket,outcome,native IDs)`。回执 queued/accepted/admitted 只推进当前本机消息的投递状态，不能产生completed事件，也不能用当前运行turn、正文hash或本机request ID猜原生关联。旧sendPrompt包装丢弃typed回执；旧Adapter默认accepted，Mailbox应用层applied后才返回可选typed字段，运输层accepted继续等待。Kimi按官方running/queued区分入场与排队，并保留实际POST prompt_id；OMP忙followUp为queued，其余缺更强证据保守accepted。原有逐实例能力、取消后未知、POST异常未知和不自动重发规则保持。
+
+本轮不增加原生user echo或聊天历史读取；当前Mac运行实际收到（包含延迟未消费事件）及设备确认发出的消息按观察顺序进入统一Router，不假称原聊天完整历史/生成顺序。Mac设置结构未变。回执原生ID不写日志，详细边界见 `docs/agents/README.md`。
+
+
+## 0.8 Passport标准聊天流（schema2）
+
+本次只观察新消息；用户/助手按观察顺序追加气泡，未发送ASR草稿位于流尾右侧，没有固定底栏和双栏。Mac分页完整有界观察内容，设备只保最多4×128B active+stage；window_begin/item完整收齐、GUI尺寸验证后commit原子ACK。cap为schema2/chat1，旧pane unsupported；所有非jump事件带wid，旧屏短OK只latest，当前版本可见草稿tail=true才确认。阅读窗244px、13scalar显式行、自然宽48…168px，状态icon/mini/7点分页与通知/菜单优先保持。queued只写“已排队”，不冒称完成。完整字段、资源/host与实机边界见[device-conversation.md](device-conversation.md)。
+
+
+PET确认安全门禁：宠物caption可能裁尾，因此PET短OK只请求latest（Mac展开dialogue/最新窗），不能发送；收到实际对话投影后下一次独立短按才可确认。设备can_confirm明确要求dialogue，并在物理首次按下锁定latest意图，迟到view ACK不改变该次松开。长持录音保持一次start/stop，生产模型+gesture联合ASan/UBSan及原UI回归覆盖；无新增界面文字、字体或布局。

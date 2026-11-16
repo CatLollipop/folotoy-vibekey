@@ -36,7 +36,7 @@ test('mailbox distinguishes accepted from applied and never replays a completed 
 test('OMP extension submits through official original-session API without touching editor',async()=>{
  const root=temporary();process.env.VIBEKEY_BRIDGE_ROOT=root;
  const handlers=new Map(),sentMessages=[];let editor='',idle=true;
- const pi={on:(name,handler)=>handlers.set(name,handler),sendUserMessage:(text,options)=>{assert.equal(options,undefined,'idle sends must not be parked with explicit followUp');sentMessages.push(text);handlers.get('message_start')({message:{role:'user',content:[{type:'text',text}]}});return new Promise(()=>{});}};
+ const pi={on:(name,handler)=>handlers.set(name,handler),sendUserMessage:(text,options)=>{if(!idle){assert.equal(options?.deliverAs,'followUp');sentMessages.push(text);return Promise.resolve();}assert.equal(options,undefined,'idle sends must not be parked with explicit followUp');sentMessages.push(text);handlers.get('message_start')({message:{role:'user',content:[{type:'text',text}]}});return new Promise(()=>{});}};
  const context={cwd:'/dedicated-test',sessionManager:{getSessionId:()=> 'test-omp-session'},ui:{supportsEditor:true,getEditorText:()=>editor,setEditorText:text=>{editor=text;}},isIdle:()=>idle,hasPendingMessages:()=>false,abort:async()=>{}};
  ompExtension(pi);await handlers.get('session_start')({},context);
  try{
@@ -47,7 +47,8 @@ test('OMP extension submits through official original-session API without touchi
   const inserted=command(instance,'test-omp-session','insertDraft','必须保留在助理本机');
   await wait(()=>receipt(inserted)?.status==='failed');assert.equal(editor,'原会话手动草稿');
   const sent=command(instance,'test-omp-session','sendPrompt','专用测试消息');
-  await wait(()=>receipt(sent)?.status==='applied');assert.deepEqual(sentMessages,['专用测试消息']);assert.equal(editor,'原会话手动草稿');
+  await wait(()=>receipt(sent)?.status==='applied');assert.equal(receipt(sent).disposition,'accepted');assert.equal(receipt(sent).turnID,undefined);assert.deepEqual(sentMessages,['专用测试消息']);assert.equal(editor,'原会话手动草稿');
+  idle=false;const queued=command(instance,'test-omp-session','sendPrompt','queued native fixture');await wait(()=>receipt(queued)?.status==='applied');assert.equal(receipt(queued).disposition,'queued');assert.equal(receipt(queued).promptID,undefined);idle=true;
   handlers.get('agent_start')({},context);handlers.get('message_end')({message:{role:'assistant',stopReason:'stop',content:[{type:'thinking',thinking:'do not speak'},{type:'text',text:'测试回复'}]}});idle=false;handlers.get('agent_end')({},context);assert.equal(events(root).some(x=>x.event.state==='completed'),false);idle=true;
   const completed=await wait(()=>events(root).find(x=>x.event.state==='completed'));assert.equal(completed.reply.text,'测试回复');
   handlers.get('agent_start')({},context);handlers.get('message_end')({message:{role:'assistant',stopReason:'error',content:[{type:'text',text:'error should not speak'}]}});handlers.get('agent_end')({},context);await wait(()=>events(root).some(x=>x.event.state==='error'));
@@ -65,7 +66,7 @@ test('DSH plugin admits prompts only to existing root sessions and excludes suba
  dshPlugin(ctx);
  try{
   const instance=registration(root);const descriptor=JSON.parse(fs.readFileSync(path.join(instance,'registration.json'),'utf8'));assert.deepEqual(descriptor.sessions.map(x=>x.sessionID),['main-session']);
-  const sent=command(instance,'main-session','sendPrompt','test original session');await wait(()=>receipt(sent)?.status==='applied');assert.equal(prompts[0].source.kind,'user');assert.equal(prompts[0].content[0].text,'test original session');
+  const sent=command(instance,'main-session','sendPrompt','test original session');await wait(()=>receipt(sent)?.status==='applied');assert.equal(receipt(sent).disposition,'accepted');assert.equal(receipt(sent).promptID,undefined);assert.equal(prompts[0].source.kind,'user');assert.equal(prompts[0].content[0].text,'test original session');
   const stopped=command(instance,'main-session','stop');await wait(()=>receipt(stopped)?.status==='applied');assert.deepEqual(cancels,[[{kind:'user'},{keepInbox:true}]]);
   handlers.get('session/event')(child.session,{type:'turn/end',seq:3,data:{turn:1,reason:{kind:'completed'}}});assert.equal(events(root).length,0);
   handlers.get('session/event')(main.session,{type:'turn/start',seq:0,data:{turn:1}});
@@ -105,7 +106,7 @@ test('Claude official Mod admits only original-session API prompts and preserves
   const instance=registration(root),descriptor=JSON.parse(fs.readFileSync(path.join(instance,'registration.json'),'utf8'));
   assert.equal(descriptor.controlTransport,'claude-mod');assert.equal(descriptor.sessions[0].sessionID,nativeID);
   const sentReceipt=command(instance,nativeID,'sendPrompt','only confirmed local draft');await tick();
-  assert.equal(receipt(sentReceipt).status,'applied');assert.deepEqual(sent,[{text:'only confirmed local draft',asUser:true}]);
+  assert.equal(receipt(sentReceipt).status,'applied');assert.equal(receipt(sentReceipt).disposition,'accepted');assert.equal(receipt(sentReceipt).turnID,undefined);assert.deepEqual(sent,[{text:'only confirmed local draft',asUser:true}]);
   await tick();assert.equal(sent.length,1,'completed mailbox request replayed');
   drop=true;const denied=command(instance,nativeID,'sendPrompt','refused fixture');await tick();assert.equal(receipt(denied).status,'failed');
   drop=false;throwNative=true;const uncertain=command(instance,nativeID,'sendPrompt','native call failed after possible admission');await tick();assert.equal(receipt(uncertain).status,'deliveryUnknown');
@@ -157,4 +158,15 @@ test('mailbox marks invoked native exceptions unknown and only explicit local pr
  const rejected=command(box.instance,'original','sendPrompt','local preflight rejection');
  await box.drain(()=>{throw new NotDeliveredError('Original native identity changed before invocation');});
  assert.equal(receipt(rejected).status,'failed');
+});
+
+
+test('mailbox preserves typed native receipt fields without inventing IDs for legacy handlers',async()=>{
+ const root=temporary(),box=new Mailbox('test','Test',{root});box.register([box.session('original','Test')],['submit']);
+ const typed=command(box.instance,'original','sendPrompt','typed fixture');
+ await box.drain(()=>({disposition:'admitted',promptID:'native-prompt',turnID:'native-turn'}));
+ assert.deepEqual(receipt(typed),{requestID:path.basename(typed,'.json'),status:'applied',disposition:'admitted',promptID:'native-prompt',turnID:'native-turn'});
+ const legacy=command(box.instance,'original','sendPrompt','legacy fixture');await box.drain(()=>{});
+ assert.equal(receipt(legacy).disposition,'accepted');assert.equal(receipt(legacy).promptID,undefined);assert.equal(receipt(legacy).turnID,undefined);
+ const invalid=command(box.instance,'original','sendPrompt','invalid typed fixture');await box.drain(()=>({disposition:'finished'}));assert.equal(receipt(invalid).status,'deliveryUnknown');
 });

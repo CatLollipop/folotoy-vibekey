@@ -722,6 +722,7 @@ import Security
             if reply.ok, let session = pending.session {
                 guard reply.session == session, reply.revision == pending.revision else { return }
             }
+            if reply.ok, let window = pending.windowID { guard reply.windowID == window else { return } }
             conversationPending = nil; pending.timeout.cancel()
             if reply.ok { pending.continuation.resume(returning: reply) }
             else { pending.continuation.resume(throwing: AssistantError.device(reply.error)) }
@@ -1181,6 +1182,7 @@ import Security
         let op: String
         let session: String?
         let revision: UInt32?
+        let windowID: UInt32?
         let continuation: CheckedContinuation<DeviceConversationMessage, Error>
         let timeout: Task<Void, Never>
     }
@@ -1191,12 +1193,13 @@ import Security
     }
     /// 独立ACK槽；超时仅报告未知，绝不自动重放用户确认或原应用消息。
     func conversationRequest(_ op: String, fields: [(String, FlatJSON.Value)] = [],
-                             binding: ConversationRouter.Binding? = nil) async throws -> DeviceConversationMessage {
+                             binding: ConversationRouter.Binding? = nil, windowID: UInt32? = nil) async throws -> DeviceConversationMessage {
         guard let link = active, isHandshaken(link), link == .usb || link == .wifi else { throw AssistantError.deviceUnavailable }
         guard conversationPending == nil else { throw AssistantError.device("busy") }
         let rid = UInt32.random(in: 1...UInt32.max)
         let route: [(String, FlatJSON.Value)] = binding.map { [("sid", .string($0.wireID)), ("rev", .int(Int($0.revision)))] } ?? []
-        let packet = try DeviceConversationProtocol.encode(op: op, requestID: rid, fields: route + fields)
+        let windowFields: [(String, FlatJSON.Value)] = windowID.map { [("wid", .int(Int($0)))] } ?? []
+        let packet = try DeviceConversationProtocol.encode(op: op, requestID: rid, fields: route + windowFields + fields)
         return try await withTaskCancellationHandler {
             try Task.checkCancellation()
             return try await withCheckedThrowingContinuation { continuation in
@@ -1206,7 +1209,7 @@ import Security
                     self?.failConversationRequest()
                 }
                 conversationPending = .init(requestID: rid, link: link, op: op, session: binding?.wireID,
-                    revision: binding?.revision, continuation: continuation, timeout: timeout)
+                    revision: binding?.revision, windowID: windowID, continuation: continuation, timeout: timeout)
                 sendRaw(packet, via: link)
             }
         } onCancel: {

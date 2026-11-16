@@ -64,13 +64,14 @@ extension Bundle { nonisolated static var l10n: Bundle { .main } }
         check(pages.joined() == source, "Pagination lost or duplicated UTF-8")
         for (index, page) in pages.enumerated() {
             check(page.utf8.count <= 128, "Device pane memory exceeded")
-            let frame = try DeviceConversationProtocol.encode(op: "pane", requestID: UInt32.max, fields: [
-                ("sid", .string(bindingA.wireID)), ("rev", .int(Int(UInt32.max))), ("role", .string("agent")),
-                ("page", .int(index + 1)), ("pages", .int(pages.count)), ("text", .string(page))])
+            let frame = try DeviceConversationProtocol.encode(op: "window_item", requestID: UInt32.max, fields: [
+                ("sid", .string(bindingA.wireID)), ("rev", .int(Int(UInt32.max))), ("wid", .int(Int(UInt32.max))),
+                ("index", .int(index % 4)), ("mid", .string("0123456789abcdef")), ("role", .string("assistant")),
+                ("delivery", .string("none")), ("head", .int(1)), ("tail", .int(1)), ("trunc", .int(0)), ("text", .string(page))])
             check(frame.count <= 512, "Escaped pane exceeds physical line")
         }
         let valid: [String: Any] = ["t": "conversation", "op": "event", "action": "confirm", "sid": bindingA.wireID,
-            "rev": 1, "drev": 1, "gid": 1, "boot": "00000001"]
+            "rev": 1, "drev": 1, "gid": 1, "boot": "00000001", "wid": 1]
         check(DeviceConversationProtocol.parse(valid) != nil, "Valid confirm rejected")
         for field in ["rev", "drev", "gid"] {
             var invalid = valid; invalid[field] = true
@@ -86,6 +87,7 @@ extension Bundle { nonisolated static var l10n: Bundle { .main } }
         let last = quota.bind(a, writable: true)
         check(!quota.stage("第十七份", for: last) && quota.entries.values.filter { !$0.draft.isEmpty }.count == 16,
               "Draft quota evicted unsent content")
+        try TimelineContracts.run { value, message in check(value, message) }
         print("PASS: \(checks) session binding, drafts, stale ASR, delivery uncertainty, pagination and wire checks")
     }
 }

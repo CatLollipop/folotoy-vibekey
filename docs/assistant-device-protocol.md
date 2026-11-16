@@ -298,6 +298,14 @@ update的off按UTF-8字节计算且必须连续；单块最多192B，Mac使用64
 新增独立 `cmd/t=conversation` schema1，不把字段加进接近511B上限的assistant capabilities。云profile、pet同步及notification事务保持独立。`cap/bind/state/pane/view/clear/result` 请求使用rid，成功的bind/state/pane/view回显sid/rev。设备语义event包含boot/gid；除通知jump外必须匹配sid/rev/drev。jump携带nid/nrev，由Mac有界导航表解析原会话，不传原生会话ID或密钥。设备仅保存双128B阅读窗，Mac完成全文分页。详细合同见[会话路由](conversation-routing.md)与[设备协议](protocol.md)。旧固件缺split能力时提示升级，不将普通粘贴或云回复当作已接入。
 
 
-## 方案B conversation独立协议
+## 历史0.7：方案B conversation独立协议（已由0.8替代）
 
 电脑会话使用独立cmd/t=conversation、schema1/split1能力，不追加原assistant能力帧。bind/state/pane/view按sid/rev校验，两个128B窗口由Mac完整历史分页，result按gid关联；设备事件带boot/gid及固定binding/drev，jump改带不透明nid/nrev。PTT松开只保留草稿，新的短OK确认后Mac才调用已验证的官方发送通道；通知active的双击优先、单击延迟仅dismiss。PET和双栏共用输入owner，切画面不回落旧录音。字段、0.6.1菜单/页点保持及验证边界见[device-conversation.md](device-conversation.md)。
+
+
+## 0.8 Passport标准聊天流（schema2）
+
+本次只观察新消息；用户/助手按观察顺序追加气泡，未发送ASR草稿位于流尾右侧，没有固定底栏和双栏。Mac分页完整有界观察内容，设备只保最多4×128B active+stage；window_begin/item完整收齐、GUI尺寸验证后commit原子ACK。cap为schema2/chat1，旧pane unsupported；所有非jump事件带wid，旧屏短OK只latest，当前版本可见草稿tail=true才确认。阅读窗244px、13scalar显式行、自然宽48…168px，状态icon/mini/7点分页与通知/菜单优先保持。queued只写“已排队”，不冒称完成。完整字段、资源/host与实机边界见[device-conversation.md](device-conversation.md)。
+
+
+PET确认安全门禁：宠物caption可能裁尾，因此PET短OK只请求latest（Mac展开dialogue/最新窗），不能发送；收到实际对话投影后下一次独立短按才可确认。设备can_confirm明确要求dialogue，并在物理首次按下锁定latest意图，迟到view ACK不改变该次松开。长持录音保持一次start/stop，生产模型+gesture联合ASan/UBSan及原UI回归覆盖；无新增界面文字、字体或布局。

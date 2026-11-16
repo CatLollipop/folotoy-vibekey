@@ -172,6 +172,14 @@ C3无PSRAM。16 KiB采音环只在录音时分配，转写/回复缓冲分阶段
 下键菜单修复：所有LIST进入/返回原子直切；本地网络菜单独立344B静态内容与owner，后台prepare/idle或Mac列表不覆盖，退出恢复最新状态及原通知/云reply页。`tools/test-display-ui.sh`新增awake本地/远端菜单首帧、返回、后台缓存、最新错误和离线退出回归；它不执行完整ib_app/真实按键或网络，硬件确认仍由主集成完成。调用链与边界见[device-menu-transitions.md](../docs/device-menu-transitions.md)。
 
 
-## 统一电脑会话窗口（方案B）
+## 历史0.7：统一电脑会话窗口（已由0.8替代）
 
 conversation有独立cap/ACK/状态、左右各128B窗口和title，不扩assistant主能力帧；Mac拥有完整历史及官方发送。12px双栏左mini宠物/Agent、右ASR草稿；OK持有/松开仅录音成草稿，另一次短按确认；通知双击绑定nid/nrev/gid由Mac核验原会话，设备不自行热切。PET只改变画面，仍使用同一会话输入owner与late-mic保护，UNKNOWN/只读不能录音或确认。`bash tools/test-dialogue.sh`运行生产手势/协议模型ASan/UBSan，`tools/test-display-ui.sh`及`tools/test-ui-labels.sh`覆盖当前双栏和旧菜单/通知回归。模型432B、host LVGL峰41776B仅参考；真实C3/ASR/官方会话手势与投递须另验。详见[device-conversation.md](../docs/device-conversation.md)。
+
+
+## 0.8 Passport标准聊天流（schema2）
+
+本次只观察新消息；用户/助手按观察顺序追加气泡，未发送ASR草稿位于流尾右侧，没有固定底栏和双栏。Mac分页完整有界观察内容，设备只保最多4×128B active+stage；window_begin/item完整收齐、GUI尺寸验证后commit原子ACK。cap为schema2/chat1，旧pane unsupported；所有非jump事件带wid，旧屏短OK只latest，当前版本可见草稿tail=true才确认。阅读窗244px、13scalar显式行、自然宽48…168px，状态icon/mini/7点分页与通知/菜单优先保持。queued只写“已排队”，不冒称完成。完整字段、资源/host与实机边界见[device-conversation.md](../docs/device-conversation.md)。
+
+
+PET确认安全门禁：宠物caption可能裁尾，因此PET短OK只请求latest（Mac展开dialogue/最新窗），不能发送；收到实际对话投影后下一次独立短按才可确认。设备can_confirm明确要求dialogue，并在物理首次按下锁定latest意图，迟到view ACK不改变该次松开。长持录音保持一次start/stop，生产模型+gesture联合ASan/UBSan及原UI回归覆盖；无新增界面文字、字体或布局。

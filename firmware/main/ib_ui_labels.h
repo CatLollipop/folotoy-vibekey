@@ -38,3 +38,6 @@ const char *ib_ui_conversation_error(const char *machine_code);
 /* 只读枚举文本，供host逐字符验证当前静态OFL字库，不需要设备侧测试缓冲。 */
 size_t ib_ui_label_count(void);
 const char *ib_ui_label_at(size_t index);
+
+// schema2聊天气泡按真实delivery显示，不把排队/接纳写成完成。
+const char *ib_ui_conversation_delivery(unsigned delivery);

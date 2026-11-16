@@ -12,6 +12,7 @@
 #include "ib_reply_store.h"
 #include "ib_notification.h"
 #include "ib_crc32.h"
+#include "cJSON.h"
 #include "ib_ui_hints.h"
 #include "ib_cloud_stream.h"
 #include "preview_host.h"
@@ -32,6 +33,16 @@ static void conversation_request(ib_conversation_t *view,const char *json,bool e
     if(!ib_conversation_handle(view,json,strlen(json),response,sizeof(response),preview_now(),conversation_preview_apply,NULL)||
         (strstr(response,"\"ok\":1")!=NULL)!=expected){fprintf(stderr,"Conversation fixture ACK mismatch: %s\n",response);s_failures++;}
 }
+
+static void chat_send(ib_conversation_t *view,cJSON *o,bool expected){
+    static unsigned rid=100;cJSON_AddStringToObject(o,"cmd","conversation");cJSON_AddStringToObject(o,"sid","0123456789abcdef0123456789abcdef");cJSON_AddNumberToObject(o,"rev",21);cJSON_AddNumberToObject(o,"rid",++rid);
+    char *line=cJSON_PrintUnformatted(o);conversation_request(view,line,expected);free(line);cJSON_Delete(o);
+}
+static cJSON *chat_op(const char *op,unsigned wid){cJSON *o=cJSON_CreateObject();cJSON_AddStringToObject(o,"op",op);if(wid)cJSON_AddNumberToObject(o,"wid",wid);return o;}
+static void chat_begin(ib_conversation_t *v,unsigned wid,unsigned n,unsigned page,unsigned pages,unsigned unread,bool following,unsigned drev,bool older){cJSON *o=chat_op("window_begin",wid);cJSON_AddNumberToObject(o,"n",n);cJSON_AddNumberToObject(o,"page",page);cJSON_AddNumberToObject(o,"pages",pages);cJSON_AddNumberToObject(o,"unread",unread);cJSON_AddNumberToObject(o,"following",following);cJSON_AddNumberToObject(o,"drev",drev);cJSON_AddNumberToObject(o,"older",older);chat_send(v,o,true);}
+static void chat_item(ib_conversation_t *v,unsigned wid,unsigned index,const char *mid,const char *role,const char *delivery,bool head,bool tail,bool trunc,const char *text){cJSON *o=chat_op("window_item",wid);cJSON_AddNumberToObject(o,"index",index);cJSON_AddStringToObject(o,"mid",mid);cJSON_AddStringToObject(o,"role",role);cJSON_AddStringToObject(o,"delivery",delivery);cJSON_AddNumberToObject(o,"head",head);cJSON_AddNumberToObject(o,"tail",tail);cJSON_AddNumberToObject(o,"trunc",trunc);cJSON_AddStringToObject(o,"text",text);chat_send(v,o,true);}
+static void chat_commit(ib_conversation_t *v,unsigned wid,bool ok){chat_send(v,chat_op("window_commit",wid),ok);}
+static void chat_state(ib_conversation_t *v,const char *phase,unsigned drev){cJSON *o=chat_op("state",0);cJSON_AddStringToObject(o,"phase",phase);cJSON_AddNumberToObject(o,"drev",drev);cJSON_AddNumberToObject(o,"writable",1);chat_send(v,o,true);}
 
 static void shot(const char *name)
 {
@@ -783,49 +794,74 @@ int preview_run_scenarios(const char *out_dir, int scale, const char *filter)
     ib_ui_local_menu_hide();ib_ui_show(IB_UI_OFFLINE,IB_UI_MODE_DICT,"");shot("down_menu_offline_return");
     if(ib_hints_page_window().active)s_failures++;
     printf("DOWN menus: awake remote/local entry and return hashes, background state/list/Agent ownership, production notice/reply page restore, latest error and offline exit passed; local list=%zuB.\n",sizeof(ib_ui_list_t));
-    // 方案B：真实左右两栏。Mac持完整历史，设备只接受绑定匹配的两个128B窗口。
+    // 标准时间流：真实生产wire分片提交，草稿只是末尾的右侧气泡，没有固定底栏。
     int chat_failures_before=s_failures;
     ib_conversation_t chat={0};ib_conversation_reset(&chat);ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");ib_ui_set_awake(true);
 #define CHAT_ID "0123456789abcdef0123456789abcdef"
     conversation_request(&chat,"{\"cmd\":\"conversation\",\"op\":\"bind\",\"rid\":1,\"sid\":\"" CHAT_ID "\",\"rev\":21,\"title\":\"Claude Code\",\"writable\":1,\"view\":\"dialogue\"}",true);
-    conversation_request(&chat,"{\"cmd\":\"conversation\",\"op\":\"pane\",\"rid\":2,\"sid\":\"" CHAT_ID "\",\"rev\":21,\"role\":\"agent\",\"page\":3,\"pages\":12,\"text\":\"本轮检查完成。\\n原会话保持不变。\\n请在右栏口述\\n确认后才发送。\"}",true);
-    preview_advance(300);shot("conversation_bound_empty_draft");
-    conversation_request(&chat,"{\"cmd\":\"conversation\",\"op\":\"state\",\"rid\":3,\"sid\":\"" CHAT_ID "\",\"rev\":21,\"phase\":\"recording\",\"drev\":1,\"writable\":1,\"focus\":\"draft\"}",true);
-    conversation_request(&chat,"{\"cmd\":\"conversation\",\"op\":\"pane\",\"rid\":4,\"sid\":\"" CHAT_ID "\",\"rev\":21,\"role\":\"draft\",\"page\":1,\"pages\":1,\"text\":\"请帮我整理\\n今天的工作\"}",true);
-    ib_ui_set_capture_active(true);preview_advance(300);shot("conversation_actual_capture_green");
-    ib_ui_set_capture_active(false);
-    conversation_request(&chat,"{\"cmd\":\"conversation\",\"op\":\"state\",\"rid\":5,\"sid\":\"" CHAT_ID "\",\"rev\":21,\"phase\":\"draft\",\"drev\":2,\"writable\":1,\"focus\":\"draft\"}",true);
-    conversation_request(&chat,"{\"cmd\":\"conversation\",\"op\":\"pane\",\"rid\":6,\"sid\":\"" CHAT_ID "\",\"rev\":21,\"role\":\"draft\",\"page\":1,\"pages\":4,\"text\":\"请帮我整理\\n今天的工作，\\n暂时不要发送。\"}",true);
-    preview_advance(200);shot("conversation_draft_requires_confirmation");
-    if(preview_region_ink(43,284,176,35)!=0)s_failures++; // 普通阶段仅动画icon，无常驻状态caption。
-    unsigned left=preview_region_ink(27,94,84,160),right=preview_region_ink(131,94,82,160),mini=preview_region_ink(23,54,28,28),hint=preview_region_ink(220,260,18,20);
-    if(left<30||right<30||mini<20||hint<8||ib_hints_page_window().total!=4||ib_hints_current_icon(IB_UI_KEY_OK)!=IB_ICON_SEND)s_failures++;
-    printf("Conversation visible pixels: left=%u right=%u selected-mini=%u OK=%u; model=%zuB.\n",left,right,mini,hint,sizeof(chat));
-    printf("Conversation checks after first panes: %d\n",s_failures-chat_failures_before);
-    uint32_t draft_pixels=preview_region_hash(125,88,94,184);char oversized[480],wide[129];memset(wide,'W',128);wide[128]=0;
-    snprintf(oversized,sizeof(oversized),"{\"cmd\":\"conversation\",\"op\":\"pane\",\"rid\":7,\"sid\":\"%s\",\"rev\":21,\"role\":\"draft\",\"page\":1,\"pages\":4,\"text\":\"%s\"}",CHAT_ID,wide);
-    conversation_request(&chat,oversized,false);if(preview_region_hash(125,88,94,184)!=draft_pixels)s_failures++;
-    printf("Conversation checks after clip rejection: %d\n",s_failures-chat_failures_before);
-    conversation_request(&chat,"{\"cmd\":\"conversation\",\"op\":\"state\",\"rid\":8,\"sid\":\"" CHAT_ID "\",\"rev\":21,\"phase\":\"draft\",\"drev\":2,\"writable\":1,\"focus\":\"agent\"}",true);
-    shot("conversation_agent_focus_scroll_pips");if(ib_hints_page_window().total!=12||ib_hints_page_window().current!=2)s_failures++;
-    draft_pixels=preview_region_hash(125,88,94,184); // 焦点边框已切换，比较正文保留时使用相同focus。
-    uint32_t panes=preview_region_hash(21,88,198,184);
-    ib_ui_local_menu_show(&wifi);shot("conversation_network_menu_000ms");uint32_t chat_menu=preview_region_hash(0,24,240,296);
+    chat_begin(&chat,1,0,1,1,0,true,0,false);chat_commit(&chat,1,true);shot("chat_empty_observation_no_history");
+    chat_state(&chat,"recording",1);
+    chat_begin(&chat,2,3,1,1,0,true,1,false);
+    chat_item(&chat,2,0,"0000000000000001","user","accepted",true,true,false,"今天有哪些待办？");
+    chat_item(&chat,2,1,"0000000000000002","assistant","none",true,true,false,"我已整理三项任务。\n先检查本轮修改，\n再确认测试结果。");
+    chat_item(&chat,2,2,"0000000000000003","draft","draft",true,true,false,"先完成文档");chat_commit(&chat,2,true);
+    ib_ui_set_capture_active(true);preview_advance(300);shot("chat_actual_capture_draft_in_flow");
+    ib_ui_set_capture_active(false);chat_state(&chat,"draft",2);
+    chat_begin(&chat,3,3,1,1,0,true,2,false);
+    chat_item(&chat,3,0,"0000000000000001","user","accepted",true,true,false,"今天有哪些待办？");
+    chat_item(&chat,3,1,"0000000000000002","assistant","none",true,true,false,"我已整理三项任务。\n先检查本轮修改，\n再确认测试结果。");
+    chat_item(&chat,3,2,"0000000000000003","draft","draft",true,true,false,"先完成文档整理，\n确认后再发送。");chat_commit(&chat,3,true);
+    preview_advance(200);shot("chat_timeline_draft_requires_confirmation");
+    unsigned agent=preview_region_ink(51,130,156,48),draft=preview_region_ink(57,226,156,36),mini=preview_region_ink(21,110,20,20),hint=preview_region_ink(220,260,18,20);
+    if(agent<30||draft<30||mini<10||hint<8||!ib_conversation_can_confirm(&chat)||ib_hints_current_icon(IB_UI_KEY_OK)!=IB_ICON_SEND)s_failures++;
+    printf("Chat visible pixels: assistant=%u draft=%u actual-mini=%u OK=%u; active+stage=%zuB.\n",agent,draft,mini,hint,sizeof(chat));
+    // 状态先到或尚未收齐的消息不能改active window，更不能发送旧版本草稿。
+    uint32_t visible=preview_region_hash(21,50,198,244);chat_state(&chat,"draft",3);
+    chat_begin(&chat,4,1,1,1,0,true,3,false);
+    if(ib_conversation_can_confirm(&chat)||preview_region_hash(21,50,198,244)!=visible)s_failures++;
+    char wide[129];memset(wide,'W',128);wide[128]=0;
+    chat_item(&chat,4,0,"0000000000000004","assistant","none",true,true,false,wide);chat_commit(&chat,4,false);
+    if(preview_region_hash(21,50,198,244)!=visible||chat.window.wid!=3)s_failures++;
+    // 回看旧屏：无隐藏草稿确认，只有latest意图；新内容提示不改变当前阅读片段。
+    chat_begin(&chat,5,1,2,12,2,false,3,true);
+    chat_item(&chat,5,0,"0000000000000005","assistant","none",false,false,true,"较早消息的连续片段。\n回看时新消息不跳位。\n上下键按屏阅读。");chat_commit(&chat,5,true);
+    shot("chat_manual_history_unread_no_jump");
+    if(!ib_conversation_can_latest(&chat)||ib_conversation_can_confirm(&chat)||ib_hints_page_window().total!=12||ib_hints_page_window().current!=1||ib_hints_current_icon(IB_UI_KEY_OK)!=IB_ICON_DOWN)s_failures++;
+    uint32_t timeline=preview_region_hash(21,50,198,244);
+    ib_ui_local_menu_show(&wifi);shot("chat_network_menu_000ms");uint32_t chat_menu=preview_region_hash(0,24,240,296);
     preview_advance(60);if(preview_region_hash(0,24,240,296)!=chat_menu)s_failures++;
-    ib_ui_local_menu_hide();ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");shot("conversation_network_menu_restored");
-    if(preview_region_hash(21,88,198,184)!=panes||ib_hints_page_window().total!=12)s_failures++;
-    printf("Conversation checks after menu: %d\n",s_failures-chat_failures_before);
+    ib_ui_local_menu_hide();ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");shot("chat_network_menu_restored");
+    if(preview_region_hash(21,50,198,244)!=timeline||ib_hints_page_window().total!=12||ib_hints_page_window().current!=1)s_failures++;
+    chat_state(&chat,"draft",4);chat_begin(&chat,6,1,12,12,0,true,4,false);
+    chat_item(&chat,6,0,"0000000000000006","draft","draft",true,true,false,"这条草稿尚未发送。\n短按确认才提交。");chat_commit(&chat,6,true);
+    uint32_t draft_pixels=preview_region_hash(51,50,168,66);
     if(ib_conversation_mark_action(&chat,81,false)||ib_ui_conversation_update(&chat,true))s_failures++;
-    shot("conversation_confirmation_pending");
+    shot("chat_confirmation_pending");
     conversation_request(&chat,"{\"cmd\":\"conversation\",\"op\":\"result\",\"rid\":9,\"gid\":81,\"status\":\"unknown\"}",true);
-    shot("conversation_unknown_keeps_draft");if(ib_conversation_can_confirm(&chat)||preview_region_hash(125,88,94,184)!=draft_pixels)s_failures++;
-    printf("Conversation checks after unknown: %d\n",s_failures-chat_failures_before);
-    s_conversation_enabled=false;if(ib_ui_conversation_update(&chat,false))s_failures++;shot("conversation_standalone_cache_not_overlay");
-    s_conversation_enabled=true;if(ib_ui_conversation_update(&chat,true))s_failures++;shot("conversation_companion_restores_columns");
-    conversation_request(&chat,"{\"cmd\":\"conversation\",\"op\":\"view\",\"rid\":10,\"sid\":\"" CHAT_ID "\",\"rev\":21,\"view\":\"pet\"}",true);
-    shot("conversation_pet_shortcut_view");
+    shot("chat_unknown_preserves_draft");if(ib_conversation_can_confirm(&chat)||preview_region_hash(51,50,168,66)!=draft_pixels)s_failures++;
+    s_conversation_enabled=false;if(ib_ui_conversation_update(&chat,false))s_failures++;shot("chat_standalone_cache_not_overlay");
+    s_conversation_enabled=true;if(ib_ui_conversation_update(&chat,true))s_failures++;shot("chat_companion_restores_timeline");
+    conversation_request(&chat,"{\"cmd\":\"conversation\",\"op\":\"view\",\"rid\":10,\"sid\":\"" CHAT_ID "\",\"rev\":21,\"view\":\"pet\"}",true);shot("chat_pet_shortcut_same_input_owner");
+    if(ib_conversation_can_confirm(&chat)||!ib_conversation_can_latest(&chat)||ib_hints_current_icon(IB_UI_KEY_OK)!=IB_ICON_DOWN)s_failures++;
+    conversation_request(&chat,"{\"cmd\":\"conversation\",\"op\":\"view\",\"rid\":12,\"sid\":\"" CHAT_ID "\",\"rev\":21,\"view\":\"dialogue\"}",true);
+    chat_state(&chat,"waiting",5);chat_begin(&chat,7,1,12,12,0,true,5,false);
+    chat_item(&chat,7,0,"0000000000000007","user","queued",true,true,false,"按真实回执显示已排队。");chat_commit(&chat,7,true);shot("chat_queued_receipt_not_completed");
+    chat_state(&chat,"draft",6);chat_begin(&chat,8,3,12,12,0,true,6,false);
+    chat_item(&chat,8,0,"0000000000000008","assistant","none",true,true,false,"好");
+    chat_item(&chat,8,1,"0000000000000009","user","accepted",true,true,false,"OK");
+    chat_item(&chat,8,2,"000000000000000a","draft","draft",true,true,false,"改A");chat_commit(&chat,8,true);shot("chat_short_chinese_ascii_natural_width");
+    if(preview_region_ink(21,54,20,20)<10||preview_region_ink(191,160,20,18)<5)s_failures++;
+    chat_state(&chat,"working",7);chat_begin(&chat,9,1,11,12,1,false,7,true);
+    chat_item(&chat,9,0,"000000000000000b","assistant","none",false,false,true,"一二三四五六七八九十甲乙丙\n一二三四五六七八九十甲乙丙");chat_commit(&chat,9,true);shot("chat_long_explicit_thirteen_scalar_lines");
+    uint32_t before_tall=preview_region_hash(21,50,198,244);
+    chat_begin(&chat,10,4,11,12,1,false,7,true);
+    for(unsigned i=0;i<4;i++){char mid[17];snprintf(mid,sizeof(mid),"%016x",30+i);chat_item(&chat,10,i,mid,"user","admitted",true,true,false,"第一行\n第二行\n第三行");}
+    chat_commit(&chat,10,false);if(chat.window.wid!=9||preview_region_hash(21,50,198,244)!=before_tall)s_failures++;
+    chat_state(&chat,"unknown",8);chat_begin(&chat,11,1,12,12,0,true,8,false);
+    chat_item(&chat,11,0,"000000000000000c","user","unknown",true,true,false,"发送结果尚未确认。");chat_commit(&chat,11,true);shot("chat_unknown_receipt_not_accepted");
+    if(ib_conversation_can_confirm(&chat)||ib_conversation_can_record(&chat))s_failures++;
     conversation_request(&chat,"{\"cmd\":\"conversation\",\"op\":\"clear\",\"rid\":11}",true);
-    printf("Conversation UI: production wire→atomic mapped glyph windows, true columns/mini/pips, reject clipping, menu return, confirmation lock and standalone gating checked; failures=%d.\n",s_failures-chat_failures_before);
+    printf("Chat UI: production schema2 atomic transaction, chronological bubbles and flow draft, no fixed bar, clip rejection, old-screen latest-only, menu restore, selected mini and actual capture checked; failures=%d.\n",s_failures-chat_failures_before);
 #undef CHAT_ID
     return s_failures;
 }

@@ -16,7 +16,9 @@ static const char *const phases[IB_UI_ASSIST_COUNT]={
     [IB_UI_ASSIST_SPEAKING]="正在朗读"
 };
 static const char desktop[]="电脑助手\n等待会话";
-static const char *const conversation_text[]={"对话","我的草稿","确认发送草稿","此会话仅支持查看","等待电脑验证会话","等待电脑确认"};
+static const char *const conversation_text[]={"对话","我的草稿","确认发送草稿","此会话仅支持查看","等待电脑验证会话","等待电脑确认","新消息","截断"};
+static const char *const conversation_delivery[]={"","草稿","提交中","已排队","已提交","已接收","发送失败","结果未知"};
+const char *ib_ui_conversation_delivery(unsigned i){return i<COUNT(conversation_delivery)?conversation_delivery[i]:"";}
 static const label_entry_t conversation_errors[]={
     {"no_mac","请连接电脑"},{"unbound","请先选择会话"},{"busy","请稍候再操作"},
     {"draft_exists","原会话已有草稿"},{"stale","会话已变，请重新选择"},
@@ -155,7 +157,7 @@ const char *ib_ui_pet_label(const char *state,bool standalone){
     const char *label=lookup(pets,COUNT(pets),state);
     return label?label:phases[IB_UI_ASSIST_ERROR];
 }
-size_t ib_ui_label_count(void){return COUNT(phases)+COUNT(connections)+COUNT(errors)+COUNT(pets)+1+COUNT(run_mode_text)+COUNT(conversation_text)+COUNT(conversation_errors);}
+size_t ib_ui_label_count(void){return COUNT(phases)+COUNT(connections)+COUNT(errors)+COUNT(pets)+1+COUNT(run_mode_text)+COUNT(conversation_text)+COUNT(conversation_errors)+COUNT(conversation_delivery)-1;}
 const char *ib_ui_label_at(size_t index){
     if(index<COUNT(phases))return phases[index];
     index-=COUNT(phases);
@@ -171,5 +173,7 @@ const char *ib_ui_label_at(size_t index){
     index-=COUNT(run_mode_text);
     if(index<COUNT(conversation_text))return conversation_text[index];
     index-=COUNT(conversation_text);
-    return index<COUNT(conversation_errors)?conversation_errors[index].label:NULL;
+    if(index<COUNT(conversation_errors))return conversation_errors[index].label;
+    index-=COUNT(conversation_errors);
+    return index+1<COUNT(conversation_delivery)?conversation_delivery[index+1]:NULL;
 }

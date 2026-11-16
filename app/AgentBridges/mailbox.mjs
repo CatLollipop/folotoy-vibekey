@@ -71,8 +71,17 @@ export class Mailbox {
           if (request.text != null && (typeof request.text !== 'string' || Buffer.byteLength(request.text)>64000)) throw new Error('Invalid prompt');
           writePrivate(response, {requestID:request.requestID,status:'accepted'});
           try {
-            invoked=true;await handler(request);
-            writePrivate(response, {requestID:request.requestID,status:'applied'});
+            invoked=true;const outcome=await handler(request);
+            const typed={};
+            if(request.operation==='sendPrompt'){
+              typed.disposition=outcome?.disposition??'accepted';
+              if(!['queued','accepted','admitted'].includes(typed.disposition))throw new Error('Invalid native admission disposition');
+              for(const key of ['promptID','turnID'])if(outcome?.[key]!=null){
+                if(typeof outcome[key]!=='string'||!outcome[key]||Buffer.byteLength(outcome[key])>512)throw new Error('Invalid native admission identity');
+                typed[key]=outcome[key];
+              }
+            }
+            writePrivate(response, {requestID:request.requestID,status:'applied',...typed});
           } catch(error) {
             writePrivate(response, {requestID:request.requestID,status:error instanceof NotDeliveredError?'failed':'deliveryUnknown',error:String(error?.message || error).slice(0,300)});
           }

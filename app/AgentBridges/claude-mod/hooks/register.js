@@ -47,7 +47,7 @@ export function register(on) {
             status=!invoked||refused?'failed':'deliveryUnknown';
             error=message.slice(0,200);
           }
-          await call($,state,'receipt',{requestID:request.requestID,status,error});
+          await call($,state,'receipt',{requestID:request.requestID,status,error,disposition:status==='applied'&&request.operation==='sendPrompt'?'accepted':undefined});
         } catch { /* 心跳失效即撤销控制能力，不影响宿主会话。 */ }
         finally {busy=false;}
       });

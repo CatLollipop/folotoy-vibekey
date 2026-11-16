@@ -152,8 +152,11 @@ final class AppState {
         assistantCoordinator?.start()
         bridge.forwardsLegacyAgentNotices = false
         notificationCoordinator = AgentNotificationCoordinator(hub: agentHub, legacy: agent, link: deviceLink)
-        notificationCoordinator?.onConversationNotice = { [weak self] notice, session in
-            self?.assistantCoordinator?.register(notice, session: session)
+        notificationCoordinator?.onConversationNotice = { [weak self] notice, session, turnID, messageID in
+            self?.assistantCoordinator?.register(notice, session: session, turnID: turnID, messageID: messageID)
+        }
+        notificationCoordinator?.onLegacyNoticeTarget = { [weak self] identifier, target in
+            self?.assistantCoordinator?.registerLegacyNotice(identifier, target: target)
         }
         notificationCoordinator?.start()
         do { try AgentHookInstaller.upgradeCodexIfInstalled() }

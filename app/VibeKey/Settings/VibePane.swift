@@ -31,7 +31,7 @@ struct VibePane: View {
                     if let notificationError { Text(notificationError).font(.caption).foregroundStyle(DS.danger) }
                 }.padding(.top, 8)
             }.font(.subheadline)
-            Text("选择原应用会话后，按住 Passport OK 说话；上键发送助手草稿，下键停止任务。当前会话状态联动宠物，回复以文字显示。")
+            Text("选择原应用会话后，按住 Passport OK 说话，松开保存草稿，单独短按 OK 确认发送。上下键按屏翻阅聊天，长按下键打开会话与任务菜单。仅有官方发送能力的会话可提交，回复以文字显示。")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(.top, DS.Space.m)

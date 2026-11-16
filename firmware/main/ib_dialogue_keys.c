@@ -7,8 +7,8 @@ static ib_dialogue_key_result_t result(ib_dialogue_keys_t *s,ib_dialogue_key_act
 void ib_dialogue_keys_reset(ib_dialogue_keys_t *s){
     uint32_t counter=s->counter;memset(s,0,sizeof(*s));s->counter=counter;
 }
-static void start_press(ib_dialogue_keys_t *s,int64_t now,bool notification){
-    s->pressed=true;s->down_at=now;s->notice_press=notification;s->recording=s->blocked=false;
+static void start_press(ib_dialogue_keys_t *s,int64_t now,bool notification,bool latest){
+    s->pressed=true;s->down_at=now;s->notice_press=notification;s->recording=s->blocked=false;s->latest_press=latest;
     s->gesture=++s->counter;if(!s->gesture)s->gesture=++s->counter;
 }
 ib_dialogue_key_result_t ib_dialogue_keys_tick(ib_dialogue_keys_t *s,int64_t now,ib_dialogue_key_context_t c){
@@ -33,7 +33,7 @@ ib_dialogue_key_result_t ib_dialogue_keys_event(ib_dialogue_keys_t *s,ib_key_ev_
         }
         bool expired=s->pending_tap;s->pending_tap=false;s->second=false;
         if(!c.notification&&!c.dialogue)return (ib_dialogue_key_result_t){0};
-        start_press(s,now,expired?false:c.notification);
+        start_press(s,now,expired?false:c.notification,c.can_latest);
         return result(s,expired?IB_DIALOGUE_KEY_NOTICE_DISMISS:IB_DIALOGUE_KEY_NONE);
     }
     if(s->ignore_press){if(event==IB_KEY_EV_UP)s->ignore_press=false;return result(s,IB_DIALOGUE_KEY_NONE);}
@@ -50,6 +50,8 @@ ib_dialogue_key_result_t ib_dialogue_keys_event(ib_dialogue_keys_t *s,ib_key_ev_
         s->pending_tap=true;s->tap_until=now+IB_DIALOGUE_DOUBLE_MS;return result(s,IB_DIALOGUE_KEY_NONE);
     }
     // 松开已开始的长持永远只stop，只有一次新的短按才能确认草稿。
+    // 首次按下属于PET/旧屏时锁定latest意图，迟到view/窗口不能把同次松开升级成发送。
+    if(c.online&&(s->latest_press||c.can_latest))return result(s,IB_DIALOGUE_KEY_LATEST);
     if(c.online&&c.can_confirm)return result(s,IB_DIALOGUE_KEY_CONFIRM);
     return result(s,IB_DIALOGUE_KEY_UNAVAILABLE);
 }

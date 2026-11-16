@@ -215,6 +215,13 @@ nonisolated final class AgentMockURLProtocol: URLProtocol, @unchecked Sendable {
         let valid=HTTPURLResponse(url:url,statusCode:200,httpVersion:nil,headerFields:nil)!
         let payload=try KimiAgentAdapter.responsePayload(method:"POST",data:Data("{\"code\":0,\"data\":{\"status\":\"queued\"}}".utf8),response:valid)
         try check(payload["status"] as? String == "queued", "valid native admission was rejected")
+        let queued=try KimiAgentAdapter.promptReceipt(payload:payload,submittedPromptID:"posted-native-prompt")
+        try check(queued == .init(disposition:.queued,nativePromptID:"posted-native-prompt"), "queued receipt became execution or lost posted prompt ID")
+        let running=try KimiAgentAdapter.promptReceipt(payload:["status":"running","prompt_id":"posted-native-prompt"],submittedPromptID:"posted-native-prompt")
+        try check(running == .init(disposition:.admitted,nativePromptID:"posted-native-prompt"), "running admission invented a turn ID")
+        do { _=try KimiAgentAdapter.promptReceipt(payload:["status":"running","prompt_id":"different-native-prompt"],submittedPromptID:"posted-native-prompt");throw AgentAdapterError.invalidResponse }
+        catch AgentAdapterError.deliveryUnknown {}
+
         do { _=try KimiAgentAdapter.responsePayload(method:"GET",data:Data("{\"code\":40931,\"data\":{}}".utf8),response:valid);throw AgentAdapterError.invalidResponse }
         catch AgentAdapterError.blocked {}
     }
@@ -269,7 +276,7 @@ nonisolated final class AgentMockURLProtocol: URLProtocol, @unchecked Sendable {
                 try mailbox.write(AgentMailbox.Receipt(requestID:command.requestID,status:"accepted",error:nil),to:response)
                 // 有意跨过产品80ms轮询以验证accepted不等于applied；这不是启动同步等待。
                 try await Task.sleep(for:.milliseconds(160))
-                try mailbox.write(AgentMailbox.Receipt(requestID:command.requestID,status:"applied",error:nil),to:response)
+                try mailbox.write(AgentMailbox.Receipt(requestID:command.requestID,status:"applied",error:nil,disposition:.queued,promptID:"native-prompt-fixture",turnID:nil),to:response)
             } catch {
                 ready.complete(.failure(error))
                 throw error
@@ -278,7 +285,9 @@ nonisolated final class AgentMockURLProtocol: URLProtocol, @unchecked Sendable {
         defer { peer.cancel() }
         let registeredSession = try await ready.wait()
         let start = ContinuousClock.now
-        do { try await mailbox.command("sendPrompt",text:"dedicated test prompt",session:registeredSession) }
+        do { let result = try await mailbox.command("sendPrompt",text:"dedicated test prompt",session:registeredSession)
+            try check(result == .init(disposition:.queued,nativePromptID:"native-prompt-fixture"), "typed native mailbox receipt was lost")
+        }
         catch AgentAdapterError.sessionChanged {
             // 仍然失败，不重试/吞错；保留下一次偶发失败所需的脱敏fixture身份诊断。
             let path=instance.appendingPathComponent("registration.json")

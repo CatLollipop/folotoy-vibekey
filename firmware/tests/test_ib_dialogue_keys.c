@@ -41,5 +41,17 @@ int main(void){
     assert(ib_dialogue_keys_event(&s,IB_KEY_EV_UP,3900,dialog).action==IB_DIALOGUE_KEY_UNAVAILABLE);
     uint32_t count=s.counter;ib_dialogue_keys_reset(&s);assert(s.counter==count&&!s.pressed&&!s.pending_tap);
     s.counter=UINT32_MAX;ib_dialogue_keys_event(&s,IB_KEY_EV_DOWN,4000,dialog);assert(s.gesture==1);
+    ib_dialogue_keys_reset(&s);ib_dialogue_key_context_t history=dialog;history.can_latest=true;history.can_confirm=false;
+    ib_dialogue_keys_event(&s,IB_KEY_EV_DOWN,4200,history);
+    assert(ib_dialogue_keys_event(&s,IB_KEY_EV_UP,4250,history).action==IB_DIALOGUE_KEY_LATEST);
+    ib_dialogue_keys_event(&s,IB_KEY_EV_DOWN,4400,history);
+    assert(ib_dialogue_keys_tick(&s,4580,history).action==IB_DIALOGUE_KEY_RECORD_START);
+    assert(ib_dialogue_keys_event(&s,IB_KEY_EV_UP,4650,history).action==IB_DIALOGUE_KEY_RECORD_STOP);
+    ib_dialogue_keys_reset(&s);ib_dialogue_key_context_t pet=dialog;pet.can_latest=true;pet.can_confirm=false;
+    ib_dialogue_keys_event(&s,IB_KEY_EV_DOWN,4800,pet);
+    // 即使dialogue投影在本次松开前到达，PET首按也不能变成发送。
+    assert(ib_dialogue_keys_event(&s,IB_KEY_EV_UP,4850,dialog).action==IB_DIALOGUE_KEY_LATEST);
+    ib_dialogue_keys_event(&s,IB_KEY_EV_DOWN,5000,dialog);
+    assert(ib_dialogue_keys_event(&s,IB_KEY_EV_UP,5050,dialog).action==IB_DIALOGUE_KEY_CONFIRM);
     puts("Dialogue OK: short-confirm/hold-once/release-stop, notification single/double/second-hold, offline/reset/wrap passed.");
 }

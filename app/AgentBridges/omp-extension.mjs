@@ -16,7 +16,7 @@ export default function vibekeyExtension(pi) {
   const submit = async text => {
     if (typeof text !== 'string' || !text.trim()) throw new NotDeliveredError('Empty prompt');
     // 显式followUp在空闲时也只排队、不启动，因此空闲必须走省略deliverAs的原生入口。
-    if(!context.isIdle()) { await pi.sendUserMessage(text,{deliverAs:'followUp'}); return; }
+    if(!context.isIdle()) { await pi.sendUserMessage(text,{deliverAs:'followUp'}); return {disposition:'queued'}; }
     const key=crypto.createHash('sha256').update(text).digest('hex');
     let resolve;const admitted=new Promise(done=>{resolve=done;});admissions.set(key,resolve);
     let timeout;
@@ -26,6 +26,7 @@ export default function vibekeyExtension(pi) {
       await Promise.race([admitted,Promise.resolve(pi.sendUserMessage(text)).then(()=>{
         if(admissions.has(key)){const error=new Error('OMP prompt finished without an admission receipt');error.code='DELIVERY_UNKNOWN';throw error;}
       }),failure]);
+      return {disposition:'accepted'}; // 旧接口没有可证的原生prompt/turn ID，不把正文匹配当作admitted。
     } finally { clearTimeout(timeout);admissions.delete(key); }
   };
   pi.on('session_start', async (_event, ctx) => {

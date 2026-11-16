@@ -147,3 +147,8 @@ JSON Lines:每条消息是一行扁平 UTF-8 JSON 对象,以 `\n` 结尾,单行�
 单行仍最多511B UTF-8。独立命令：`cap`返回`schema:1,split:1`；`bind`携带sid(32位小写hex)/rev>0/title≤32B/writable0或1/view(dialogue|pet)；`state`携带同binding、phase(idle/recording/transcribing/draft/sending/working/waiting/done/error/unknown)、drev、writable及可选focus(agent|draft)/error机器码；`pane`携带role(agent|draft)、1-based page/pages≤65535、text≤128B；`view`切dialogue/pet；`clear`无binding清当前投影，带binding则必须匹配；`result`携带gid和status(ok/unavailable/stale/unknown)。ACK回显t=conversation/op/rid/ok；带binding请求成功回显sid/rev。
 
 设备上行 `op:event`，action为record_start/record_stop/confirm/page_prev/page_next/focus/view/jump，含8位hex boot与非零uint32 gid。除jump外附sid/rev/drev；jump附nid/nrev，按首次OK时固定身份导航。Host验证当前握手boot及binding，并以boot/gid记录互斥手势owner。start/stop只配对一次，不可再confirm。成功写入显示不等于原Agent投递；原消息由另一不可变票据/官方回执管理。详情见[会话路由](conversation-routing.md)。
+
+
+## conversation扩展（0.8，schema2/chat1）
+
+本节替代上文0.7的schema1/split1双窗。bind/state/view/clear/result保留，新增window_begin/window_item/window_commit组成最多4片的原子阅读屏；begin附wid/n/page/pages/unread/following/drev/older，item附mid/role/delivery/head/tail/trunc/text。每片≤128B UTF-8、JSON行≤511B；带binding的ACK回显sid/rev，window ACK还回显wid。非jump event必须wid>0；新增latest，旧屏短OK只返回最新。确认须当前READY/writable、同drev/following且有可见draft尾片。旧pane明确unsupported，不宣称完整原历史。字段、幂等/尺寸拒绝和验证边界见[device-conversation.md](device-conversation.md)。

@@ -96,7 +96,7 @@ static void apply_key_hints(void)
                 key==IB_UI_KEY_DOWN?(index+1<total?IB_ICON_DOWN:IB_ICON_NONE):IB_ICON_MIC;
         }else if(ib_conversation_ui_owned()){
             unsigned page=ib_conversation_ui_page(),pages=ib_conversation_ui_pages();
-            icon=key==IB_UI_KEY_UP?(page>1?IB_ICON_UP:IB_ICON_NONE):key==IB_UI_KEY_DOWN?(page<pages?IB_ICON_DOWN:IB_ICON_NONE):ib_conversation_ui_confirm()?IB_ICON_SEND:ib_conversation_ui_record()?IB_ICON_MIC:IB_ICON_NONE;
+            icon=key==IB_UI_KEY_UP?(page>1?IB_ICON_UP:IB_ICON_NONE):key==IB_UI_KEY_DOWN?(page<pages?IB_ICON_DOWN:IB_ICON_NONE):ib_conversation_ui_latest()?IB_ICON_DOWN:ib_conversation_ui_confirm()?IB_ICON_SEND:ib_conversation_ui_record()?IB_ICON_MIC:IB_ICON_NONE;
         }else if(reply_visible()){
             icon=key==IB_UI_KEY_UP?(s_reply.page_index?IB_ICON_UP:IB_ICON_NONE):
                 key==IB_UI_KEY_DOWN?(s_reply.page_index+1<s_reply.page_count?IB_ICON_DOWN:IB_ICON_NONE):IB_ICON_MIC;
@@ -241,9 +241,9 @@ static void pet_draw(lv_event_t *event)
 }
 static void mini_pet_draw(const ib_fx_t *f,int x,int y)
 {
-    // 同一实际Aora栅格缓存缩为28px头像，不另造默认角色或复制动画资源。
-    for(unsigned row=0;row<IB_PET_SIZE;row++)for(unsigned col=0;col<IB_PET_SIZE;col++){
-        uint16_t p=s_pet_pixels[row*IB_PET_SIZE+col];
+    // 同一Aora缓存采样成20px头像，不复制资源，不创建第二套动画引擎。
+    for(unsigned row=0;row<20;row++)for(unsigned col=0;col<20;col++){
+        uint16_t p=s_pet_pixels[(row*IB_PET_SIZE/20)*IB_PET_SIZE+col*IB_PET_SIZE/20];
         if(p==(((PET_BG>>19)&31)<<11|((PET_BG>>10)&63)<<5|((PET_BG>>3)&31)))continue;
         uint32_t r=((p>>11)&31)*255/31,g=((p>>5)&63)*255/63,b=(p&31)*255/31;
         ib_fx_rect(f,x+(int)col,y+(int)row,1,1,0,IB_C((r<<16)|(g<<8)|b),LV_OPA_COVER);
@@ -534,7 +534,7 @@ const char *ib_ui_conversation_update(const ib_conversation_t *view,bool enabled
         if(s_activity_error)s_pet_status=ib_ui_conversation_error(view->error[0]?view->error:"unknown");
         render_pet_caption();
     }
-    pet_visibility();apply_key_hints();bsp_lvgl_unlock();return ok?NULL:"invalid_pane";
+    pet_visibility();apply_key_hints();bsp_lvgl_unlock();return ok?NULL:"invalid_window";
 }
 
 void ib_ui_set_level(uint8_t level)

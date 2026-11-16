@@ -14,6 +14,14 @@
 
 原进程事件经 `ConversationEvent → AgentEventFilter` 按应用/实例/会话/轮次检查单调序号和 event ID；最终正文经 `AgentReply` 去重。只选择当前会话的真实状态联动宠物。通知允许来自其他会话；读取的只有当前事件提供的最终正文，不拉历史。朗读保持暂停。
 
+## Typed 发送回执（0.8）
+
+`ConversationRouter → AgentHub.deliverPrompt(text,in:) → AgentAdapter.deliverPrompt → AgentPromptReceipt` 保留原实例能力与未知投递门禁，返回 `queued / accepted / admitted` 及可选 `nativePromptID / nativeTurnID`。queued仅入队，accepted仅原API接纳，admitted仅有明确原生入场依据；三者均不代表完成。旧 sendPrompt 调用兼容并忽略回执；旧适配器默认 accepted，绝不猜原生ID。Mailbox仅在 applied 时交回typed字段，运输 accepted 仍不算原API接纳。
+
+OMP忙时官方followUp返回queued，空闲入口保守accepted；DSH、Claude Mod保守accepted，均不把本机request ID、正文hash或当前无关联turn填成原生ID。Kimi保留本次POST实际prompt_id，响应queued为queued，running按[官方原会话入场定义](https://moonshotai.github.io/kimi-code/en/reference/server-api-conversation.html#starting-or-queueing)为admitted，缺少turn ID继续留空；相矛盾的prompt ID仍为未知。Claude官方页面与公开类型对submit等待范围的描述不同，公开类型允许开始或排队，所以本轮不给无关联证明的admitted。
+
+本次聊天观察按当前Mac运行实际收到消息（含尚未消费的延迟事件）与设备确认发出的顺序，不宣称原聊天完整历史或发生时间顺序。不新增原生user echo观察、不拉旧历史，也不按正文hash或近似时间把外部user消息猜成设备本地消息。原生回执ID仅在内存和会被消费删除的私有邮箱协议中传输，不写运行日志。
+
 ## 七类应用
 
 | 目标 | 当前官方通道 | 限制与验收边界 |

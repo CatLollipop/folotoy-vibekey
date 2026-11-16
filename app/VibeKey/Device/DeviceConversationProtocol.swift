@@ -14,14 +14,15 @@ nonisolated struct DeviceConversationMessage: Equatable, Sendable {
     var boot = ""
     var notice = ""
     var noticeRevision: UInt32 = 0
+    var windowID: UInt32 = 0
     var schema = 0
-    var split = false
+    var chat = false
     var error = ""
 }
 
 nonisolated enum DeviceConversationProtocol {
-    static let operations = ["cap", "bind", "state", "pane", "view", "clear", "result"]
-    static let actions = ["record_start", "record_stop", "confirm", "page_prev", "page_next", "focus", "view", "jump"]
+    static let operations = ["cap", "bind", "state", "window_begin", "window_item", "window_commit", "view", "clear", "result"]
+    static let actions = ["record_start", "record_stop", "confirm", "page_prev", "page_next", "latest", "view", "jump"]
     static let phases = ["idle", "recording", "transcribing", "draft", "sending", "working", "waiting", "done", "error", "unknown"]
 
     static func parse(_ object: [String: Any]) -> DeviceConversationMessage? {
@@ -35,6 +36,7 @@ nonisolated enum DeviceConversationProtocol {
         var result = DeviceConversationMessage(op: op)
         result.session = string("sid"); result.revision = uint("rev") ?? 0
         result.draftRevision = uint("drev") ?? 0; result.gesture = uint("gid") ?? 0
+        result.windowID = uint("wid") ?? 0
         if op == "event" {
             result.action = string("action")
             result.boot = string("boot")
@@ -45,13 +47,14 @@ nonisolated enum DeviceConversationProtocol {
                 guard DeviceNotificationMessage.validIdentity(result.notice), result.noticeRevision != 0 else { return nil }
             } else {
                 guard DeviceNotificationMessage.validIdentity(result.session), result.revision != 0,
-                      uint("drev") != nil else { return nil }
+                      uint("drev") != nil, result.windowID != 0 else { return nil }
             }
         } else {
             guard operations.contains(op), let rid = uint("rid"), rid != 0,
                   let ok = uint("ok"), ok <= 1 else { return nil }
             result.requestID = rid; result.ok = ok == 1
-            result.schema = Int(uint("schema") ?? 0); result.split = uint("split") == 1
+            result.schema = Int(uint("schema") ?? 0); result.chat = uint("chat") == 1
+            if op.hasPrefix("window_"), result.ok, result.windowID == 0 { return nil }
             result.error = string("error")
         }
         return result

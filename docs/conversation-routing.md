@@ -1,37 +1,49 @@
-# 已有会话路由与Passport对话视图（0.7）
+# 已有会话路由与Passport聊天窗口（0.8.0 / build36）
 
-## 用户确认的范围
+## 当前范围
 
-仅接原应用已有会话，不启动或恢复另一个Agent进程，不创建助理专属会话。没有官方发送能力的会话只接收提醒。通知双击OK只切Passport，不激活Mac窗口。不同会话的未发草稿分别保留。方案采用Mac应用内统一会话层；关闭设置窗口可继续运行，退出应用会停止桥接。草稿、未知票据及最近正文仅在本次运行内存中保存，不形成另一份永久聊天记录。
+仅接原应用已有会话，不启动或恢复另一个Agent进程，不创建助理专属会话。消息发送、停止和状态接入使用官方API、RPC或原进程扩展，没有官方发送通道的会话仅接收提醒。通知双击OK只切Passport，不激活Mac窗口。改动针对Passport聊天窗口，Mac设置结构保持原样。
 
-## 根因与职责
+聊天内容是本次Mac运行接入后实际收到、以及经本助理确认发出的消息，不抓取原应用旧聊天历史，不宣称与原窗口完整历史一致。消息按本地实际观察顺序排列；原生消息身份用于去重，不按正文相同或时间相近推测关联。不同会话的未发草稿分别保留。关闭设置窗口可继续运行，退出应用会停止桥接；消息、草稿和未知票据仅在本次运行内存中保存。
 
-原硬件companion模式仅表示执行归属，另有默认cloud的AssistantController.destination；会话丢失又会把目的地改cloud，所以“连接电脑”仍可能调用DeepSeek。旧录音结束直接sendPrompt，旧通知OK则先关闭通知再采音，均无法支持独立确认及双击导航。
+## 职责与调用链
 
-当前路径：`Device semantic event → AssistantCoordinator → ConversationRouter → AgentHub → official native instance adapter`。Router以application/instance/session三元组管理有界草稿、真实状态、最后正文及不可变发送票据；设备sid为该结构化三元组的128-bit摘要，不传原生ID或凭据。Controller只产出本generation识别结果；电脑录音显式使用beginDraftRecording，不读取Mac云试用目的地。
+`Device semantic event → AssistantCoordinator → ConversationRouter → AgentHub → official native instance adapter`。Router以application/instance/session三元组管理消息流、草稿、真实状态及不可变发送票据；设备sid为该结构化三元组的128-bit摘要，不传原生ID或凭据。Controller只产出本generation识别结果；电脑录音显式使用beginDraftRecording，不读取Mac云试用目的地。
 
-选择会话只更新本地绑定，不调用activate。官方发送在确认时再次检查原实例和原会话的当前能力。Hook负责生命周期/最终正文；Claude Mod、OMP extension、DSH plugin及Kimi原服务的具体边界见[应用接入](agents/README.md)。Codex官方queue目前仅作为候选：CLI排队成功不足以证明原Desktop消费，未验证前不授予发送能力。
+选择会话只更新本地绑定，不调用activate。官方发送在确认时再次检查原实例和原会话的当前能力。Hook负责生命周期和最终正文；Claude Mod、OMP extension、DSH plugin及Kimi原服务的边界见[应用接入](agents/README.md)。Codex CLI排队成功不足以证明原Desktop消费，在缺少可靠原会话通道和回执时仍仅提醒。
 
-## 交互
+消息投影路径为`正式最终正文 / 确认票据 → Router有界消息流 → ChatPagination → 冻结ChatWindow → 设备窗口事务 → LVGL气泡流`。数据结构、字节预算及阅读锚点见[消息与阅读模型](conversation-timeline.md)。通知导航只定位已观察到的原生消息，找不到则回该会话最新位置；不将通知正文伪造为另一条assistant回复。
 
-- 长按OK采音，绿色采音动画；松开只形成右栏草稿；之后一次独立短按OK才确认发送。
-- 通知可见时首次短按等待双击窗口；双击导航到首次按下时固定的nid，而不是第二击时新到的通知。单击仅关闭通知，长持仅采音；同一gesture不能兼任确认。
-- 左栏顶部为当前所选宠物小头像，下面显示Agent正文；右栏显示识别增量或未发草稿。中文12px，每页保守7字×8行、最多128B，Mac保存全文并分页。右侧页点和省略点沿用当前阅读栏的page/pages。
-- 长按下键菜单包括已有会话、对话/宠物视图、阅读Agent/草稿栏、停止任务和返回。上下键翻当前栏。长按上键仍为AI助理/连接电脑热切换菜单。
-- 只读会话不允许录音/发送；缺会话或断线不转投云端。原应用的工具批准仍在原应用进行，确认草稿不是批准工具。
+## Passport交互
 
-## 事务边界
+- 聊天消息逐条排列：Agent回复在左，本助理发出的用户消息和待确认草稿在右。所选宠物的小头像随Agent消息显示；继续片不重复头像和状态行。
+- 长按OK采音，真实采集时显示绿色呼吸图标。识别增量更新流尾同一条草稿；松开后仅保存草稿，不发送，也不为每段增量追加消息。开始新录音显式回到最新位置。
+- 草稿尾部可见时，之后一次独立短按OK才确认发送。正在阅读旧内容、当前草稿尾部不在屏内时，短按OK只回最新，不发送；需看见草稿尾部后再次短按确认。宠物视图中的短按OK先展开聊天，也不兼任发送。同一次长持的松开不能确认刚生成的草稿。
+- 上下键按屏阅读消息，不切换固定阅读栏。停在旧内容时，新消息保留当前阅读锚点并显示提示；回最新后才继续自动跟随。右侧页点与省略点表示当前聊天阅读位置。
+- 长按下键菜单包括原应用已有会话、聊天/宠物视图、回到最新、停止任务和返回。长按上键仍打开AI助理/连接电脑热切换菜单，不重启设备。
+- 通知可见时，首次短按等待双击窗口；双击导航到首次按下时固定的通知身份，不以第二击时新到的通知替换。单击仅关闭通知，长持仅进入允许的采音路径；同一gesture不能兼任跳转和确认。
+- 只读会话不允许录音或发送；缺会话、断线或接口不可用时不转投云端。原应用的工具批准仍在原应用进行，确认草稿不是批准工具。独立AI助理模式仍为松开后ASR→DeepSeek文字回复，本次不恢复TTS。
 
-每次设备绑定使用新rev，连接变化、切会话会取消旧ASR generation。事件同时核对sid/rev/drev/gid；每个boot内gid只有一个owner，录音start/stop可配对一次，但不能再确认或跳转。
+## 投递与显示事务
 
-确认创建包含原会话、草稿revision、文本和UUID的不可变票据。accepted只表示原生API接受，不表示任务完成；完成来自正式事件。旧票据回执只能更新原会话，且不能清掉较新的草稿。明确拒绝后提升draftRevision，允许用户重新确认；未知I/O或取消保留unknownSubmission原文及ID、锁定发送，用户在Mac原会话核对该票据后才解除。没有供应商幂等键时不声称exactly-once，不自动重发未知请求。
+每次设备绑定使用新rev，连接变化、切会话会取消旧ASR generation。每个boot内gid只有一个动作owner；录音start/stop可配对一次，不能再确认或跳转。聊天事件携带已展示的windowID，Coordinator保存最近成功提交窗口对应的binding、cursor和草稿版本，旧画面按键仍按原阅读锚点处理。
 
-显示投影使用独立conversation ACK槽。state和两个pane在首个await前冻结为同一快照；busy只对幂等显示做有限重排，不能驱动官方消息重试。配置、通知与会话各有独立ACK身份。能力心跳过期会降为只读，保留接收方与草稿。
+确认创建含原会话、草稿revision、文本和UUID的不可变票据，同时生成一条submitting用户消息。正式回执分别记录queued（已排队）、accepted（已提交）、admitted（已接收），均不表示任务完成；完成只能来自正式生命周期事件。原生prompt/turn ID仅在供应方真实提供时保留，不用正文hash或本机编号冒充原生ID。
 
-资源上限：Mac最多16份未发草稿，每份8192B；最近正文和会话记录有界，通知导航表最多128项/24小时。设备仅保留两个128B pane、标题及语义状态，不复制整份聊天历史，不增Flash分区。
+旧票据回执只能更新原会话，不能清掉较新的草稿。明确拒绝显示failed并保留可处理的草稿；未知I/O或取消保留unknown原文及ID，锁定发送，用户在Mac原会话核对该票据后才能解除。人工核对不把未知消息改成“已发送”。没有供应商幂等键时不声称exactly-once，不自动重发未知请求。
 
-## 验证
+显示投影使用独立conversation ACK槽。state与整屏消息在首个await前冻结；窗口经begin→item→commit原子应用，只有commit成功才更新设备展示身份。busy/display_busy仅对确定未应用的幂等显示做有限重排，不驱动官方消息重试。配置、通知、会话窗口各有独立ACK身份；旧动作反馈与boot/binding绑定，过期反馈不能阻断新会话渲染。
 
-`bash app/scripts/test-conversations.sh`覆盖原实例隔离、换会话草稿保留、旧ASR、旧/重复确认、未知票据、旧ACK不删新稿、UTF-8分页与511B整帧边界。Controller测试覆盖显式cloud设置下draft录音仍为零LLM/TTS调用及取消。Gzip修复使用原源码独立复现和正式EOS/ASan回归。
+## 资源与验证边界
 
-协议与设备宿主测试不能替代真实插件加载、真实Agent回执和物理OK测试；安装了CLI、导出插件或拿到thread ID均不等于原会话已接入。当前结果见[验收记录](assistant-acceptance.md)。
+Mac每会话最多64条消息、全局最多512条、正文总预算1MiB、单条最多32768 UTF-8字节；按完整旧消息淘汰，pending/unknown关联票据不被淘汰。最多16份未发草稿，每份8192B。消息截断、旧内容淘汰和未读均有明确标记。设备只保存当前屏最多4个128B片段及语义元数据，不复制整份历史，不增Flash分区。
+
+`bash app/scripts/test-conversations.sh`覆盖原实例隔离、消息追加/去重、旧ASR、旧/重复确认、真实回执状态、未知票据、旧ACK不删新稿、阅读锚点、预算淘汰、复杂Unicode与511B整帧边界。Controller测试覆盖显式cloud设置下draft录音仍为零LLM/TTS调用及取消；固件专项验证窗口事务与真实LVGL几何。
+
+协议和宿主夹具不能代替真实插件加载、真实Agent回执与物理OK测试。安装CLI、导出插件或拿到thread ID不等于原会话已接入。构建、设备刷写和用户可见行为的实际结果见[验收记录](assistant-acceptance.md)。
+
+## 历史：0.7双栏与更早路径
+
+0.7曾将设备投影为固定左右双栏：最后一次Agent正文与当前草稿分别分页，并可选择阅读栏。0.8用逐条消息气泡流及单一按屏阅读替代该显示模型；0.7已发布资产和原验收记录保持原样，不作为0.8当前界面承诺。
+
+更早的companion模式仅表示执行归属，Controller另有默认cloud目的地，会话丢失又会改回cloud，因此曾出现“连接电脑”误走DeepSeek。旧录音结束直接sendPrompt，旧通知OK先关闭通知再采音。统一会话层已拆开采音、草稿确认和通知导航；这些旧路径不再用于电脑消息投递。

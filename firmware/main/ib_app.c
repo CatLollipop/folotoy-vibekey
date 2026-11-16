@@ -128,7 +128,7 @@ static bool s_pet_mapping_live;
 static ib_run_menu_t s_run_menu;
 static ib_conversation_t s_conversation;
 static ib_dialogue_keys_t s_dialogue_keys;
-static struct {char sid[33],nid[33];uint32_t rev,drev,nrev;bool solo;} s_dialogue_owner;
+static struct {char sid[33],nid[33];uint32_t rev,drev,nrev,wid;bool solo;} s_dialogue_owner;
 static int64_t s_conversation_deadline;
 static bool s_jump_binding_ready;
 static uint32_t s_conversation_ui_seen;static bool s_conversation_ui_enabled;
@@ -808,12 +808,14 @@ static bool conversation_input_owned(void){return ib_conversation_input_owner(&s
 static uint32_t conversation_gid(void){uint32_t gid=++s_dialogue_keys.counter;if(!gid)gid=++s_dialogue_keys.counter;return gid;}
 static void conversation_send(const char *action,uint32_t gid,bool pinned,int64_t now){
     ib_conversation_t owner={0};const ib_conversation_t *view=&s_conversation;
-    if(pinned){owner.bound=s_dialogue_owner.sid[0]!=0;strcpy(owner.sid,s_dialogue_owner.sid);owner.rev=s_dialogue_owner.rev;owner.drev=s_dialogue_owner.drev;view=&owner;}
+    if(pinned){owner.bound=s_dialogue_owner.sid[0]!=0;strcpy(owner.sid,s_dialogue_owner.sid);owner.rev=s_dialogue_owner.rev;owner.drev=s_dialogue_owner.drev;owner.window.wid=s_dialogue_owner.wid;view=&owner;}
     char packet[256];size_t n=ib_conversation_event(packet,sizeof(packet),action,view,gid,s_boot_id,s_dialogue_owner.nid,s_dialogue_owner.nrev);
     ib_link_t link=conversation_link(now);if(link!=IB_LINK_COUNT&&n){ib_conversation_note_event(&s_conversation,gid,!strcmp(action,"record_start"));send_to(link,packet,n);}
 }
 static const char *conversation_apply(const ib_conversation_t *view,void *context){
-    (void)context;return s_ui_ok?ib_ui_conversation_update(view,!ib_assistant_standalone()&&s_online):NULL;
+    (void)context;
+    if(!s_ui_ok)return view->bound?"display_unavailable":NULL;
+    return ib_ui_conversation_update(view,!ib_assistant_standalone()&&s_online);
 }
 static void conversation_refresh(int64_t now){
     bool enabled=!ib_assistant_standalone()&&s_online;
@@ -828,7 +830,7 @@ static ib_dialogue_key_context_t conversation_context(int64_t now){
     bool solo=ib_assistant_standalone(),online=conversation_link(now)!=IB_LINK_COUNT;
     bool available=solo?!ib_assistant_busy():ib_conversation_can_record(&s_conversation);
     return (ib_dialogue_key_context_t){notification_has_text(),conversation_input_owned(),solo||online,
-        available&&!s_conversation.pending_gid&&!s_run_menu.open&&!s_wifi_menu&&!ib_assistant_store_uploading(),ib_conversation_can_confirm(&s_conversation)};
+        available&&!s_conversation.pending_gid&&!s_run_menu.open&&!s_wifi_menu&&!ib_assistant_store_uploading(),ib_conversation_can_confirm(&s_conversation),ib_conversation_can_latest(&s_conversation)};
 }
 static void conversation_action(ib_dialogue_key_result_t r,int64_t now){
     if(r.action==IB_DIALOGUE_KEY_NONE)return;
@@ -843,9 +845,13 @@ static void conversation_action(ib_dialogue_key_result_t r,int64_t now){
         else{mic_stop();conversation_send("record_stop",r.gesture,true,now);}
         break;
     case IB_DIALOGUE_KEY_CONFIRM:
-        if(!strcmp(s_dialogue_owner.sid,s_conversation.sid)&&s_dialogue_owner.rev==s_conversation.rev&&s_dialogue_owner.drev==s_conversation.drev&&!ib_conversation_mark_action(&s_conversation,r.gesture,false)){
+        if(!strcmp(s_dialogue_owner.sid,s_conversation.sid)&&s_dialogue_owner.rev==s_conversation.rev&&s_dialogue_owner.drev==s_conversation.drev&&s_dialogue_owner.wid==s_conversation.window.wid&&!ib_conversation_mark_action(&s_conversation,r.gesture,false)){
             conversation_send("confirm",r.gesture,true,now);s_conversation_deadline=now+8000;
         }else ib_conversation_feedback(&s_conversation,"stale",now);
+        break;
+    case IB_DIALOGUE_KEY_LATEST:
+        if(!strcmp(s_dialogue_owner.sid,s_conversation.sid)&&s_dialogue_owner.rev==s_conversation.rev&&s_dialogue_owner.wid==s_conversation.window.wid&&ib_conversation_can_latest(&s_conversation))conversation_send("latest",r.gesture,true,now);
+        else ib_conversation_feedback(&s_conversation,"stale",now);
         break;
     case IB_DIALOGUE_KEY_NOTICE_DISMISS:(void)ib_assistant_notification_dismiss();break;
     case IB_DIALOGUE_KEY_NOTICE_JUMP:{
@@ -870,7 +876,7 @@ static bool conversation_key(ib_key_t key,ib_key_ev_t event,int64_t now){
     if(!owned&&!ctx.dialogue&&!ctx.notification)return false;
     if(event==IB_KEY_EV_DOWN&&!s_dialogue_keys.pressed&&!s_dialogue_keys.pending_tap){
         memset(&s_dialogue_owner,0,sizeof(s_dialogue_owner));strcpy(s_dialogue_owner.sid,s_conversation.sid);
-        s_dialogue_owner.rev=s_conversation.rev;s_dialogue_owner.drev=s_conversation.drev;s_dialogue_owner.solo=ib_assistant_standalone();
+        s_dialogue_owner.rev=s_conversation.rev;s_dialogue_owner.wid=s_conversation.window.wid;s_dialogue_owner.drev=s_conversation.drev;s_dialogue_owner.solo=ib_assistant_standalone();
         ib_notification_snapshot_t notice;ib_notification_snapshot(&notice);if(notice.active){strcpy(s_dialogue_owner.nid,notice.nid);s_dialogue_owner.nrev=notice.rev;}
     }
     ib_dialogue_key_result_t r=ib_dialogue_keys_event(&s_dialogue_keys,event,now,ctx);
@@ -905,8 +911,8 @@ static void text_page(int delta,int64_t now){
         (void)ib_ui_notification_page(delta);
         if(xSemaphoreTake(s_notification_ui_lock,pdMS_TO_TICKS(50))==pdTRUE){s_notification_deadline=now+30000;xSemaphoreGive(s_notification_ui_lock);}
     }else if(conversation_input_owned()){
-        const ib_conversation_pane_t *p=s_conversation.focus==IB_CONV_AGENT?&s_conversation.agent:&s_conversation.draft;
-        if(p->text[0]&&((delta<0&&p->page>1)||(delta>0&&p->page<p->pages)))conversation_send(delta<0?"page_prev":"page_next",conversation_gid(),false,now);
+        const ib_conversation_window_t *w=&s_conversation.window;
+        if(w->wid&&((delta<0&&w->page>1)||(delta>0&&w->page<w->pages)))conversation_send(delta<0?"page_prev":"page_next",conversation_gid(),false,now);
     }else if(s_ui_ok)(void)ib_ui_reply_page(delta);
 }
 static bool reply_down_key(ib_key_t key,ib_key_ev_t event,int64_t now){

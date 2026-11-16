@@ -9,10 +9,10 @@
 typedef enum {
     IB_DIALOGUE_KEY_NONE,IB_DIALOGUE_KEY_RECORD_START,IB_DIALOGUE_KEY_RECORD_STOP,
     IB_DIALOGUE_KEY_CONFIRM,IB_DIALOGUE_KEY_NOTICE_DISMISS,IB_DIALOGUE_KEY_NOTICE_JUMP,
-    IB_DIALOGUE_KEY_UNAVAILABLE
+    IB_DIALOGUE_KEY_LATEST,IB_DIALOGUE_KEY_UNAVAILABLE
 } ib_dialogue_key_action_t;
 typedef struct {
-    bool notification,dialogue,online,can_record,can_confirm;
+    bool notification,dialogue,online,can_record,can_confirm,can_latest;
 } ib_dialogue_key_context_t;
 typedef struct {
     bool consumed;
@@ -20,7 +20,7 @@ typedef struct {
     uint32_t gesture;
 } ib_dialogue_key_result_t;
 typedef struct {
-    bool pressed,recording,pending_tap,second,notice_press,blocked,has_up,ignore_press;
+    bool pressed,recording,pending_tap,second,notice_press,blocked,has_up,ignore_press,latest_press;
     uint32_t counter,gesture;
     int64_t down_at,tap_until,last_up;
 } ib_dialogue_keys_t;

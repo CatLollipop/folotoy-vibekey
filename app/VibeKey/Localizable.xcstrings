@@ -9395,12 +9395,12 @@
         }
       }
     },
-    "选择原应用会话后，按住 Passport OK 说话；上键发送助手草稿，下键停止任务。当前会话状态联动宠物，回复以文字显示。": {
+    "选择原应用会话后，按住 Passport OK 说话，松开保存草稿，单独短按 OK 确认发送。上下键按屏翻阅聊天，长按下键打开会话与任务菜单。仅有官方发送能力的会话可提交，回复以文字显示。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Select an app session, then hold Passport OK to speak. Up sends the assistant draft; Down stops the task. The selected session controls the pet, and replies appear as text."
+            "value": "Select an existing app conversation, hold Passport OK to speak, release to save a draft, then press OK separately to confirm. Use Up and Down to scroll by screen, and hold Down for conversations and task actions. Sending requires an official channel; replies appear as text."
           }
         }
       }

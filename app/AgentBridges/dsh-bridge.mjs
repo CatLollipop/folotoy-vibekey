@@ -18,7 +18,7 @@ export function createBridgePlugin(createUserMessage) { return function apply(ct
         if(request.operation==='sendPrompt') {
           // 原生Agent接口跨当前release/master稳定；不依赖发生过ABI变化的sessionController.prompt第二参数。
           const message=createUserMessage({content:[{type:'text',text:request.text}],source:{kind:'user',rpcId:request.requestID}});
-          await agent.followup(message); return;
+          await agent.followup(message); return {disposition:'accepted'};
         }
         if(request.operation==='stop') { await agent.cancel({kind:'user'},{keepInbox:true}); return; }
         throw new NotDeliveredError('DSH has no native draft API; use direct send');

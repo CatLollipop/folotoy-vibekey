@@ -22,17 +22,45 @@ import Foundation
     private var dirty = false
     private var capable = false
     private var deviceBinding: ConversationRouter.Binding?
+    private struct PublishedWindow {
+        let binding: ConversationRouter.Binding
+        let view: String
+        let cursor: ChatCursor?
+        let visibleDraft: Bool
+        let following: Bool
+        let draftRevision: UInt32
+    }
+    private var publishedWindows: [UInt32: PublishedWindow] = [:]
+    private var windowOrder: [UInt32] = []
+    private var windowRevision = UInt32.random(in: 1...UInt32.max)
+    private struct Projection: Equatable {
+        let binding: ConversationRouter.Binding
+        let phase: String
+        let draftRevision: UInt32
+        let writable: Bool
+        let view: String
+        let window: ChatWindow
+    }
+    private var lastProjection: Projection?
     private var captureGesture: UInt32?
     private var navigation: Task<Void, Never>?
     private var navigationID = UUID()
     private var capabilityMonitor: Task<Void, Never>?
     private var renderFailures = 0
     private var sends: [UUID: Task<Void, Never>] = [:]
-    private struct Feedback { let gesture: UInt32; let status: String; let boot: String; let binding: ConversationRouter.Binding? }
+    private struct Feedback { let id = UUID(); let gesture: UInt32; let status: String; let boot: String; let binding: ConversationRouter.Binding? }
     private var results: [Feedback] = []
-    private struct NoticeTarget { let session: AssistantAgentSession; let notice: PassportNotification; let date: Date }
+    private struct NoticeTarget {
+        let session: AssistantAgentSession
+        let notice: PassportNotification
+        let date: Date
+        let turnID: String?
+        let messageID: String?
+    }
     private var notices: [String: NoticeTarget] = [:]
     private var noticeOrder: [String] = []
+    private var legacyNotices: [UUID: String] = [:]
+    private var legacyNoticeOrder: [UUID] = []
 
     init(assistant: AssistantController, store: AssistantStore, hub: AgentHub, pet: PetController,
          link: DeviceLink, sync: AssistantDeviceSync, conversations: ConversationRouter) {
@@ -56,9 +84,12 @@ import Foundation
             guard let self else { return }
             assistant.cancel(); captureGesture = nil
             if let session { _ = conversations.bind(session, writable: hub.capabilities(for: session).contains(.submit)) }
-            else { conversations.refreshCapability(false) }
+            else { conversations.unbind(); clearPending = true }
             if session != nil { assistant.destination = .application }
             deviceBinding = nil; publish()
+            publishedWindows.removeAll(); windowOrder.removeAll()
+            lastProjection = nil
+            renderFailures = 0
         }
         hub.onAnyEvent = { [weak self] event in
             guard let self else { return }
@@ -92,6 +123,9 @@ import Foundation
             guard let self else { return }
             oldConnection?(connection); hardware.reset(); closeMenu(); assistant.cancel(); conversations.endCapture(); captureGesture = nil
             publishing?.cancel(); publisherID = UUID(); publishing = nil; capable = false; deviceBinding = nil; results.removeAll()
+            publishedWindows.removeAll(); windowOrder.removeAll()
+            lastProjection = nil
+            renderFailures = 0
             navigation?.cancel(); navigationID = UUID(); navigation = nil
             if let entry = conversations.current { _ = conversations.bind(entry.session, writable: hub.capabilities(for: entry.session).contains(.submit)) }
             if connection == .usb || connection == .wifi { sync.refresh(); publish() }
@@ -119,21 +153,34 @@ import Foundation
         for task in sends.values { task.cancel() }
         assistant.cancel(); hub.shutdown(); pet.stop(); sync.cancel()
     }
-    func register(_ notice: PassportNotification, session: AssistantAgentSession) {
+    func register(_ notice: PassportNotification, session: AssistantAgentSession, turnID: String? = nil, messageID: String? = nil) {
         conversations.observe(session)
         if notices[notice.id] == nil { noticeOrder.append(notice.id) }
         if notices[notice.id].map({ $0.notice.revision <= notice.revision }) ?? true {
-            notices[notice.id] = .init(session: session, notice: notice, date: Date())
+            let previous = notices[notice.id]
+            guard previous.map({ ConversationKey($0.session) == ConversationKey(session) }) ?? true else { return }
+            // 正文升级未携带原生定位字段时，保留同一通知先前的确切身份。
+            var nativeTurn = turnID, nativeMessage = messageID
+            if nativeTurn == nil { nativeTurn = previous?.turnID }
+            if nativeMessage == nil { nativeMessage = previous?.messageID }
+            notices[notice.id] = .init(session: session, notice: notice, date: Date(),
+                turnID: nativeTurn, messageID: nativeMessage)
         }
         if noticeOrder.count > 128 { notices.removeValue(forKey: noticeOrder.removeFirst()) }
     }
-    func confirmCurrentDraft() { if let entry = conversations.current { submit(entry.draftRevision) } }
+    func confirmCurrentDraft() {
+        conversations.latest()
+        if let entry = conversations.current { submit(entry.draftRevision) }
+    }
+    func registerLegacyNotice(_ identifier: UUID, target: String) {
+        guard notices[target] != nil else { return }
+        if legacyNotices[identifier] == nil { legacyNoticeOrder.append(identifier) }
+        legacyNotices[identifier] = target
+        if legacyNoticeOrder.count > 128 { legacyNotices.removeValue(forKey: legacyNoticeOrder.removeFirst()) }
+    }
     func refreshDevice() { publish() }
     func openNotice(_ notice: AgentNotifier.Notice) {
-        guard let native = notice.threadID?.uuidString.lowercased(),
-              let target = notices.values.filter({ $0.session.sessionID.lowercased() == native &&
-                  (notice.source == "Codex" ? $0.session.applicationID == "codexHook" : $0.session.applicationID == "claudeCode") })
-                .max(by: { $0.date < $1.date }) else {
+        guard let id = legacyNotices[notice.notificationID], let target = notices[id] else {
             conversations.lastError = String(localized: "通知没有可定位的原会话，请在应用接入中选择。", bundle: .l10n); return
         }
         var event = DeviceConversationMessage(op: "event")
@@ -153,6 +200,12 @@ import Foundation
         if event.action == "jump" { jump(event); return }
         guard store.usePassportForAssistant, sync.mode == "companion", !menuVisible,
               deviceBinding == conversations.binding, conversations.accepts(event) else { result(event.gesture, "stale"); return }
+        // 一次长录音可跨越大量ASR窗口；松开按已接纳的capture归属结束，不依赖阅读窗缓存。
+        if event.action == "record_stop" {
+            if captureGesture == event.gesture { assistant.endRecording(); publish() }
+            return
+        }
+        guard let screen = publishedWindows[event.windowID], screen.binding == conversations.binding else { result(event.gesture, "stale"); return }
         switch event.action {
         case "record_start":
             guard let binding = conversations.binding, let entry = conversations.current else { return }
@@ -169,11 +222,14 @@ import Foundation
                 }
                 captureGesture = nil; publish()
             }
-        case "record_stop": if captureGesture == event.gesture { assistant.endRecording() }
-        case "confirm": submit(event.draftRevision, gesture: event.gesture)
-        case "page_prev": conversations.page(-1)
-        case "page_next": conversations.page(1)
-        case "focus": conversations.focus = conversations.focus == "agent" ? "draft" : "agent"
+        case "confirm":
+            guard screen.view == "dialogue", conversations.view == "dialogue",
+                  screen.visibleDraft, screen.following, conversations.chatWindow().following,
+                  screen.draftRevision == event.draftRevision else { result(event.gesture, "stale"); return }
+            submit(event.draftRevision, gesture: event.gesture)
+        case "page_prev": conversations.page(-1, from: screen.cursor)
+        case "page_next": conversations.page(1, from: screen.cursor)
+        case "latest": conversations.view = "dialogue"; conversations.latest()
         case "view": conversations.view = conversations.view == "dialogue" ? "pet" : "dialogue"
         default: break
         }
@@ -188,8 +244,12 @@ import Foundation
             guard let self else { return }
             defer { sends.removeValue(forKey: ticket.id) }
             do {
-                try await hub.sendPrompt(ticket.text, in: ticket.session)
-                conversations.resolve(ticket, outcome: .accepted); result(gesture, "ok", boot: feedbackBoot, binding: feedbackBinding)
+                let receipt = try await hub.deliverPrompt(ticket.text, in: ticket.session)
+                let outcome: ConversationRouter.Outcome
+                switch receipt.disposition { case .queued: outcome = .queued; case .accepted: outcome = .accepted; case .admitted: outcome = .admitted }
+                conversations.resolve(ticket, outcome: outcome, nativePromptID: receipt.nativePromptID,
+                    nativeTurnID: receipt.nativeTurnID)
+                result(gesture, "ok", boot: feedbackBoot, binding: feedbackBinding)
             } catch {
                 let known: Bool
                 switch error as? AgentAdapterError {
@@ -215,8 +275,9 @@ import Foundation
                 let binding = conversations.binding ?? conversations.bind(target.session, writable: false)
                 guard binding.key == ConversationKey(target.session) else { throw AgentAdapterError.sessionChanged }
                 conversations.refreshCapability(hub.capabilities(for: target.session).contains(.submit))
-                conversations.view = "dialogue"; conversations.focus = "agent"
-                if !target.notice.text.isEmpty { conversations.receive(.init(session: target.session, turnID: "notification", messageID: target.notice.id, text: target.notice.text, isFinal: true)) }
+                conversations.view = "dialogue"
+                // 通知是导航，不得将其正文再伪造成另一条assistant消息。
+                _ = conversations.locate(turnID: target.turnID, messageID: target.messageID)
                 if let task = publishing { task.cancel(); await task.value }; publishing = nil
                 try await ensureCapability(); try await bindDevice(binding)
                 if sync.mode != "companion" {
@@ -239,7 +300,7 @@ import Foundation
         guard !capable else { return }
         let reply = try await link.conversationRequest("cap")
         try Task.checkCancellation()
-        guard reply.schema == 1, reply.split else { throw AssistantError.upgradeRequired }
+        guard reply.schema == 2, reply.chat else { throw AssistantError.upgradeRequired }
         capable = true
     }
     private func bindDevice(_ binding: ConversationRouter.Binding) async throws {
@@ -262,14 +323,23 @@ import Foundation
                 while (dirty || clearPending || !results.isEmpty), !Task.isCancelled, publisherID == token {
                     if clearPending {
                         _ = try await link.conversationRequest("clear")
-                        clearPending = false; deviceBinding = nil
+                        clearPending = false; deviceBinding = nil; lastProjection = nil
                     }
                     while !results.isEmpty {
-                        let item = results.removeFirst()
-                        guard item.boot == link.deviceBootID, item.binding == nil || item.binding == conversations.binding else { continue }
+                        let item = results[0]
+                        guard item.boot == link.deviceBootID, item.binding == nil || item.binding == conversations.binding else {
+                            results.removeAll { $0.id == item.id }; continue
+                        }
                         do {
                             _ = try await link.conversationRequest("result", fields: [("gid", .int(Int(item.gesture))), ("status", .string(item.status))])
+                            results.removeAll { $0.id == item.id }
+                            // 设备可能因等待反馈超时变UNKNOWN；ACK后重投影真实台账状态。
+                            lastProjection = nil
+                            renderFailures = 0
                         } catch let error as AssistantError where error == .device("stale") {
+                            results.removeAll { $0.id == item.id }
+                            lastProjection = nil
+                            renderFailures = 0
                             continue // 提示已过期不影响发送账本，更不能中断新会话投影。
                         }
                     }
@@ -277,28 +347,52 @@ import Foundation
                     dirty = false
                     guard let binding = conversations.binding, let entry = conversations.current else { return }
                     conversations.refreshCapability(hub.capabilities(for: entry.session).contains(.submit))
-                    // 在首个await之前冻结state和两栏，drev与可见草稿必须来自同一快照。
-                    let current = conversations.current!, phase = conversations.phase, focus = conversations.focus, view = conversations.view
-                    let panes = [("agent", conversations.pane("agent")), ("draft", conversations.pane("draft"))]
+                    // 同一冻结窗口内，草稿版本、消息顺序和滚动锚点不能在await后漂移。
+                    let current = conversations.current!, phase = conversations.phase, view = conversations.view
+                    let window = conversations.chatWindow()
+                    let projection = Projection(binding: binding, phase: phase, draftRevision: current.draftRevision,
+                        writable: current.writable, view: view, window: window)
+                    if projection == lastProjection { continue }
+                    windowRevision = ConversationRouter.next(windowRevision)
+                    let wid = windowRevision
                     if deviceBinding != binding { try await bindDevice(binding) }
                     guard binding == conversations.binding else { dirty = true; continue }
-                    _ = try await link.conversationRequest("state", fields: [("phase", .string(phase)), ("drev", .int(Int(current.draftRevision))), ("writable", .int(current.writable ? 1 : 0)), ("focus", .string(focus))], binding: binding)
+                    _ = try await link.conversationRequest("state", fields: [("phase", .string(phase)), ("drev", .int(Int(current.draftRevision))), ("writable", .int(current.writable ? 1 : 0))], binding: binding)
                     _ = try await link.conversationRequest("view", fields: [("view", .string(view))], binding: binding)
-                    for (role, pane) in panes {
+                    _ = try await link.conversationRequest("window_begin", fields: [
+                        ("n", .int(window.items.count)), ("page", .int(window.page)), ("pages", .int(window.pages)),
+                        ("unread", .int(window.unread)), ("following", .int(window.following ? 1 : 0)),
+                        ("drev", .int(Int(window.draftRevision))), ("older", .int(window.olderDropped ? 1 : 0))], binding: binding, windowID: wid)
+                    for (index, item) in window.items.enumerated() {
                         guard binding == conversations.binding else { dirty = true; break }
-                        _ = try await link.conversationRequest("pane", fields: [("role", .string(role)), ("page", .int(pane.page)), ("pages", .int(pane.pages)), ("text", .string(pane.text))], binding: binding)
+                        _ = try await link.conversationRequest("window_item", fields: [
+                            ("index", .int(index)), ("mid", .string(item.mid)), ("role", .string(item.role.rawValue)),
+                            ("delivery", .string(item.delivery.rawValue)), ("head", .int(item.head ? 1 : 0)),
+                            ("tail", .int(item.tail ? 1 : 0)), ("trunc", .int(item.truncated ? 1 : 0)),
+                            ("text", .string(item.text))], binding: binding, windowID: wid)
                     }
+                    guard binding == conversations.binding else { dirty = true; continue }
+                    _ = try await link.conversationRequest("window_commit", binding: binding, windowID: wid)
+                    guard binding == conversations.binding else { dirty = true; continue }
+                    publishedWindows[wid] = .init(binding: binding, view: view, cursor: window.cursor,
+                        visibleDraft: window.visibleDraft, following: window.following, draftRevision: window.draftRevision)
+                    lastProjection = projection
+                    windowOrder.append(wid)
+                    if windowOrder.count > 8 { publishedWindows.removeValue(forKey: windowOrder.removeFirst()) }
                     renderFailures = 0
                 }
             } catch {
                 if !Task.isCancelled {
                     conversations.lastError = error.localizedDescription
                     // 仅重排被明确busy拒绝的幂等显示；绝不重发原应用消息或确认。
-                    if let failure = error as? AssistantError,
-                       [AssistantError.device("busy"), .device("display_busy")].contains(failure), renderFailures < 3 {
+                    let retriableDisplay = (error as? AssistantError).map { [AssistantError.device("busy"), .device("display_busy")].contains($0) } ?? false
+                    // result有gid去重；只有该幂等设备反馈允许丢ACK后重放，不重发Agent请求。
+                    let retriableFeedback = !results.isEmpty && (error as? AssistantError) == .deliveryUnknown
+                    if retriableDisplay || retriableFeedback, renderFailures < (results.isEmpty ? 3 : 8) {
                         renderFailures += 1
+                        let delay = min(1_000, 200 * (1 << min(3, renderFailures - 1)))
                         Task { [weak self] in
-                            try? await Task.sleep(for: .milliseconds(200))
+                            try? await Task.sleep(for: .milliseconds(delay))
                             guard let self, self.publisherID == token else { return }
                             self.publish()
                         }
@@ -334,7 +428,7 @@ import Foundation
             let title = duplicate ? DeviceText.utf8(session.name, maxBytes: 24) + " · " + ConversationKey(session).wireID.suffix(6) : session.name
             return (hub.capabilities(for: session).contains(.submit) ? "" : "[R] ") + title
         } +
-            [conversations.view == "dialogue" ? "PET VIEW" : "DIALOGUE VIEW", conversations.focus == "agent" ? "READ MY DRAFT" : "READ AGENT REPLY", "STOP TASK", "BACK"]
+            [conversations.view == "dialogue" ? "PET VIEW" : "CHAT VIEW", "LATEST MESSAGES", "STOP TASK", "BACK"]
         link.sendState(.list, mode: .dict, msg: "SESSIONS"); link.sendList(title: "SESSIONS", items: labels, selected: menuIndex)
         menuTimer?.cancel(); menuTimer = Task { [weak self] in
             try? await Task.sleep(for: .seconds(30)); if !Task.isCancelled { self?.closeMenu(); self?.publish() }
@@ -353,7 +447,7 @@ import Foundation
                     publish()
                 }
             } else if index == sessions.count { conversations.view = conversations.view == "dialogue" ? "pet" : "dialogue" }
-            else if index == sessions.count + 1 { conversations.focus = conversations.focus == "agent" ? "draft" : "agent" }
+            else if index == sessions.count + 1 { conversations.latest() }
             else if index == sessions.count + 2, let session = conversations.current?.session {
                 Task { [weak self] in do { try await self?.hub.stop(in: session) } catch { self?.conversations.lastError = error.localizedDescription } }
             }

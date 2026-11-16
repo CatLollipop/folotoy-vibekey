@@ -39,6 +39,9 @@ import Darwin
         let requestID: String
         let status: String
         let error: String?
+        var disposition: AgentPromptReceipt.Disposition? = nil
+        var promptID: String? = nil
+        var turnID: String? = nil
     }
 
     let root: URL
@@ -113,7 +116,7 @@ import Darwin
         }
     }
 
-    func command(_ operation: String, text: String? = nil, session: AssistantAgentSession) async throws {
+    @discardableResult func command(_ operation: String, text: String? = nil, session: AssistantAgentSession) async throws -> AgentPromptReceipt {
         guard validComponent(session.instanceID),
               registrations(for: session.applicationID).contains(where: {
                   $0.instanceID == session.instanceID && $0.sessions.contains(where: {
@@ -142,7 +145,11 @@ import Darwin
             if Task.isCancelled { throw AgentAdapterError.deliveryUnknown }
             if let receipt: Receipt = read(responseFile), receipt.requestID == requestID {
                 switch receipt.status {
-                case "applied": return
+                case "applied":
+                    guard [receipt.promptID, receipt.turnID].allSatisfy({ $0.map { !$0.isEmpty && $0.utf8.count <= 512 } ?? true }) else {
+                        throw AgentAdapterError.deliveryUnknown
+                    }
+                    return .init(disposition: receipt.disposition ?? .accepted, nativePromptID: receipt.promptID, nativeTurnID: receipt.turnID)
                 case "failed": throw AgentAdapterError.blocked(receipt.error ?? "应用未执行命令")
                 case "deliveryUnknown": throw AgentAdapterError.deliveryUnknown
                 default: break // accepted 只表示原扩展已接收，继续等真正执行结果。
@@ -219,12 +226,13 @@ import Darwin
     }
     func insertDraft(_ text: String, in session: AssistantAgentSession) async throws { throw AgentAdapterError.officialChannelRequired }
     func submit(in session: AssistantAgentSession) async throws { throw AgentAdapterError.officialChannelRequired }
-    func sendPrompt(_ text: String, in session: AssistantAgentSession) async throws {
+    func sendPrompt(_ text: String, in session: AssistantAgentSession) async throws { _ = try await deliverPrompt(text, in: session) }
+    func deliverPrompt(_ text: String, in session: AssistantAgentSession) async throws -> AgentPromptReceipt {
         guard capabilities(for: session).contains(.submit) else { throw AgentAdapterError.officialChannelRequired }
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf8.count <= 64_000 else {
             throw AgentAdapterError.blocked("消息为空或过长")
         }
-        try await mailbox.command("sendPrompt", text: text, session: session)
+        return try await mailbox.command("sendPrompt", text: text, session: session)
     }
     func stop(in session: AssistantAgentSession) async throws {
         guard capabilities(for: session).contains(.stop) else { throw AgentAdapterError.officialChannelRequired }

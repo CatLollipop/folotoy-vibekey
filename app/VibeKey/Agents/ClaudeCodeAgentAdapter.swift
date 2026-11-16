@@ -24,6 +24,7 @@ import Foundation
     func insertDraft(_ text: String, in session: AssistantAgentSession) async throws { throw AgentAdapterError.officialChannelRequired }
     func submit(in session: AssistantAgentSession) async throws { throw AgentAdapterError.officialChannelRequired }
     func sendPrompt(_ text: String, in session: AssistantAgentSession) async throws { try await reader.sendPrompt(text, in: session) }
+    func deliverPrompt(_ text: String, in session: AssistantAgentSession) async throws -> AgentPromptReceipt { try await reader.deliverPrompt(text, in: session) }
     func stop(in session: AssistantAgentSession) async throws { try await reader.stop(in: session) }
     func poll(_ session: AssistantAgentSession?) async { await reader.poll(session) }
 }

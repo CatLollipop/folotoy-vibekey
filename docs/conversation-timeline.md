@@ -1,0 +1,15 @@
+# Passport逐条消息投影
+
+`AgentHub正式最终正文 / 设备确认票据 → ConversationRouter → ChatPagination → ChatWindow → Coordinator设备窗口事务`。消息顺序是本次Mac运行实际收到或确认发出的观察序，不按时间猜测原应用完整历史；不读取旧聊天或使用正文相同推测回声。
+
+原生assistant消息按应用、运行实例、会话、角色、turnID和messageID的结构化身份去重；同正文不同轮次保留。用户确认时由同一不可变ticket UUID创建submitting用户消息，真实回执仅把该消息更新为queued、accepted或admitted，均不表示Agent任务完成。确定拒绝保留failed，结果未知保留unknown及原票据；人工核对不会把unknown伪装成sent。通知只定位已经观察到的原生消息，找不到则回最新，不将截断通知正文追加为新回复。
+
+草稿与ASR增量保持独立状态，投影为流尾的一条右侧气泡；增量不追加永久消息。已经由相同草稿revision创建的pending/unknown票据不再重复渲染草稿。设备确认需当前未发草稿的尾部可见；Mac的显式确认按钮可先回最新再确认。
+
+Mac每会话最多64条、全局最多512条、正文总额1MiB，单条最多32768 UTF-8字节；按完整旧消息淘汰。发送中或未知票据关联消息不被淘汰。消息截断和旧消息淘汰分别带truncated/olderDropped，不暗示完整历史。会话总表、已见消息摘要与已淘汰会话提示也有上限；草稿最多16份且每份8192B。以上状态只在本次运行内存保存。
+
+Passport不保存完整历史。每屏最多4个片段，每片段正文最多128B，身份为稳定16位十六进制摘要。正文按Unicode标量计保守全角格，每13格显式折行，与固件逐标量查字形一致；组合变音和ZWJ不按一个合字低估宽度。控制字符移除，tab转空格；C字体不支持的标量可显示方框，但不会挤破行宽或193B字形映射缓存。内容区244px，行高18px，单气泡总padding12px，user/draft真正首片另加18px状态行，片段间8px。head/tail表示原消息的真正首尾，继续片不重复头像或状态行。
+
+阅读锚点是消息ID和原文UTF-8偏移，不是排版后字符串偏移或设备帧ID。查看旧屏时追加只增加unread，不抢走阅读位置；从已提交旧窗口的cursor仍能按屏导航。latest或开始新采音显式回底部，跟随时才自动显示新正文。Coordinator负责给冻结的ChatWindow分配设备windowID，并在完整commit成功后保存windowID到cursor映射，Core不持有设备事务身份。
+
+验证使用`bash app/scripts/test-conversations.sh`，265项检查直接编译正式Router、分页模型和线协议的内存夹具，覆盖消息顺序/身份、投递不确定性、阅读锚点、预算淘汰、复杂Unicode和完整转义帧，不启动App、不调用宿主或云服务。背景会话进入最新屏会清未读；恢复旧屏仍保留原锚点及未读。固件真实LVGL几何与窗口事务由固件专项独立验证。
