@@ -60,3 +60,5 @@
 0.6.1真机收口：受保护刷写成功，身份16384B与原始备份一致；一有效活动bank/一全FF，头/profile/pet CRC均有效。profile5/659B、用户新选pet1794826363/15484B保留。hello0.6.1、app_ready/buttons/display_ready/retired_clean1，companion空闲heap46792B、largest34816B、min_free42500B、LVGL峰24088B；这些为空闲读值，不是云请求峰值。
 
 辅助功能最终原生观察：用户重新开关后曾反馈“已授权”，但恢复App仍见false，因此没有按该反馈直接宣告成功。在系统设置只移除AI助理旧记录，再通过文件选择器重新添加“应用程序”内当前0.6.1后，同一运行实例的权限行自动变为“辅助功能 已授权”，错误排查footer消失。没有重签、重置全局权限或读写TCC数据库，其它应用权限未改动。终端直接执行的诊断true仍不作为原生授权证据。
+
+0.6.1已公开发布为Pre-release：[Release](https://github.com/CatLollipop/folotoy-vibekey/releases/tag/v0.6.1)。标签精确指向构建源码a8cc36413a19c7c0be59ac042c9015604ed6a211；六个附件远端SHA-256与本地一致，页面及两个ZIP无需登录均返回HTTP200。0.6.0 Release保留。本机Mac与发布包主可执行文件仍逐字节相同、无再次重签。设备长DOWN实体目视结果仍等用户反馈，未将生产渲染回归代替此项。
