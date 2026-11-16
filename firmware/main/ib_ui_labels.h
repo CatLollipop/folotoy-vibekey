@@ -33,6 +33,8 @@ const char *ib_ui_pet_label(const char *canonical_state,bool standalone);
 const char *ib_ui_run_mode_title(void);
 const char *ib_ui_run_mode_item(unsigned row);
 const char *ib_ui_run_mode_notice(ib_ui_run_mode_notice_t notice);
+const char *ib_ui_conversation_text(unsigned index);
+const char *ib_ui_conversation_error(const char *machine_code);
 /* 只读枚举文本，供host逐字符验证当前静态OFL字库，不需要设备侧测试缓冲。 */
 size_t ib_ui_label_count(void);
 const char *ib_ui_label_at(size_t index);

@@ -55,6 +55,7 @@ set(UI_SOURCES
     "${UI_DIR}/ib_ui_hints.c"
     "${UI_DIR}/ib_ui_activity.c"
     "${UI_DIR}/ib_ui_notification.c"
+    "${UI_DIR}/ib_ui_conversation.c"
     "${UI_DIR}/ib_ui_agent.c"
     "${UI_DIR}/ib_ui_offline.c"
     "${UI_DIR}/ib_ui_idle.c"
@@ -83,14 +84,22 @@ add_executable(ib_ui_preview
     "${UI_DIR}/ib_notification.c"
     "${UI_DIR}/ib_crc32.c"
     "${UI_DIR}/ib_cloud_stream.c"
+    "${UI_DIR}/ib_conversation.c"
     ${UI_SOURCES})
+set(JSON_DIR "$ENV{IDF_PATH}/components/json/cJSON")
+if(NOT EXISTS "${JSON_DIR}/cJSON.c")
+    set(JSON_DIR "${FW_DIR}/../../toolchains/esp-idf-v5.5.3/components/json/cJSON")
+endif()
+add_library(conversation_json STATIC "${JSON_DIR}/cJSON.c")
+target_include_directories(conversation_json PUBLIC "${JSON_DIR}")
+target_compile_options(conversation_json PRIVATE -w)
 target_include_directories(ib_ui_preview PRIVATE
     "${UI_DIR}"
     "${CMAKE_CURRENT_BINARY_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
     "${FW_DIR}/tests/tts_fakes")
-target_link_libraries(ib_ui_preview PRIVATE lvgl_host m)
+target_link_libraries(ib_ui_preview PRIVATE lvgl_host conversation_json m)
 target_compile_definitions(ib_ui_preview PRIVATE PREVIEW_PET_ASSETS="${FW_DIR}/build/host-pet/catalog")
 target_compile_options(ib_ui_preview PRIVATE -Wall -Wextra -O1)
 # 固件代码按 gcc 编写;clang 额外的这两类提示不影响行为,单独关掉,其余告警照常显示。

@@ -1,6 +1,6 @@
 import Foundation
 
-/// 统一应用接入入口。UI只发意图，语音助手只订阅所选会话的事件和最终正文。
+/// 官方会话路由。选择只改变本机绑定；写入能力始终来自原实例当前声明，不前置任何应用。
 @MainActor @Observable final class AgentHub {
     private(set) var diagnostics: [AgentDiagnostic] = []
     private(set) var sessions: [AssistantAgentSession] = []
@@ -11,7 +11,6 @@ import Foundation
     private(set) var lastError: String?
     @ObservationIgnored var onEvent: ((ConversationEvent) -> Void)?
     @ObservationIgnored var onReply: ((AgentReply) -> Void)?
-    /// 通知独立订阅所有已启用来源；不改变下方只针对selectedSession的助手/宠物回调。
     @ObservationIgnored var onAnyEvent: ((ConversationEvent) -> Void)?
     @ObservationIgnored var onAnyReply: ((AgentReply) -> Void)?
     @ObservationIgnored var onSelectionChange: ((AssistantAgentSession?) -> Void)?
@@ -24,31 +23,40 @@ import Foundation
     @ObservationIgnored private var replied = Set<String>()
     @ObservationIgnored private var replyOrder: [String] = []
     @ObservationIgnored private var monitor: Task<Void, Never>?
-    @ObservationIgnored private var assistantDrafts: Set<String> = []
-    @ObservationIgnored private var selectionGeneration = UUID()
+    @ObservationIgnored private var discovered: [AssistantAgentSession] = []
+    @ObservationIgnored private var observedSessions: [Identity: AssistantAgentSession] = [:]
+    @ObservationIgnored private var observedOrder: [Identity] = []
 
-    init(defaults: UserDefaults = .standard) {
+    /// 使用结构化三元组，原生ID包含冒号时也不能与另一应用/实例串线。
+    nonisolated private struct Identity: Hashable {
+        let application: String
+        let instance: String
+        let session: String
+        init(_ value: AssistantAgentSession) {
+            application = value.applicationID; instance = value.instanceID; session = value.sessionID
+        }
+    }
+
+    init(defaults: UserDefaults = .standard, mailbox: AgentMailbox? = nil, adapters injectedAdapters: [any AgentAdapter]? = nil) {
         self.defaults = defaults
-        let mailbox = AgentMailbox()
-        self.mailbox = mailbox
+        let mailbox = mailbox ?? AgentMailbox(); self.mailbox = mailbox
         let kimi = KimiAgentAdapter(); self.kimi = kimi
         codexNotifications = MailboxAgentAdapter(id: "codexHook", name: "Codex", mailbox: mailbox)
-        adapters = [
+        adapters = injectedAdapters ?? [
             ClaudeCodeAgentAdapter(mailbox: mailbox),
             DesktopAXAgentAdapter(id: "claudeDesktop", name: "Claude Desktop", bundleIDs: ["com.anthropic.claudefordesktop", "com.anthropic.claude"]),
             DesktopAXAgentAdapter(id: "chatGPT", name: "ChatGPT.App / Codex", bundleIDs: ["com.openai.codex", "com.openai.chat"]),
             MailboxAgentAdapter(id: "omp", name: "OMP", mailbox: mailbox),
-            PreferredBridgeAgentAdapter(id: "deepseekHarness", name: "DeepSeek Harness", mailbox: mailbox,
-                                        bundleIDs: ["com.deepseek.dsh", "ai.deepseek.dsh.desktop.next"]),
+            MailboxAgentAdapter(id: "deepseekHarness", name: "DeepSeek Harness", mailbox: mailbox),
             kimi,
             WorkBuddyAgentAdapter(mailbox: mailbox),
         ]
         for adapter in adapters {
-            adapter.onEvent = { [weak self] event in self?.receive(event) }
-            adapter.onReply = { [weak self] reply in self?.receive(reply) }
+            adapter.onEvent = { [weak self] in self?.receive($0) }
+            adapter.onReply = { [weak self] in self?.receive($0) }
         }
-        codexNotifications.onEvent = { [weak self] event in self?.receive(event) }
-        codexNotifications.onReply = { [weak self] reply in self?.receive(reply) }
+        codexNotifications.onEvent = { [weak self] in self?.receive($0) }
+        codexNotifications.onReply = { [weak self] in self?.receive($0) }
     }
 
     func start() {
@@ -59,12 +67,7 @@ import Foundation
             while !Task.isCancelled {
                 guard let self else { return }
                 for adapter in adapters where integrationEnabled(adapter.id) {
-                    var observed = selectedSession?.applicationID == adapter.id ? selectedSession : nil
-                    // AX只能看当前可见窗口；通知检测不activate、不抢焦点、不打开后台私人会话。
-                    if observed == nil, ["claudeDesktop", "chatGPT", "workBuddy", "deepseekHarness"].contains(adapter.id) {
-                        observed = try? await adapter.discover().first
-                    }
-                    await adapter.poll(observed)
+                    await adapter.poll(selectedSession?.applicationID == adapter.id ? selectedSession : nil)
                 }
                 if integrationEnabled("codexHook") { await codexNotifications.poll(nil) }
                 try? await Task.sleep(for: .milliseconds(400))
@@ -78,81 +81,115 @@ import Foundation
         isRefreshing = true; defer { isRefreshing = false }
         var nextDiagnostics: [AgentDiagnostic] = [], nextSessions: [AssistantAgentSession] = []
         for adapter in adapters {
-            guard integrationEnabled(adapter.id) else {
-                nextDiagnostics.append(disabledDiagnostic(adapter)); continue
-            }
+            guard integrationEnabled(adapter.id) else { nextDiagnostics.append(disabledDiagnostic(adapter)); continue }
             nextDiagnostics.append(await adapter.diagnose())
             guard integrationEnabled(adapter.id) else { continue }
-            do { nextSessions += try await adapter.discover() }
-            catch { lastError = error.localizedDescription }
+            do { nextSessions += try await adapter.discover() } catch { lastError = error.localizedDescription }
         }
-        // 安装/卸载可发生在异步探测期间；提交前再过滤，避免旧结果恢复已卸载会话。
+        if integrationEnabled("codexHook") { nextSessions += (try? await codexNotifications.discover()) ?? [] }
         diagnostics = nextDiagnostics.map { diagnostic in
             guard !integrationEnabled(diagnostic.id), let adapter = adapters.first(where: { $0.id == diagnostic.id }) else { return diagnostic }
             return disabledDiagnostic(adapter)
         }
-        sessions = nextSessions.filter { integrationEnabled($0.applicationID) }
-        if let current = selectedSession, !sessions.contains(current) { clearSelection() }
+        discovered = nextSessions.filter { integrationEnabled($0.applicationID) }
+        rebuildSessions()
     }
+
+    /// 本地选择不调用activate，不订阅或前置原应用；原协议附着由明确的发送/停止动作验证。
     func select(_ session: AssistantAgentSession) async throws {
-        guard sessions.contains(session), let adapter = adapter(session) else { throw AgentAdapterError.sessionChanged }
-        let token = UUID(); selectionGeneration = token
-        try await adapter.activate(session)
         try Task.checkCancellation()
-        guard token == selectionGeneration, integrationEnabled(session.applicationID) else { throw CancellationError() }
-        if selectedSession != session {
-            selectedSession = session; latestEvent = nil; lastError = nil
-            onSelectionChange?(session)
+        guard integrationEnabled(session.applicationID), let current = sessions.first(where: { Identity($0) == Identity(session) }) else {
+            throw AgentAdapterError.sessionChanged
         }
+        registerNotificationSession(current)
+        choose(current)
     }
+
+    /// 只能绑定从真实事件或正式发现保留下来的身份；此操作不产生任何写入能力。
+    @discardableResult func selectReadOnly(_ session: AssistantAgentSession) -> Bool {
+        guard integrationEnabled(session.applicationID),
+              let current = sessions.first(where: { Identity($0) == Identity(session) }) ?? observedSessions[Identity(session)] else { return false }
+        choose(current)
+        return true
+    }
+
+    /// 通知协调器只将真实Hook/event/reply的原生身份交到这里，不读取或恢复聊天历史。
+    func registerNotificationSession(_ session: AssistantAgentSession) {
+        guard integrationEnabled(session.applicationID), adapter(session) != nil,
+              [session.applicationID, session.instanceID, session.sessionID].allSatisfy({ !$0.isEmpty && $0.utf8.count <= 512 }) else { return }
+        let key = Identity(session)
+        observedSessions[key] = session
+        observedOrder.removeAll { $0 == key }; observedOrder.append(key)
+        while observedOrder.count > 128 {
+            let evicted = observedOrder.removeFirst()
+            observedSessions.removeValue(forKey: evicted)
+        }
+        rebuildSessions()
+    }
+
+    /// 每次操作前同步重读同一实例/会话的当前能力，绝不使用应用汇总capabilities授权。
+    func capabilities(for session: AssistantAgentSession) -> Set<AgentCapability> {
+        guard integrationEnabled(session.applicationID), let adapter = adapter(session) else { return [] }
+        return adapter.capabilities(for: session)
+    }
+
     func clearSelection() {
-        selectionGeneration = UUID()
         guard selectedSession != nil else { return }
         selectedSession = nil; latestEvent = nil; onSelectionChange?(nil)
     }
-    func insertDraft(_ text: String) async throws {
-        guard let session = selectedSession, let adapter = adapter(session) else { throw AgentAdapterError.blocked("请先选择原应用会话") }
-        do { try await adapter.insertDraft(text, in: session); assistantDrafts.insert(session.id); lastError = nil }
-        catch { lastError = error.localizedDescription; throw error }
+
+    /// 历史接口保留但不再向原应用编辑器写草稿；待确认文本由统一会话路由保存在本机。
+    func insertDraft(_ text: String) async throws { throw AgentAdapterError.blocked("请在会话页面保存草稿并确认发送") }
+    func submit() async throws { throw AgentAdapterError.blocked("请在会话页面保存草稿并确认发送") }
+
+    func sendPrompt(_ text: String) async throws {
+        guard let selectedSession else { throw AgentAdapterError.blocked("请先选择原应用会话") }
+        try await sendPrompt(text, in: selectedSession)
     }
-    func submit() async throws {
+    func sendPrompt(_ text: String, in session: AssistantAgentSession) async throws {
         do {
             guard !isSending else { throw AgentAdapterError.blocked("上一条消息尚未取得投递回执") }
-            guard let session = selectedSession, let adapter = adapter(session) else { throw AgentAdapterError.blocked("请先选择原应用会话") }
-            guard assistantDrafts.contains(session.id) else { throw AgentAdapterError.blocked("所选会话没有由助手写入的待发送草稿") }
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf8.count <= 64_000 else {
+                throw AgentAdapterError.blocked("消息为空或过长")
+            }
+            guard let adapter = adapter(session), capabilities(for: session).contains(.submit) else { throw AgentAdapterError.officialChannelRequired }
             isSending = true; defer { isSending = false }
-            try await adapter.submit(in: session)
-            assistantDrafts.remove(session.id); lastError = nil
+            try Task.checkCancellation()
+            try await adapter.sendPrompt(text, in: session)
+            lastError = nil
         } catch { lastError = error.localizedDescription; throw error }
-    }
-    func sendPrompt(_ text: String) async throws {
-        guard !isSending else { throw AgentAdapterError.blocked("上一条消息尚未取得投递回执") }
-        guard let session = selectedSession, let adapter = adapter(session) else { throw AgentAdapterError.blocked("请先选择原应用会话") }
-        isSending = true; defer { isSending = false }
-        do { try await adapter.sendPrompt(text, in: session); assistantDrafts.remove(session.id); lastError = nil }
-        catch { lastError = error.localizedDescription; throw error }
     }
     func stop() async throws {
+        guard let selectedSession else { throw AgentAdapterError.blocked("请先选择原应用会话") }
+        try await stop(in: selectedSession)
+    }
+    func stop(in session: AssistantAgentSession) async throws {
         do {
-            guard let session = selectedSession, let adapter = adapter(session) else { throw AgentAdapterError.blocked("请先选择原应用会话") }
-            try await adapter.stop(in: session); lastError = nil
+            guard let adapter = adapter(session), capabilities(for: session).contains(.stop) else { throw AgentAdapterError.officialChannelRequired }
+            try Task.checkCancellation()
+            try await adapter.stop(in: session)
+            lastError = nil
         } catch { lastError = error.localizedDescription; throw error }
     }
+
     func configureKimi(endpoint: String, token: String) throws { try kimi.configure(endpoint: endpoint, token: token) }
     var kimiEndpoint: String { kimi.endpoint }
     func clearKimiConfiguration() { kimi.clearConfiguration() }
 
-    /// 卸载只停用本应用适配器；不终止宿主进程，也不停止原应用的任务。
     func setIntegrationEnabled(_ enabled: Bool, id: String) {
         AgentIntegrationPreferences.setEnabled(enabled, for: id, defaults: defaults)
         if !enabled {
-            sessions.removeAll { $0.applicationID == id }
-            assistantDrafts = assistantDrafts.filter { draft in !draft.hasPrefix(id + ":") }
-            if selectedSession?.applicationID == id { clearSelection() }
+            discovered.removeAll { !integrationEnabled($0.applicationID) }
+            observedOrder.removeAll { key in
+                guard let value = observedSessions[key], !integrationEnabled(value.applicationID) else { return false }
+                observedSessions.removeValue(forKey: key); return true
+            }
+            if let selectedSession, !integrationEnabled(selectedSession.applicationID) { clearSelection() }
             if id == "kimiCode" { kimi.disconnect() }
             if let adapter = adapters.first(where: { $0.id == id }), let index = diagnostics.firstIndex(where: { $0.id == id }) {
                 diagnostics[index] = disabledDiagnostic(adapter)
             }
+            rebuildSessions()
         }
     }
     func integrationEnabled(_ id: String) -> Bool {
@@ -162,67 +199,45 @@ import Foundation
         AgentDiagnostic(id: adapter.id, name: adapter.name, capabilities: [],
                         detail: String(localized: "接入组件已卸载；安装后重新检测。", bundle: .l10n), installed: false, verifiedAt: Date())
     }
-
     private func adapter(_ session: AssistantAgentSession) -> (any AgentAdapter)? {
         guard integrationEnabled(session.applicationID) else { return nil }
-        return adapters.first { $0.id == session.applicationID }
+        return session.applicationID == "codexHook" ? codexNotifications : adapters.first { $0.id == session.applicationID }
+    }
+    private func choose(_ session: AssistantAgentSession) {
+        let changed = selectedSession.map { Identity($0) != Identity(session) } ?? true
+        selectedSession = session
+        if changed { latestEvent = nil; lastError = nil; onSelectionChange?(session) }
+    }
+    private func rebuildSessions() {
+        var identities = Set<Identity>(), next: [AssistantAgentSession] = []
+        for value in discovered + observedOrder.compactMap({ observedSessions[$0] }) where integrationEnabled(value.applicationID) {
+            if identities.insert(Identity(value)).inserted { next.append(value) }
+        }
+        sessions = next
+        if let selectedSession, !identities.contains(Identity(selectedSession)) { clearSelection() }
+    }
+    private func observe(_ application: String, instance: String, session: String) {
+        let candidate = AssistantAgentSession(applicationID: application, instanceID: instance, sessionID: session,
+            name: adapters.first(where: { $0.id == application })?.name ?? "Codex")
+        registerNotificationSession(candidate)
     }
     private func receive(_ event: ConversationEvent) {
         guard integrationEnabled(event.applicationID), eventFilter.accepts(event) else { return }
+        observe(event.applicationID, instance: event.instanceID, session: event.sessionID)
         onAnyEvent?(event)
-        guard let selected = selectedSession,
-              event.applicationID == selected.applicationID, event.instanceID == selected.instanceID,
-              event.sessionID == selected.sessionID else { return }
+        guard let selectedSession, event.applicationID == selectedSession.applicationID,
+              event.instanceID == selectedSession.instanceID, event.sessionID == selectedSession.sessionID else { return }
         latestEvent = event; onEvent?(event)
     }
     private func receive(_ reply: AgentReply) {
-        guard integrationEnabled(reply.session.applicationID), reply.isFinal, !reply.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        let identity = reply.session.id + ":" + reply.turnID + ":" + reply.messageID
-        guard replied.insert(identity).inserted else { return }
-        replyOrder.append(identity)
+        guard integrationEnabled(reply.session.applicationID), reply.isFinal,
+              !reply.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let identity = [reply.session.applicationID, reply.session.instanceID, reply.session.sessionID, reply.turnID, reply.messageID]
+        guard let data = try? JSONEncoder().encode(identity), let key = String(data: data, encoding: .utf8), replied.insert(key).inserted else { return }
+        registerNotificationSession(reply.session)
+        replyOrder.append(key)
         if replyOrder.count > 2_048 { replied.remove(replyOrder.removeFirst()) }
         onAnyReply?(reply)
-        if reply.session == selectedSession { onReply?(reply) }
-    }
-}
-
-/// DSH新旧桌面识别共用入口；桥接就绪后按正式session ID控制，否则只提供已探测AX能力。
-@MainActor private final class PreferredBridgeAgentAdapter: AgentAdapter {
-    let id: String
-    let name: String
-    var onEvent: ((ConversationEvent) -> Void)?
-    var onReply: ((AgentReply) -> Void)?
-    private let bridge: MailboxAgentAdapter
-    private let desktop: DesktopAXAgentAdapter
-    private var useBridge = false
-    init(id: String, name: String, mailbox: AgentMailbox, bundleIDs: [String]) {
-        self.id = id; self.name = name
-        bridge = MailboxAgentAdapter(id: id, name: name, mailbox: mailbox)
-        desktop = DesktopAXAgentAdapter(id: id, name: name, bundleIDs: bundleIDs)
-        let routes: [any AgentAdapter] = [bridge, desktop]
-        for adapter in routes {
-            adapter.onEvent = { [weak self] in self?.onEvent?($0) }
-            adapter.onReply = { [weak self] in self?.onReply?($0) }
-        }
-    }
-    private func route(_ session: AssistantAgentSession) -> any AgentAdapter { session.instanceID.hasPrefix("pid-") ? desktop : bridge }
-    func diagnose() async -> AgentDiagnostic {
-        let state = await bridge.diagnose()
-        useBridge = state.installed
-        return useBridge ? state : await desktop.diagnose()
-    }
-    func discover() async throws -> [AssistantAgentSession] {
-        if useBridge { return try await bridge.discover() }
-        return try await desktop.discover()
-    }
-    func activate(_ session: AssistantAgentSession) async throws { try await route(session).activate(session) }
-    func insertDraft(_ text: String, in session: AssistantAgentSession) async throws { try await route(session).insertDraft(text, in: session) }
-    func submit(in session: AssistantAgentSession) async throws { try await route(session).submit(in: session) }
-    func sendPrompt(_ text: String, in session: AssistantAgentSession) async throws { try await route(session).sendPrompt(text, in: session) }
-    func stop(in session: AssistantAgentSession) async throws { try await route(session).stop(in: session) }
-    func poll(_ session: AssistantAgentSession?) async {
-        await bridge.poll(session)
-        // 原生bridge是独立会话身份的权威来源，存在时不再从同一窗口产出第二份AX完成通知。
-        if !bridge.hasLiveInstances { await desktop.poll(session) }
+        if let selectedSession, Identity(reply.session) == Identity(selectedSession) { onReply?(reply) }
     }
 }

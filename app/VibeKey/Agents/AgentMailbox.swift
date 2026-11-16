@@ -14,10 +14,12 @@ import Darwin
         let updatedAt: Date
         let processID: Int32?
         let terminalTTY: String?
+        var controlTransport: String? = nil
     }
     nonisolated struct Envelope: Codable, Sendable {
         let event: ConversationEvent
         let reply: MailboxReply?
+        var nativeProcessID: Int32? = nil
     }
     nonisolated struct MailboxReply: Codable, Sendable {
         let messageID: String
@@ -69,7 +71,7 @@ import Darwin
                   item.protocolVersion == 1, item.adapterID == adapterID,
                   item.instanceID == directory.lastPathComponent,
                   (Date().timeIntervalSince(item.updatedAt) < 20 ||
-                    (adapterID == "claudeCode" && item.processID.map({ $0 > 0 && kill($0, 0) == 0 }) == true)),
+                    (adapterID == "claudeCode" && item.controlTransport != "claude-mod" && item.processID.map({ $0 > 0 && kill($0, 0) == 0 }) == true)),
                   Date().timeIntervalSince(item.updatedAt) > -30,
                   item.sessions.allSatisfy({ $0.applicationID == adapterID && $0.instanceID == item.instanceID }) else { return nil }
             return item
@@ -88,7 +90,7 @@ import Darwin
             }
             guard let envelope: Envelope = read(file), envelope.event.applicationID == adapterID else { continue }
             consumed.insert(file.lastPathComponent)
-            result.append(envelope)
+            if !suppressedLegacyClaude(envelope) { result.append(envelope) }
             // 成功消费后删除文件，正文不形成第二份永久聊天历史。
             try? FileManager.default.removeItem(at: file)
         }
@@ -96,10 +98,27 @@ import Darwin
         return result.sorted { $0.event.sequence < $1.event.sequence }
     }
 
+    /// 只按可证明的原CLI PID+原生session择一事件源，不猜测Hook与Mod的turnID关系。
+    private func suppressedLegacyClaude(_ envelope: Envelope) -> Bool {
+        guard envelope.event.applicationID == "claudeCode" else { return false }
+        let registrations = registrations(for: "claudeCode")
+        let source = registrations.first { $0.instanceID == envelope.event.instanceID }
+        guard source?.controlTransport != "claude-mod",
+              let pid = envelope.nativeProcessID ?? source?.processID, pid > 0 else { return false }
+        return registrations.contains { item in
+            item.controlTransport == "claude-mod" && item.processID == pid &&
+                Date().timeIntervalSince(item.updatedAt) < 20 && item.sessions.contains {
+                    $0.applicationID == "claudeCode" && $0.sessionID == envelope.event.sessionID
+                }
+        }
+    }
+
     func command(_ operation: String, text: String? = nil, session: AssistantAgentSession) async throws {
         guard validComponent(session.instanceID),
               registrations(for: session.applicationID).contains(where: {
-                  $0.instanceID == session.instanceID && $0.sessions.contains(session)
+                  $0.instanceID == session.instanceID && $0.sessions.contains(where: {
+                      $0.applicationID == session.applicationID && $0.instanceID == session.instanceID && $0.sessionID == session.sessionID
+                  })
               }) else { throw AgentAdapterError.sessionChanged }
         let instance = root.appendingPathComponent("instances").appendingPathComponent(session.instanceID)
         let requests = instance.appendingPathComponent("requests")
@@ -115,11 +134,12 @@ import Darwin
                               operation: operation, text: text, createdAt: now, expiresAt: now.addingTimeInterval(8))
         let requestFile = requests.appendingPathComponent(requestID + ".json")
         let responseFile = responses.appendingPathComponent(requestID + ".json")
+        try Task.checkCancellation()
         try write(request, to: requestFile)
         defer { try? FileManager.default.removeItem(at: requestFile); try? FileManager.default.removeItem(at: responseFile) }
         let deadline = ContinuousClock.now + .seconds(9)
         repeat {
-            try Task.checkCancellation()
+            if Task.isCancelled { throw AgentAdapterError.deliveryUnknown }
             if let receipt: Receipt = read(responseFile), receipt.requestID == requestID {
                 switch receipt.status {
                 case "applied": return
@@ -128,7 +148,7 @@ import Darwin
                 default: break // accepted 只表示原扩展已接收，继续等真正执行结果。
                 }
             }
-            try await Task.sleep(for: .milliseconds(80))
+            do { try await Task.sleep(for: .milliseconds(80)) } catch { throw AgentAdapterError.deliveryUnknown }
         } while ContinuousClock.now < deadline
         throw AgentAdapterError.deliveryUnknown
     }
@@ -166,19 +186,50 @@ import Darwin
     private let mailbox: AgentMailbox
     init(id: String, name: String, mailbox: AgentMailbox) { self.id = id; self.name = name; self.mailbox = mailbox }
     var hasLiveInstances: Bool { !mailbox.registrations(for: id).isEmpty }
+    /// 只有受支持的原进程官方扩展、20秒内心跳及同一原生会话同时匹配时才授予写入。
+    /// Hook 的 live PID 可延长观察身份寿命，但绝不能延长控制凭据寿命。
+    func capabilities(for session: AssistantAgentSession) -> Set<AgentCapability> {
+        guard session.applicationID == id, let registration = mailbox.registrations(for: id).first(where: {
+            $0.instanceID == session.instanceID && $0.sessions.contains(where: {
+                $0.applicationID == id && $0.instanceID == session.instanceID && $0.sessionID == session.sessionID
+            })
+        }) else { return [] }
+        var result = Set(registration.capabilities).intersection([.discover, .observeState, .readReply])
+        result.insert(.activate) // 本地绑定，不激活宿主界面。
+        let transports = ["omp": "omp-extension", "deepseekHarness": "dsh-plugin", "claudeCode": "claude-mod"]
+        if transports[id] == registration.controlTransport, transports[id] != nil,
+           Date().timeIntervalSince(registration.updatedAt) < 20 {
+            result.formUnion(Set(registration.capabilities).intersection([.submit, .stop]))
+        }
+        return result
+    }
     func diagnose() async -> AgentDiagnostic {
         let registrations = mailbox.registrations(for: id)
-        let capabilities = registrations.reduce(Set<AgentCapability>()) { $0.union($1.capabilities) }
+        // 展示一个真实原会话的能力，不能把不同实例的互补能力拼成“完整接入”。
+        let capabilities = registrations.flatMap(\.sessions).map { self.capabilities(for: $0) }.max { $0.count < $1.count } ?? []
         return AgentDiagnostic(id: id, name: name, capabilities: capabilities,
-                               detail: registrations.isEmpty ? "原应用桥接未连接，请安装桥接并在原会话加载" : "原进程桥接已连接；命令等待执行回执",
+                               detail: registrations.isEmpty ? "原应用桥接未连接，请安装桥接并在原会话加载" :
+                                capabilities.contains(.submit) ? "原进程官方桥接已连接；发送等待原会话接收回执" :
+                                "Hook 仅提供生命周期和回复，发送与停止需要官方双向接口",
                                installed: !registrations.isEmpty, verifiedAt: Date())
     }
     func discover() async throws -> [AssistantAgentSession] { mailbox.registrations(for: id).flatMap(\.sessions) }
-    func activate(_ session: AssistantAgentSession) async throws { try await mailbox.command("activate", session: session) }
-    func insertDraft(_ text: String, in session: AssistantAgentSession) async throws { try await mailbox.command("insertDraft", text: text, session: session) }
-    func submit(in session: AssistantAgentSession) async throws { try await mailbox.command("submit", session: session) }
-    func sendPrompt(_ text: String, in session: AssistantAgentSession) async throws { try await mailbox.command("sendPrompt", text: text, session: session) }
-    func stop(in session: AssistantAgentSession) async throws { try await mailbox.command("stop", session: session) }
+    func activate(_ session: AssistantAgentSession) async throws {
+        guard capabilities(for: session).contains(.activate) else { throw AgentAdapterError.sessionChanged }
+    }
+    func insertDraft(_ text: String, in session: AssistantAgentSession) async throws { throw AgentAdapterError.officialChannelRequired }
+    func submit(in session: AssistantAgentSession) async throws { throw AgentAdapterError.officialChannelRequired }
+    func sendPrompt(_ text: String, in session: AssistantAgentSession) async throws {
+        guard capabilities(for: session).contains(.submit) else { throw AgentAdapterError.officialChannelRequired }
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf8.count <= 64_000 else {
+            throw AgentAdapterError.blocked("消息为空或过长")
+        }
+        try await mailbox.command("sendPrompt", text: text, session: session)
+    }
+    func stop(in session: AssistantAgentSession) async throws {
+        guard capabilities(for: session).contains(.stop) else { throw AgentAdapterError.officialChannelRequired }
+        try await mailbox.command("stop", session: session)
+    }
     func poll(_ session: AssistantAgentSession?) async {
         for envelope in mailbox.events(for: id) {
             onEvent?(envelope.event)

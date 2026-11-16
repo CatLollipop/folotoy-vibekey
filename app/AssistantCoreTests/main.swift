@@ -131,11 +131,12 @@ extension Bundle { static var l10n: Bundle { .main } }
         try expect(controller.reply.isEmpty && controller.phase == .idle, "New conversation clears UI and history")
         try await testApplicationOutcomes(store: store)
         try await testStreamingRecognition(store: store)
+        try await testDraftOnlyRecognition(store: store)
         try await testOfficialFunASRCompletion()
         try VolcengineCodecContracts.run()
         try await testOfficialDoubaoCompletion()
         try await testCancellationBeforeRequest(store:store)
-        print("Assistant core tests: PASS (SSE, hex, history, config, WAV, application ordering, text-only final replies, recording-time ASR, finish drain/failure/cancel/generation)")
+        print("Assistant core tests: PASS (SSE, history, text-only cloud, application draft staging, captured ASR-only callbacks, finish drain/failure/cancel/generation)")
     }
 
     @MainActor static func until(_ condition: () -> Bool) async throws {
@@ -147,34 +148,36 @@ extension Bundle { static var l10n: Bundle { .main } }
     }
     @MainActor static func testApplicationOutcomes(store: AssistantStore) async throws {
         let audio = ControlledAudioPlayer()
-        let app = AssistantController(store:store,service:DelayedCloudFixture(),player:audio,makeRecognition:{_,_ in ControlledRecognitionSession()},makeSource:{FakeAudioSource()})
+        let cloud = CountingCloudFixture()
+        let app = AssistantController(store:store,service:cloud,player:audio,makeRecognition:{_,_ in ControlledRecognitionSession()},makeSource:{FakeAudioSource()})
         app.destination = .application
-        app.sendToApplication = { _ in try await Task.sleep(for:.milliseconds(30)) }
-        app.send(text:"failure before receipt")
-        try await until { app.phase == .thinking }
-        app.finishApplicationTurn(.failed)
-        try expect(app.phase == .thinking,"Terminal state bypassed original application admission receipt")
-        try await until { app.phase == .failed }
-        try expect(app.error != nil,"Real task failure did not end waiting with an explanation")
-
-        app.send(text:"no reply")
-        try await until { app.phase == .replying }
+        var drafts: [String] = [], changedHandler: [String] = []
+        app.onApplicationDraft = { drafts.append($0) }
+        app.send(text:"stage existing conversation")
+        app.onApplicationDraft = { changedHandler.append($0) }
+        try await until { app.phase == .draft }
+        try expect(drafts == ["stage existing conversation"] && changedHandler.isEmpty && !app.isBusy,
+                   "Application text did not stage to the handler captured for this generation")
+        try expect(cloud.requests.isEmpty && cloud.speechCalls == 0 && !audio.started,
+                   "Application draft silently called cloud or TTS")
         app.finishApplicationTurn(.completed)
-        try expect(app.phase == .completed && !app.isBusy,"Completed task without a reply kept the assistant busy forever")
-
-        app.send(text:"stop before receipt")
-        try await until { app.phase == .thinking }
         app.finishApplicationTurn(.stopped)
-        try await until { app.phase == .stopped }
-        try expect(!app.isBusy,"Original stopped event did not end the applied application turn")
-
-        // 与Coordinator相同的顺序：最终正文先到，终态先暂存，applied后才显示最终正文。
-        app.onPhase = { phase in if phase == .replying { app.showApplicationReply("final before receipt") } }
-        app.send(text:"fast final")
-        try await until { app.phase == .thinking }
         app.finishApplicationTurn(.completed)
-        try await until { app.phase == .completed }
-        try expect(app.reply == "final before receipt","Pending terminal state overwrote an early final reply")
+        try expect(app.phase == .draft && drafts.count == 1, "Agent events consumed or sent a local draft")
+
+        app.onApplicationDraft = nil
+        app.send(text:"missing local draft handler")
+        try await until { app.phase == .failed }
+        try expect(app.error != nil && cloud.requests.isEmpty && drafts.count == 1,
+                   "Missing handler fell back to cloud or appeared delivered")
+        app.onApplicationDraft = { drafts.append($0) }
+        app.send(text:"canceled before stage"); app.cancel()
+        try await Task.sleep(for: .milliseconds(10))
+        try expect(drafts.count == 1, "Canceled queued stage still delivered a draft")
+        app.onPhase = { phase in if phase == .draft { app.cancel() } }
+        app.send(text:"cancel inside draft phase callback")
+        try await Task.sleep(for: .milliseconds(10))
+        try expect(drafts.count == 1 && cloud.requests.isEmpty, "Canceled phase callback still staged text")
         app.onPhase = nil
 
         store.profile.autoSpeakReplies = true // 旧偏好也不能恢复已暂停的朗读。
@@ -208,7 +211,7 @@ extension Bundle { static var l10n: Bundle { .main } }
         app.destination = .application
         var submitted:[String] = []
         var captions:[(String,Bool)] = []
-        app.sendToApplication = { submitted.append($0) }
+        app.onApplicationDraft = { submitted.append($0) }
         app.onTranscript = { captions.append(($0,$1)) }
         app.beginRecording()
         try expect(constructions == 1 && app.phase == .recording,"Recognition was not created when recording began")
@@ -223,6 +226,7 @@ extension Bundle { static var l10n: Bundle { .main } }
         try await until { submitted.count == 1 }
         try expect(submitted == ["第一句。第二句。"] && app.transcript == "第一句。第二句。","Tail sentence was lost before routing")
         try expect(captions.filter(\.1).map(\.0) == ["第一句。第二句。"],"Whole-session final was not emitted exactly once after finish")
+        try expect(app.phase == .draft && !app.isBusy, "Recognition final was not held as an unsent draft")
 
         let failed = ControlledRecognitionSession();sessions.append(failed)
         app.beginRecording();source.emit([Float](repeating:0.02,count:4_800));failed.emit(.failure("fixture recognition failure"))
@@ -257,6 +261,102 @@ extension Bundle { static var l10n: Bundle { .main } }
         try expect(capped.sampleCount == 16_000 && capped.finishCount == 1,"Recording cap leaked extra PCM or finished more than once")
         store.profile.recordLimitSeconds = 30
         app.cancel()
+    }
+
+    @MainActor static func testDraftOnlyRecognition(store: AssistantStore) async throws {
+        let source = FakeAudioSource(), cloud = CountingCloudFixture(), audio = ControlledAudioPlayer()
+        var sessions: [ControlledRecognitionSession] = []
+        var constructions = 0, fallbackSources = 0
+        let app = AssistantController(store: store, service: cloud, player: audio, makeRecognition: { _, _ in
+            constructions += 1
+            return sessions.removeFirst()
+        }, makeSource: { fallbackSources += 1; return source })
+        let deepseekKey = store.deepseekKey
+        defer { store.deepseekKey = deepseekKey; app.cancel() }
+        store.deepseekKey = "" // 草稿识别不需要LLM密钥，也不能暗中调用LLM。
+        var boundA: [String] = [], boundB: [String] = [], publishedReplies: [String] = []
+        app.onReply = { publishedReplies.append($0) }
+        app.onApplicationDraft = { boundB.append($0) }
+        app.destination = .cloud
+        let first = ControlledRecognitionSession(result: "bound session A", delay: .milliseconds(25))
+        sessions.append(first)
+        app.beginDraftRecording(using: source) { boundA.append($0) }
+        app.showApplicationReply("background reply during capture"); app.finishApplicationTurn(.failed)
+        try expect(app.phase == .recording && publishedReplies.isEmpty, "Compatibility reply/terminal event canceled recording")
+        source.emit([Float](repeating: 0.02, count: 4_800))
+        app.destination = .application
+        app.endRecording()
+        app.showApplicationReply("background reply during finish"); app.finishApplicationTurn(.completed)
+        try expect(app.phase == .transcribing && publishedReplies.isEmpty, "Compatibility callback canceled ASR finish")
+        try await until { boundA.count == 1 }
+        try expect(boundA == ["bound session A"] && boundB.isEmpty && fallbackSources == 0 && app.phase == .draft,
+                   "Explicit draft used current destination/global handler/fallback microphone")
+        try expect(cloud.requests.isEmpty && cloud.speechCalls == 0 && !audio.started,
+                   "ASR-only recording called LLM/TTS")
+
+        let captured = ControlledRecognitionSession(result: "captured application handler")
+        sessions.append(captured)
+        app.destination = .application
+        app.onApplicationDraft = { boundA.append($0) }
+        app.beginRecording()
+        app.onApplicationDraft = { boundB.append($0) }
+        app.destination = .cloud
+        source.emit([Float](repeating: 0.02, count: 4_800)); app.endRecording()
+        try await until { boundA.count == 2 }
+        try expect(boundA.last == "captured application handler" && boundB.isEmpty && cloud.requests.isEmpty,
+                   "Mac application recording reread a newer handler/destination after ASR")
+
+        var canceled: [String] = [], fresh: [String] = []
+        let old = ControlledRecognitionSession(result: "canceled late final", delay: .milliseconds(70), ignoreCancel: true)
+        sessions.append(old)
+        app.beginDraftRecording(using: source) { canceled.append($0) }
+        source.emit([Float](repeating: 0.02, count: 4_800)); app.endRecording()
+        try await until { old.finishCount == 1 }
+        app.cancel()
+        sessions.append(ControlledRecognitionSession(result: "fresh bound draft"))
+        app.beginDraftRecording(using: source) { fresh.append($0) }
+        source.emit([Float](repeating: 0.02, count: 4_800)); app.endRecording()
+        try await until { fresh.count == 1 }
+        try await Task.sleep(for: .milliseconds(90))
+        try expect(canceled.isEmpty && fresh == ["fresh bound draft"] && old.cancelCount > 0,
+                   "Canceled generation staged a late final into a newer session")
+
+        let whileRecording = ControlledRecognitionSession(result: "canceled capture")
+        sessions.append(whileRecording)
+        app.beginDraftRecording(using: source) { canceled.append($0) }
+        source.emit([Float](repeating: 0.02, count: 4_800)); app.cancel()
+        let before = whileRecording.sampleCount
+        source.emit([Float](repeating: 0.02, count: 320))
+        try expect(canceled.isEmpty && whileRecording.sampleCount == before && whileRecording.finishCount == 0,
+                   "Canceled capture kept feeding ASR or emitted a draft")
+
+        app.destination = .application; app.onApplicationDraft = nil
+        let beforeMissing = constructions, beforeSources = fallbackSources
+        app.beginRecording()
+        try expect(app.phase == .failed && app.error != nil && constructions == beforeMissing && fallbackSources == beforeSources,
+                   "Missing application handler started ASR or fell back to cloud")
+        let silent = ControlledRecognitionSession(result: "silence must not stage")
+        sessions.append(silent)
+        app.beginDraftRecording(using: source) { canceled.append($0) }
+        source.emit([Float](repeating: 0, count: 4_800)); app.endRecording()
+        try expect(app.phase == .failed && silent.finishCount == 0 && canceled.isEmpty,
+                   "ASR-only path bypassed valid-speech admission")
+
+        sessions.append(ControlledRecognitionSession(result: "cancel at whole final"))
+        app.onTranscript = { _, final in if final { app.cancel() } }
+        app.beginDraftRecording(using: source) { canceled.append($0) }
+        source.emit([Float](repeating: 0.02, count: 4_800)); app.endRecording()
+        try await until { app.phase == .stopped }
+        try expect(canceled.isEmpty, "Whole-final observer cancellation still emitted a bound draft")
+        app.onTranscript = nil
+
+        store.deepseekKey = deepseekKey
+        sessions.append(ControlledRecognitionSession(result: "explicit cloud trial"))
+        app.destination = .cloud
+        app.beginRecording(); source.emit([Float](repeating: 0.02, count: 4_800)); app.endRecording()
+        try await until { app.phase == .completed }
+        try expect(cloud.requests == ["explicit cloud trial"] && cloud.speechCalls == 0 && !audio.started,
+                   "Explicit cloud trial no longer works or restored TTS")
     }
 
     @MainActor static func testOfficialFunASRCompletion() async throws {

@@ -14,6 +14,7 @@
 #include "ib_transcript_view.h"
 #include "ib_reply_font.h"
 #include "ib_ui_activity.h"
+#include "ib_ui_conversation.h"
 #include "ib_ui_notification.h"
 
 #include "bsp_display.h"
@@ -93,6 +94,9 @@ static void apply_key_hints(void)
             unsigned index=ib_notification_index(),total=ib_notification_total();
             icon=key==IB_UI_KEY_UP?(index?IB_ICON_UP:IB_ICON_NONE):
                 key==IB_UI_KEY_DOWN?(index+1<total?IB_ICON_DOWN:IB_ICON_NONE):IB_ICON_MIC;
+        }else if(ib_conversation_ui_owned()){
+            unsigned page=ib_conversation_ui_page(),pages=ib_conversation_ui_pages();
+            icon=key==IB_UI_KEY_UP?(page>1?IB_ICON_UP:IB_ICON_NONE):key==IB_UI_KEY_DOWN?(page<pages?IB_ICON_DOWN:IB_ICON_NONE):ib_conversation_ui_confirm()?IB_ICON_SEND:ib_conversation_ui_record()?IB_ICON_MIC:IB_ICON_NONE;
         }else if(reply_visible()){
             icon=key==IB_UI_KEY_UP?(s_reply.page_index?IB_ICON_UP:IB_ICON_NONE):
                 key==IB_UI_KEY_DOWN?(s_reply.page_index+1<s_reply.page_count?IB_ICON_DOWN:IB_ICON_NONE):IB_ICON_MIC;
@@ -108,6 +112,7 @@ static void apply_key_hints(void)
     }
     bool reading=!menu_surface()&&s_screen!=IB_UI_OFFLINE&&s_screen!=IB_UI_USAGE&&s_screen!=IB_UI_SUB;
     if(reading&&ib_notification_active())ib_hints_set_pagination(true,ib_notification_index(),ib_notification_total());
+    else if(reading&&ib_conversation_ui_owned())ib_hints_set_pagination(ib_conversation_ui_pages()>0,ib_conversation_ui_page()?ib_conversation_ui_page()-1:0,ib_conversation_ui_pages());
     else ib_hints_set_pagination(reading&&reply_visible(),s_reply.page_index,s_reply.page_count);
     ib_hints_set_disabled(!local_menu_active()&&!s_hint_standalone&&s_hint_phase==IB_UI_ASSIST_COUNT&&s_screen==IB_UI_PROC);
     ib_hints_set_visible(true);
@@ -190,7 +195,9 @@ static void caption_layout(const char *text)
 static void render_pet_caption(void)
 {
     const char *text=NULL;
-    if(reply_visible()){
+    if(ib_conversation_ui_owned()&&!ib_conversation_ui_active()){
+        text=ib_conversation_ui_focus_text();
+    }else if(reply_visible()){
         if(ib_reply_font_copy(s_caption_text,sizeof(s_caption_text),s_reply.text))text=s_caption_text;
     }else if(transcript_visible()){
         size_t end=strlen(s_transcript.text),split=transcript_line_start(s_transcript.text,end);
@@ -232,11 +239,23 @@ static void pet_draw(lv_event_t *event)
         }
     }
 }
+static void mini_pet_draw(const ib_fx_t *f,int x,int y)
+{
+    // 同一实际Aora栅格缓存缩为28px头像，不另造默认角色或复制动画资源。
+    for(unsigned row=0;row<IB_PET_SIZE;row++)for(unsigned col=0;col<IB_PET_SIZE;col++){
+        uint16_t p=s_pet_pixels[row*IB_PET_SIZE+col];
+        if(p==(((PET_BG>>19)&31)<<11|((PET_BG>>10)&63)<<5|((PET_BG>>3)&31)))continue;
+        uint32_t r=((p>>11)&31)*255/31,g=((p>>5)&63)*255/63,b=(p&31)*255/31;
+        ib_fx_rect(f,x+(int)col,y+(int)row,1,1,0,IB_C((r<<16)|(g<<8)|b),LV_OPA_COVER);
+    }
+}
 static void pet_visibility(void)
 {
     if(!s_pet_root)return;
     bool offline=s_screen==IB_UI_OFFLINE;
-    bool show=(offline||ib_pet_enabled()||s_hint_standalone||s_hint_phase!=IB_UI_ASSIST_COUNT||reply_visible()||transcript_visible())&&s_screen!=IB_UI_LIST&&s_screen!=IB_UI_USAGE&&s_screen!=IB_UI_SUB;
+    ib_conversation_ui_suspend(menu_surface()||offline||ib_notification_active(),menu_surface());
+    bool show=(offline||ib_pet_enabled()||s_hint_standalone||s_hint_phase!=IB_UI_ASSIST_COUNT||ib_conversation_ui_owned()||reply_visible()||transcript_visible())&&s_screen!=IB_UI_LIST&&s_screen!=IB_UI_USAGE&&s_screen!=IB_UI_SUB;
+    if(ib_conversation_ui_active())show=false;
     lv_obj_set_size(s_pet_root,IB_UI_W,offline?208:IB_UI_H-IB_UI_BAR_H);
     if(offline){lv_obj_add_flag(s_pet_label,LV_OBJ_FLAG_HIDDEN);lv_obj_add_flag(s_activity,LV_OBJ_FLAG_HIDDEN);}
     else{if(lv_label_get_text(s_pet_label)[0])lv_obj_remove_flag(s_pet_label,LV_OBJ_FLAG_HIDDEN);lv_obj_remove_flag(s_activity,LV_OBJ_FLAG_HIDDEN);}
@@ -387,14 +406,17 @@ static void frame_cb(lv_timer_t *t)
     ib_agent_frame(s_ctx.now_ms);
     if(started&&s_screen==IB_UI_OFFLINE){const char *desired=s_ctx.now_ms-s_ctx.enter_ms>45000?"sleeping":"idle";if(strcmp(ib_pet_state_name(),desired))ib_pet_set_state_name(desired,s_ctx.now_ms);}
     pet_visibility();
-    if(s_pet_root&&!lv_obj_has_flag(s_pet_root,LV_OBJ_FLAG_HIDDEN)&&(s_screen==IB_UI_OFFLINE||ib_pet_enabled())&&!ib_notification_active()){
+    bool mini=ib_conversation_ui_active();
+    if(s_pet_root&&(mini||!lv_obj_has_flag(s_pet_root,LV_OBJ_FLAG_HIDDEN))&&(mini||s_screen==IB_UI_OFFLINE||ib_pet_enabled())&&!ib_notification_active()){
         uint32_t before=lv_tick_get();
         if(ib_pet_render(s_ctx.now_ms,pet_pixel,NULL)){
             uint32_t elapsed=lv_tick_get()-before;s_pet_frame_last_ms=elapsed;if(elapsed>s_pet_frame_max_ms)s_pet_frame_max_ms=elapsed;
-            lv_area_t area;lv_obj_get_coords(s_pet_root,&area);
+            if(mini)ib_conversation_ui_pet_changed();
+            else{lv_area_t area;lv_obj_get_coords(s_pet_root,&area);
             int x=(lv_obj_get_width(s_pet_root)-IB_PET_SIZE*7)/2;
             lv_area_t dirty={area.x1+x,area.y1+4,area.x1+x+IB_PET_SIZE*7-1,area.y1+PET_GRID_BOTTOM-1};
             lv_obj_invalidate_area(s_pet_root,&dirty);
+            }
         }
     }
     if(s_activity&&!lv_obj_has_flag(s_pet_root,LV_OBJ_FLAG_HIDDEN)&&!ib_notification_active()&&
@@ -402,6 +424,7 @@ static void frame_cb(lv_timer_t *t)
         s_activity_last_frame=s_ctx.now_ms;lv_obj_invalidate(s_activity);
     }
     ib_notification_frame(s_ctx.now_ms);
+    ib_conversation_ui_frame(s_ctx.now_ms);
     // 无图元变化时也恢复refresh timer，以便REFR_READY解除等待；熄屏仍保持暂停。
     lv_timer_pause(t);s_waiting_refresh=true;
     lv_timer_resume(lv_display_get_refr_timer(lv_display_get_default()));
@@ -444,6 +467,9 @@ esp_err_t ib_ui_init(void)
     s_activity=ib_fx_create(s_pet_root,(IB_UI_W-16)/2,PET_GRID_BOTTOM,16,16,activity_draw,NULL);
     s_pet_status=ib_ui_assistant_label(IB_UI_ASSIST_IDLE,false,NULL);render_pet_caption();
     ib_notification_create(scr);
+    // 固定父层在status/hints之前，后续懒建两栏不会盖住实体键或页点。
+    lv_obj_t *conversation_layer=ib_box_create(scr,0,0,IB_UI_W,IB_UI_H);
+    ib_conversation_ui_init(conversation_layer,mini_pet_draw);
     ib_bar_create(scr);     // 后建,位于页面之上
     ib_hints_create(scr);
     ib_hints_set_visible(false);
@@ -485,7 +511,7 @@ bool ib_ui_show(ib_ui_screen_t screen, ib_ui_mode_t mode, const char *msg)
         s_menu_return_pending=false;
         if(s_agent_latest.visible)ib_agent_show(s_agent_latest.kind,s_agent_latest.source,s_screen==IB_UI_REC,lv_tick_get());
         else ib_agent_hide();
-        ib_agent_set_suspended(ib_notification_active());apply_key_hints();pet_visibility();
+        ib_agent_set_suspended(ib_notification_active());pet_visibility();apply_key_hints();
     }
     bsp_lvgl_unlock();
     return true;
@@ -494,7 +520,21 @@ bool ib_ui_show(ib_ui_screen_t screen, ib_ui_mode_t mode, const char *msg)
 void ib_ui_set_capture_active(bool active)
 {
     if(!s_ready||s_capture_active==active||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return;
-    s_capture_active=active;apply_key_hints();if(s_activity)lv_obj_invalidate(s_activity);bsp_lvgl_unlock();
+    s_capture_active=active;ib_conversation_ui_capture(active);apply_key_hints();if(s_activity)lv_obj_invalidate(s_activity);bsp_lvgl_unlock();
+}
+const char *ib_ui_conversation_update(const ib_conversation_t *view,bool enabled)
+{
+    if(!s_ready||!view||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return "display_busy";
+    bool ok=ib_conversation_ui_apply(view,enabled);
+    if(ok&&enabled&&view->bound){
+        static const char *const names[]={"idle","listening","uploading","waiting","sending","working","waiting","celebrate","alerting","confused"};
+        static const ib_ui_assistant_phase_t phases[]={IB_UI_ASSIST_IDLE,IB_UI_ASSIST_LISTENING,IB_UI_ASSIST_TRANSCRIBING,IB_UI_ASSIST_IDLE,IB_UI_ASSIST_REPLYING,IB_UI_ASSIST_THINKING,IB_UI_ASSIST_IDLE,IB_UI_ASSIST_DONE,IB_UI_ASSIST_ERROR,IB_UI_ASSIST_ERROR};
+        if((unsigned)view->phase<10){ib_pet_set_state_name(names[view->phase],lv_tick_get());s_activity_phase=phases[view->phase];}
+        s_activity_error=view->phase==IB_CONV_ERROR||view->phase==IB_CONV_UNKNOWN;
+        if(s_activity_error)s_pet_status=ib_ui_conversation_error(view->error[0]?view->error:"unknown");
+        render_pet_caption();
+    }
+    pet_visibility();apply_key_hints();bsp_lvgl_unlock();return ok?NULL:"invalid_pane";
 }
 
 void ib_ui_set_level(uint8_t level)

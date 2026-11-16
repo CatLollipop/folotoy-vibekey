@@ -80,7 +80,7 @@ nonisolated struct AgentIntegrationStatus: Sendable {
                 try AgentBridgeInstaller.installWorkBuddy(configURL: file)
                 defaults.set(file.path, forKey: "assistant.integration.workBuddy.configPath")
             case .kimiCode: defaults.set(true, forKey: "assistant.integration.kimi.registered")
-            case .claudeDesktop, .chatGPT: break // 内置AX适配器只需启用，不伪造外部插件。
+            case .claudeDesktop, .chatGPT: break // 仅启用通知与诊断；无官方双向通道时不授予发送。
             }
             hub.setIntegrationEnabled(true, id: kind.id)
             message = String(localized: "接入组件已安装；实际连接状态以重新检测结果为准。", bundle: .l10n)

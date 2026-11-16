@@ -5,7 +5,7 @@ nonisolated enum AgentCapability: String, Codable, CaseIterable, Sendable {
     case discover, activate, insertDraft, submit, stop, observeState, readReply
 }
 
-/// 会话状态只由正式事件或已核实的可见控件产生。
+/// 会话状态只由官方生命周期事件产生。
 nonisolated enum ConversationState: String, Codable, Sendable {
     case idle, listening, receiving, thinking, working, waitingInput, replying
     case searching, loading, completed, error, stopped, unknown
@@ -28,7 +28,7 @@ nonisolated struct AssistantAgentSession: Codable, Equatable, Identifiable, Send
     let instanceID: String
     let sessionID: String
     let name: String
-    var id: String { applicationID + ":" + instanceID + ":" + sessionID }
+    var id: String { String(decoding: try! JSONEncoder().encode([applicationID, instanceID, sessionID]), as: UTF8.self) }
 }
 
 nonisolated struct AgentReply: Equatable, Sendable {
@@ -61,12 +61,14 @@ nonisolated enum AgentAdapterError: LocalizedError, Equatable {
     case sessionChanged
     case deliveryUnknown
     case invalidResponse
+    case officialChannelRequired
     var errorDescription: String? {
         switch self {
         case .blocked(let reason): AgentText.localized(reason)
         case .sessionChanged: String(localized: "原应用会话已变化，请重新选择会话", bundle: .l10n)
         case .deliveryUnknown: String(localized: "投递结果未知；请先检查原应用，避免重复发送", bundle: .l10n)
         case .invalidResponse: String(localized: "应用桥接返回无效数据", bundle: .l10n)
+        case .officialChannelRequired: String(localized: "当前接入没有官方双向通道，无法发送或停止", bundle: .l10n)
         }
     }
 }
@@ -84,6 +86,7 @@ nonisolated enum AgentText {
     var onReply: ((AgentReply) -> Void)? { get set }
     func diagnose() async -> AgentDiagnostic
     func discover() async throws -> [AssistantAgentSession]
+    func capabilities(for session: AssistantAgentSession) -> Set<AgentCapability>
     func activate(_ session: AssistantAgentSession) async throws
     func insertDraft(_ text: String, in session: AssistantAgentSession) async throws
     func submit(in session: AssistantAgentSession) async throws
@@ -93,9 +96,11 @@ nonisolated enum AgentText {
 }
 
 extension AgentAdapter {
+    /// 未能针对原生实例和会话提供当前能力证据时，一律无控制能力。
+    func capabilities(for session: AssistantAgentSession) -> Set<AgentCapability> { [] }
+
     func sendPrompt(_ text: String, in session: AssistantAgentSession) async throws {
-        try await insertDraft(text, in: session)
-        try await submit(in: session)
+        throw AgentAdapterError.officialChannelRequired
     }
 }
 
@@ -105,8 +110,9 @@ nonisolated struct AgentEventFilter: Sendable {
     private var eventIDs: Set<String> = []
     private var order: [String] = []
     mutating func accepts(_ event: ConversationEvent) -> Bool {
-        let scope = [event.applicationID, event.instanceID, event.sessionID, event.turnID].joined(separator: "\u{1f}")
-        let identity = scope + "\u{1f}" + event.eventID
+        let fields = [event.applicationID, event.instanceID, event.sessionID, event.turnID]
+        let scope = String(decoding: try! JSONEncoder().encode(fields), as: UTF8.self)
+        let identity = String(decoding: try! JSONEncoder().encode(fields + [event.eventID]), as: UTF8.self)
         guard !eventIDs.contains(identity), sequences[scope].map({ event.sequence > $0 }) ?? true else { return false }
         sequences[scope] = event.sequence
         eventIDs.insert(identity)

@@ -32,6 +32,7 @@ nonisolated final class AgentMockURLProtocol: URLProtocol, @unchecked Sendable {
         try await run("device-protocol") { try testDeviceAssistantProtocol() }
         try await run("assistant-hardware") { try testAssistantHardware() }
         try await run("shared-voice-config") { try testSharedVoiceConfiguration() }
+        try await run("kimi-response-classification") { try testKimiResponseClassification() }
         try await run("kimi-api") { try await testKimiAPI() }
         try await run("mailbox-receipts") { try await testMailboxReceipts() }
         print("Agent core tests passed: event scope, Kimi official REST/WS, mailbox receipts, isolated hardware gestures, shared Doubao voice")
@@ -201,6 +202,22 @@ nonisolated final class AgentMockURLProtocol: URLProtocol, @unchecked Sendable {
         let chunk=try DeviceAssistantProtocol.encode([("off",.int(16384)),("d",.string(payload))],op:"chunk",requestID:UInt32.max)
         try check(chunk.count <= 512, "full-size base64 chunk with rid exceeds firmware line buffer")
     }
+    static func testKimiResponseClassification() throws {
+        let url=URL(string:"http://127.0.0.1:58627/api/v1/sessions/existing/prompts")!
+        let bad:[(Int,String)] = [(500,"{\"code\":0,\"data\":{\"status\":\"running\"}}"),
+            (503,"{\"code\":40931,\"data\":{}}"),(200,"not-json"),(200,"{}"),
+            (200,"{\"code\":0}"),(200,"{\"code\":false,\"data\":{}}"),(200,"{\"code\":39999,\"data\":{}}")]
+        for (status,text) in bad {
+            let response=HTTPURLResponse(url:url,statusCode:status,httpVersion:nil,headerFields:nil)!
+            do { _=try KimiAgentAdapter.responsePayload(method:"POST",data:Data(text.utf8),response:response);throw AgentAdapterError.invalidResponse }
+            catch AgentAdapterError.deliveryUnknown {}
+        }
+        let valid=HTTPURLResponse(url:url,statusCode:200,httpVersion:nil,headerFields:nil)!
+        let payload=try KimiAgentAdapter.responsePayload(method:"POST",data:Data("{\"code\":0,\"data\":{\"status\":\"queued\"}}".utf8),response:valid)
+        try check(payload["status"] as? String == "queued", "valid native admission was rejected")
+        do { _=try KimiAgentAdapter.responsePayload(method:"GET",data:Data("{\"code\":40931,\"data\":{}}".utf8),response:valid);throw AgentAdapterError.invalidResponse }
+        catch AgentAdapterError.blocked {}
+    }
     @MainActor static func testKimiAPI() async throws {
         for text in ["https://remote.example", "http://user:secret@127.0.0.1:58627", "http://127.0.0.1/api", "http://127.0.0.1?token=secret"] {
             try check(KimiAgentAdapter.localURL(text) == nil, "non-local credential destination accepted")
@@ -209,8 +226,14 @@ nonisolated final class AgentMockURLProtocol: URLProtocol, @unchecked Sendable {
         let client = KimiAgentAdapter(connection:.init(endpoint:"http://127.0.0.1:58627",token:"test-local-token"),network:URLSession(configuration:config))
         let good = await client.diagnose(); try check(good.isComplete, "official endpoint fixture was rejected")
         let sessions = try await client.discover(); try check(sessions.count == 1 && sessions[0].sessionID == "session_test", "session envelope shape changed")
+        try check(client.capabilities(for:sessions[0]).contains(.submit), "fresh discovered original session missing write capability")
+        let foreign = AssistantAgentSession(applicationID:"kimiCode",instanceID:"other-server-epoch",sessionID:sessions[0].sessionID,name:"Foreign")
+        try check(client.capabilities(for:foreign).isEmpty, "Kimi capabilities leaked across connection epochs")
+        let unseen = AssistantAgentSession(applicationID:"kimiCode",instanceID:sessions[0].instanceID,sessionID:"not-discovered",name:"Unseen")
+        try check(client.capabilities(for:unseen).isEmpty, "Kimi metadata notification granted write capability")
         AgentMockURLProtocol.lock.withLock { AgentMockURLProtocol.failureCode = 40931 }
         let blocked = await client.diagnose(); try check(blocked.capabilities.isEmpty, "occupied server advertised as ready")
+        try check(client.capabilities(for:sessions[0]).isEmpty, "failed Kimi validation retained stale writes")
         let paths = AgentMockURLProtocol.lock.withLock { AgentMockURLProtocol.paths }
         try check(paths.allSatisfy { ["/openapi.json", "/api/v1/sessions"].contains($0) }, "diagnose mutated server or took over a session")
     }

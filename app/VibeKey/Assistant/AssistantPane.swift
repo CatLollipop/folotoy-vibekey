@@ -15,13 +15,10 @@ struct AssistantPane: View {
         @Bindable var store = app.assistantStore
         @Bindable var assistant = app.assistant
         VStack(alignment: .leading, spacing: 0) {
-            SettingsSection(title: "权限", footer: app.permissions.accessibility ? nil : "如果已在系统中开启，请确认授权的是“应用程序”内的 AI 助理，并重新开启该开关后重启应用。") {
+            SettingsSection(title: "权限") {
                 VStack(spacing: 8) {
                     PermissionRow(symbol: "mic.fill", title: "麦克风", detail: "用于电脑端语音对话。", granted: app.permissions.microphone == .authorized) {
                         app.permissions.requestMicrophone()
-                    }
-                    PermissionRow(symbol: "accessibility", title: "辅助功能", detail: "用于控制你选中的桌面应用会话。", granted: app.permissions.accessibility) {
-                        app.permissions.requestAccessibility()
                     }
                 }
             }
@@ -67,7 +64,9 @@ struct AssistantPane: View {
                         TextField("输入问题，或按住下方按钮说话", text: $draft, axis: .vertical)
                             .lineLimit(2...4).textFieldStyle(.roundedBorder)
                         HStack {
-                            Button("发送") { assistant.send(text: draft); draft = "" }.disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            Button { assistant.send(text: draft); draft = "" } label: {
+                                Text(assistant.destination == .application ? String(localized: "保存草稿", bundle: .l10n) : String(localized: "发送", bundle: .l10n))
+                            }.disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             Text(assistant.isRecording ? "松开结束录音" : "按住说话")
                                 .padding(.horizontal, 14).padding(.vertical, 7)
                                 .background(assistant.isRecording ? Color.red.opacity(0.15) : Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
@@ -78,7 +77,7 @@ struct AssistantPane: View {
                                 .accessibilityAction { if assistant.isRecording { assistant.endRecording() } else { assistant.beginRecording() } }
                             Button("停止") { assistant.cancel(); if assistant.destination == .application { Task { try? await app.agentHub.stop() } } }
                                 .disabled(!assistant.isBusy && (assistant.destination != .application || app.agentHub.selectedSession == nil))
-                            Button("新对话") { assistant.newConversation() }
+                            if assistant.destination == .cloud { Button("新对话") { assistant.newConversation() } }
                             Spacer()
                             Text(assistant.phase.title).font(.caption).foregroundStyle(.secondary)
                         }
@@ -90,7 +89,37 @@ struct AssistantPane: View {
                     }
                 }
             }
+            conversationSection
             deviceSection
+        }
+    }
+
+    private var conversationSection: some View {
+        SettingsSection(title: "已有应用会话", footer: "录音松开后保留草稿，确认后才发送。完成通知双击 OK 可在 Passport 进入对应会话，原会话草稿会保留。") {
+            Card {
+                VStack(alignment: .leading, spacing: 12) {
+                    if let entry = app.conversations.current {
+                        LabeledContent("当前会话", value: entry.session.name)
+                        Text(entry.writable ? String(localized: "官方通道已连接", bundle: .l10n) : String(localized: "仅接收提醒：当前会话没有可用的官方发送通道。", bundle: .l10n))
+                            .font(.caption).foregroundStyle(entry.writable ? Color.secondary : Color.orange)
+                        if !entry.reply.isEmpty { Text(entry.reply).textSelection(.enabled) }
+                        if !entry.draft.isEmpty {
+                            Text("待发送草稿").font(.caption).foregroundStyle(.secondary)
+                            Text(entry.draft).textSelection(.enabled)
+                        }
+                        if entry.delivery == .unknown, let ticket = entry.unknownSubmission {
+                            Text("投递结果未知。请先在原会话核对，避免重复发送。").foregroundStyle(.orange)
+                            Text(ticket.text).font(.caption).textSelection(.enabled)
+                            Button("我已在原会话核对") { app.acknowledgeConversationDelivery(ticketID: ticket.id) }
+                        }
+                        Button("确认发送草稿") { app.confirmConversationDraft() }
+                            .disabled(!entry.writable || entry.draft.isEmpty || entry.delivery != .ready || app.assistant.isBusy)
+                    } else {
+                        Text("请在应用接入中选择已有会话；未选择时不会发送到云端。").foregroundStyle(.secondary)
+                    }
+                    if let error = app.conversations.lastError { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
+                }
+            }
         }
     }
 
@@ -148,6 +177,7 @@ extension AssistantPhase {
         case .idle: String(localized: "待机", bundle: .l10n)
         case .recording: String(localized: "正在聆听", bundle: .l10n)
         case .transcribing: String(localized: "正在识别", bundle: .l10n)
+        case .draft: String(localized: "待确认草稿", bundle: .l10n)
         case .thinking: String(localized: "正在思考", bundle: .l10n)
         case .replying: String(localized: "正在回复", bundle: .l10n)
         case .speaking: String(localized: "正在朗读", bundle: .l10n)

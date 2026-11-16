@@ -1,7 +1,7 @@
 // DeepSeek Harness原生Cordis Host插件。仅使用ctx.agents中现有的主会话，绝不resume/新建。
-import { Mailbox } from './mailbox.mjs';
+import { Mailbox,NotDeliveredError } from './mailbox.mjs';
 export function createBridgePlugin(createUserMessage) { return function apply(ctx) {
-  const bridge=new Mailbox('deepseekHarness','DeepSeek Harness');
+  const bridge=new Mailbox('deepseekHarness','DeepSeek Harness',{controlTransport:'dsh-plugin'});
   const live=()=>ctx.agents.list().filter(agent=>agent.session?.meta?.origin!=='subagent' && agent.session?.header?.origin!=='subagent');
   const sessionID=agent=>String(agent.session?.id || agent.id);
   const current=new Map();
@@ -13,15 +13,15 @@ export function createBridgePlugin(createUserMessage) { return function apply(ct
       publish();
       await bridge.drain(async request=>{
         const agent=live().find(item=>sessionID(item)===request.sessionID);
-        if(!agent) throw new Error('Original Desktop session is no longer live');
+        if(!agent) throw new NotDeliveredError('Original Desktop session is no longer live');
         if(request.operation==='activate') return;
         if(request.operation==='sendPrompt') {
           // 原生Agent接口跨当前release/master稳定；不依赖发生过ABI变化的sessionController.prompt第二参数。
           const message=createUserMessage({content:[{type:'text',text:request.text}],source:{kind:'user',rpcId:request.requestID}});
-          agent.followup(message); return;
+          await agent.followup(message); return;
         }
-        if(request.operation==='stop') { agent.cancel({kind:'user'},{keepInbox:true}); return; }
-        throw new Error('DSH has no native draft API; use direct send');
+        if(request.operation==='stop') { await agent.cancel({kind:'user'},{keepInbox:true}); return; }
+        throw new NotDeliveredError('DSH has no native draft API; use direct send');
       });
     } catch { /* 插件不能让原Agent失败；桌面将根据心跳报告连接问题。 */ }
   },200); timer.unref?.(); publish();

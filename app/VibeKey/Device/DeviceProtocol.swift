@@ -111,6 +111,7 @@ nonisolated enum DeviceMessage: Equatable, Sendable {
     case wallpaper(ok: Bool, phase: String)
     case assistant(DeviceAssistantMessage)
     case notification(DeviceNotificationMessage)
+    case conversation(DeviceConversationMessage)
 
     static let firmwareName = "vibekey"
     /// 0.1.7 及更早的固件沿用了上游 `inputbetter` 标识;新 app 继续接受,避免必须先刷机才能连上。
@@ -146,6 +147,8 @@ nonisolated enum DeviceMessage: Equatable, Sendable {
         }
 
         switch type {
+        case "conversation":
+            return DeviceConversationProtocol.parse(object).map { .conversation($0) }
         case "notification":
             func uint32(_ key: String) -> UInt32? {
                 guard let raw = object[key] as? NSNumber, CFGetTypeID(raw) != CFBooleanGetTypeID(),

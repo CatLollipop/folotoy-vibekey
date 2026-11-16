@@ -26,6 +26,7 @@ final class AppState {
     let assistant: AssistantController
     let assistantSync: AssistantDeviceSync
     let agentHub: AgentHub
+    let conversations = ConversationRouter()
     let pet: PetController
     @ObservationIgnored private var assistantCoordinator: AssistantCoordinator?
     @ObservationIgnored private var notificationCoordinator: AgentNotificationCoordinator?
@@ -139,16 +140,21 @@ final class AppState {
                               }, startCaptions: { [unowned self] app in startCaptions(app) },
                               stopCaptions: { [unowned self] in stopCaptions(from: .device) },
                               canTranslate: { [unowned self] in translation.isAvailable }))
+        bridge.officialSessionsOnly = true
+        bridge.onOfficialNotice = { [weak self] notice in self?.assistantCoordinator?.openNotice(notice) }
         bridge.start()
         bridge.assistantDisplay = { [weak self] in
             self?.assistantCoordinator?.deviceDisplay()
         }
         assistant.willRecord = { [weak self] in self?.dictation.cancel() }
         assistantCoordinator = AssistantCoordinator(assistant: assistant, store: assistantStore,
-            hub: agentHub, pet: pet, link: deviceLink, sync: assistantSync)
+            hub: agentHub, pet: pet, link: deviceLink, sync: assistantSync, conversations: conversations)
         assistantCoordinator?.start()
         bridge.forwardsLegacyAgentNotices = false
         notificationCoordinator = AgentNotificationCoordinator(hub: agentHub, legacy: agent, link: deviceLink)
+        notificationCoordinator?.onConversationNotice = { [weak self] notice, session in
+            self?.assistantCoordinator?.register(notice, session: session)
+        }
         notificationCoordinator?.start()
         do { try AgentHookInstaller.upgradeCodexIfInstalled() }
         catch { Log.app.error("owned Codex notification hook upgrade failed") }
@@ -199,6 +205,9 @@ final class AppState {
             windows.showSettings(.assistant)
         }
     }
+
+    func confirmConversationDraft() { assistantCoordinator?.confirmCurrentDraft() }
+    func acknowledgeConversationDelivery(ticketID: UUID) { conversations.acknowledgeUnknown(ticketID: ticketID); assistantCoordinator?.refreshDevice() }
 
     /// onboarding 完成后调用。
     func finishOnboarding() {

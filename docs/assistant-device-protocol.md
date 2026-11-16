@@ -291,3 +291,8 @@ update的off按UTF-8字节计算且必须连续；单块最多192B，Mac使用64
 首次成功呈现只调度一个受声音开关控制的本地短音；同nid正文升级、exact重试不会再次调度。提示音忙会等到空闲，但PTT/clear关闭取消旧pending，不在录音后补播已关闭通知。完成ACK表示已校验/接纳，不表示用户已读或扬声器确实被听见。
 
 完整来源/队列/ACK约束见[agent-notifications.md](agent-notifications.md)，UI所有权和生产像素回归见[device-task-notifications.md](device-task-notifications.md)，设备热资源和音频测试边界见[device-runtime.md](device-runtime.md)。本节只记录协议合同，不替代真实USB/Wi-Fi、同boot热切、扬声器听感或多轮资源验收。
+
+
+## 0.7 电脑已有会话扩展
+
+新增独立 `cmd/t=conversation` schema1，不把字段加进接近511B上限的assistant capabilities。云profile、pet同步及notification事务保持独立。`cap/bind/state/pane/view/clear/result` 请求使用rid，成功的bind/state/pane/view回显sid/rev。设备语义event包含boot/gid；除通知jump外必须匹配sid/rev/drev。jump携带nid/nrev，由Mac有界导航表解析原会话，不传原生会话ID或密钥。设备仅保存双128B阅读窗，Mac完成全文分页。详细合同见[会话路由](conversation-routing.md)与[设备协议](protocol.md)。旧固件缺split能力时提示升级，不将普通粘贴或云回复当作已接入。

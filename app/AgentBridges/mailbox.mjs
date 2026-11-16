@@ -20,10 +20,13 @@ export function writePrivate(file, value) {
   fs.renameSync(temporary, file);
 }
 
+// 仅原进程API调用前的确定性本地拒绝可使用；native异常一律不冒充未投递。
+export class NotDeliveredError extends Error {}
+
 export class Mailbox {
-  constructor(adapterID, name, { root = defaultRoot(), instanceID = crypto.randomUUID() } = {}) {
+  constructor(adapterID, name, { root = defaultRoot(), instanceID = crypto.randomUUID(), controlTransport, processID = process.pid } = {}) {
     if (!safeComponent(adapterID) || !safeComponent(instanceID)) throw new Error('Invalid bridge identity');
-    this.adapterID = adapterID; this.name = name; this.root = root; this.instanceID = instanceID;
+    this.processID = processID; this.adapterID = adapterID; this.controlTransport = controlTransport; this.name = name; this.root = root; this.instanceID = instanceID;
     this.instance = path.join(root, 'instances', instanceID);
     this.requests = path.join(this.instance, 'requests'); this.responses = path.join(this.instance, 'responses');
     this.events = path.join(root, 'events'); this.sequence = 0; this.busy = false; this.turns = new Map();
@@ -37,12 +40,13 @@ export class Mailbox {
     this.registrationSignature=signature;this.registrationWrittenAt=Date.now();
     writePrivate(path.join(this.instance, 'registration.json'), {
       protocolVersion: 1, adapterID: this.adapterID, instanceID: this.instanceID, name: this.name,
-      sessions, capabilities, processID: process.pid, updatedAt: Date.now()/1000,
+      sessions, capabilities, controlTransport: this.controlTransport, processID: this.processID, updatedAt: Date.now()/1000,
     });
   }
   emit(sessionID, state, { turnID = this.turns.get(sessionID) || 'live', reply, eventID = crypto.randomUUID() } = {}) {
     const sequence = ++this.sequence;
     writePrivate(path.join(this.events, Date.now().toString().padStart(16,'0') + '-' + crypto.randomUUID() + '.json'), {
+      nativeProcessID: this.processID,
       event: { applicationID: this.adapterID, instanceID: this.instanceID, sessionID: String(sessionID),
         turnID: String(turnID), eventID, sequence, state, timestamp: Date.now()/1000 }, reply,
     });
@@ -52,7 +56,7 @@ export class Mailbox {
     this.busy = true;
     try {
       for (const name of fs.readdirSync(this.requests).filter(n => /^[A-Za-z0-9_-]+\.json$/.test(n)).slice(0,32)) {
-        const file = path.join(this.requests, name); let request;
+        const file = path.join(this.requests, name); let request,invoked=false;
         try {
           const stat = fs.lstatSync(file);
           if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== process.getuid() || stat.size > 262144) continue;
@@ -67,13 +71,13 @@ export class Mailbox {
           if (request.text != null && (typeof request.text !== 'string' || Buffer.byteLength(request.text)>64000)) throw new Error('Invalid prompt');
           writePrivate(response, {requestID:request.requestID,status:'accepted'});
           try {
-            await handler(request);
+            invoked=true;await handler(request);
             writePrivate(response, {requestID:request.requestID,status:'applied'});
           } catch(error) {
-            writePrivate(response, {requestID:request.requestID,status:error?.code==='DELIVERY_UNKNOWN'?'deliveryUnknown':'failed',error:String(error?.message || error).slice(0,300)});
+            writePrivate(response, {requestID:request.requestID,status:error instanceof NotDeliveredError?'failed':'deliveryUnknown',error:String(error?.message || error).slice(0,300)});
           }
         } catch(error) {
-          if (request && safeComponent(request.requestID)) writePrivate(path.join(this.responses,request.requestID+'.json'), {requestID:request.requestID,status:'failed',error:String(error?.message || error).slice(0,300)});
+          if (request && safeComponent(request.requestID)) writePrivate(path.join(this.responses,request.requestID+'.json'), {requestID:request.requestID,status:invoked?'deliveryUnknown':'failed',error:String(error?.message || error).slice(0,300)});
         } finally { try { fs.unlinkSync(file); } catch {} }
       }
       // 超过10分钟的孤立正文不保留；正常情况下Swift读取后立即删除。

@@ -755,12 +755,22 @@
         }
       }
     },
-    "Hook 合并写入并备份；请在原 Claude Code 会话重新加载配置。": {
+    "Hook 仅提供生命周期和回复，发送与停止需要官方双向接口": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hooks are merged and backed up. Reload the configuration in your existing Claude Code session."
+            "value": "Hooks provide lifecycle events and replies only. Sending and stopping require an official bidirectional interface."
+          }
+        }
+      }
+    },
+    "Hook 仅收提醒；官方 Mod 已导出，需在原 Claude Code 交互会话安装并重新加载。仅加载后的原实例允许发送。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hooks receive notifications only. The official Mod has been exported; install and reload it in the original interactive Claude Code session. Only that loaded instance can send."
           }
         }
       }
@@ -934,16 +944,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Use Passport push-to-talk for AI Assistant"
-          }
-        }
-      }
-    },
-    "Passport 文字显示失败，请在电脑查看本轮回复。%@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Passport could not display the text. View this reply on your computer. %@"
           }
         }
       }
@@ -1825,12 +1825,22 @@
         }
       }
     },
-    "仅当前选中会话联动宠物与回复；发送、停止和最终回复需在原应用实测。": {
+    "仅接收官方生命周期通知；没有已验证的原实例双向接口时无法发送或停止。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Only the selected session controls the pet and replies. Verify sending, stopping and final replies in the original app."
+            "value": "Receives official lifecycle notifications only. Sending and stopping require a verified bidirectional interface to the original instance."
+          }
+        }
+      }
+    },
+    "仅接收提醒：当前会话没有可用的官方发送通道。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notifications only: this session has no available official sending channel."
           }
         }
       }
@@ -1991,6 +2001,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Save and check Kimi"
+          }
+        }
+      }
+    },
+    "保存草稿": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save Draft"
           }
         }
       }
@@ -2191,26 +2211,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "other firmware"
-          }
-        }
-      }
-    },
-    "内置接入已启用": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Built-in integration enabled"
-          }
-        }
-      }
-    },
-    "内置辅助功能接入；安装启用，卸载停用。系统辅助功能权限与原应用数据保持不变。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Built-in Accessibility integration: install to enable, uninstall to disable. System permissions and the original app data are preserved."
           }
         }
       }
@@ -2515,16 +2515,6 @@
         }
       }
     },
-    "原应用任务失败，请在原会话查看详情。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The task failed in the original app. Check that session for details."
-          }
-        }
-      }
-    },
     "原应用会话": {
       "localizations": {
         "en": {
@@ -2611,6 +2601,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "The original composer already contains a draft. Handle it before sending another message."
+          }
+        }
+      }
+    },
+    "原进程官方桥接已连接；发送等待原会话接收回执": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The original process’s official bridge is connected. Sending waits for its native session admission receipt."
           }
         }
       }
@@ -3565,6 +3565,16 @@
         }
       }
     },
+    "官方通道已连接": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Official Channel Connected"
+          }
+        }
+      }
+    },
     "官网固件清单有误（%@），已停止": {
       "localizations": {
         "en": {
@@ -4055,6 +4065,16 @@
         }
       }
     },
+    "已有应用会话": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Existing App Sessions"
+          }
+        }
+      }
+    },
     "已检测到": {
       "localizations": {
         "en": {
@@ -4235,12 +4255,32 @@
         }
       }
     },
+    "当前会话": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current Session"
+          }
+        }
+      }
+    },
     "当前固件 %@ 不支持自定义背景，请先更新到 0.1.4 或更高版本。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Firmware %@ doesn't support custom wallpapers. Update to 0.1.4 or later first."
+          }
+        }
+      }
+    },
+    "当前应用未连接官方双向接口，界面控制已停用": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This app has no connected official bidirectional interface. UI control is disabled."
           }
         }
       }
@@ -4255,12 +4295,32 @@
         }
       }
     },
+    "当前接入没有官方双向通道，无法发送或停止": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This integration has no official bidirectional channel and cannot send or stop."
+          }
+        }
+      }
+    },
     "当前模式": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Current Mode"
+          }
+        }
+      }
+    },
+    "当前没有可接收草稿的会话，请重新选择原应用会话。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No session can receive this draft. Select the original app session again."
           }
         }
       }
@@ -4295,6 +4355,26 @@
         }
       }
     },
+    "录音松开后保留草稿，确认后才发送。完成通知双击 OK 可在 Passport 进入对应会话，原会话草稿会保留。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Release the recording button to keep a draft; send it only after confirmation. Double-press OK on a completion notice to select its session on Passport. The previous session’s draft is retained."
+          }
+        }
+      }
+    },
+    "待发送草稿": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Draft to Send"
+          }
+        }
+      }
+    },
     "待总结 %lld 句": {
       "localizations": {
         "en": {
@@ -4311,6 +4391,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Idle"
+          }
+        }
+      }
+    },
+    "待确认草稿": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Draft Awaiting Confirmation"
           }
         }
       }
@@ -4425,6 +4515,16 @@
         }
       }
     },
+    "我已在原会话核对": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "I Checked the Original Session"
+          }
+        }
+      }
+    },
     "所有识别都在本机完成，声音不会离开你的 Mac。可以随时在设置里切换。": {
       "localizations": {
         "en": {
@@ -4451,6 +4551,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Enter Manually…"
+          }
+        }
+      }
+    },
+    "打开 Claude Mod 目录": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Claude Mod Folder"
           }
         }
       }
@@ -4551,6 +4661,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Click in the box below, then hold your shortcut and say something."
+          }
+        }
+      }
+    },
+    "投递结果未知。请先在原会话核对，避免重复发送。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delivery is unknown. Check the original session before sending again to avoid duplicates."
           }
         }
       }
@@ -5031,6 +5151,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Couldn’t get firmware from the website: %@"
+          }
+        }
+      }
+    },
+    "无法保存草稿，请选择会话或处理已有草稿。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to save the draft. Select a session or handle the existing draft."
           }
         }
       }
@@ -6935,16 +7065,6 @@
         }
       }
     },
-    "用于控制你选中的桌面应用会话。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Controls the desktop app session you select."
-          }
-        }
-      }
-    },
     "用于电脑端语音对话。": {
       "localizations": {
         "en": {
@@ -7081,6 +7201,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Hardware keys built for vibe coding"
+          }
+        }
+      }
+    },
+    "确认发送草稿": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirm and Send Draft"
+          }
+        }
+      }
+    },
+    "确认后通过原实例官方通道发送；没有发送能力的会话仅接收提醒，草稿保留在 AI 助理。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "After confirmation, send through the original instance’s official channel. Sessions without sending capability receive notifications only; drafts remain in AI Assistant."
           }
         }
       }
@@ -8675,6 +8815,26 @@
         }
       }
     },
+    "请在会话页面保存草稿并确认发送": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save the draft on the session page and confirm before sending."
+          }
+        }
+      }
+    },
+    "请在应用接入中选择已有会话；未选择时不会发送到云端。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select an existing session in App Integrations. Nothing is sent to the cloud when no session is selected."
+          }
+        }
+      }
+    },
     "请在本机填写有效的 DeepSeek API Key。": {
       "localizations": {
         "en": {
@@ -9341,6 +9501,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "General"
+          }
+        }
+      }
+    },
+    "通知接入已启用": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notification Integration Enabled"
+          }
+        }
+      }
+    },
+    "通知没有可定位的原会话，请在应用接入中选择。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This notification has no locatable original session. Select one in App Integrations."
           }
         }
       }

@@ -16,6 +16,15 @@ static const char *const phases[IB_UI_ASSIST_COUNT]={
     [IB_UI_ASSIST_SPEAKING]="正在朗读"
 };
 static const char desktop[]="电脑助手\n等待会话";
+static const char *const conversation_text[]={"对话","我的草稿","确认发送草稿","此会话仅支持查看","等待电脑验证会话","等待电脑确认"};
+static const label_entry_t conversation_errors[]={
+    {"no_mac","请连接电脑"},{"unbound","请先选择会话"},{"busy","请稍候再操作"},
+    {"draft_exists","原会话已有草稿"},{"stale","会话已变，请重新选择"},
+    {"unknown","结果未知，请查看电脑"},{"read_only","此会话仅支持查看"},
+    {"unavailable","暂不可用，请查看电脑"}
+};
+const char *ib_ui_conversation_text(unsigned i){return i<COUNT(conversation_text)?conversation_text[i]:"";}
+const char *ib_ui_conversation_error(const char *code){if(!code||!code[0])return "";for(unsigned i=0;i<COUNT(conversation_errors);i++)if(!strcmp(code,conversation_errors[i].id))return conversation_errors[i].label;return conversation_errors[COUNT(conversation_errors)-1].label;}
 static const char *const run_mode_text[]={
     "运行模式","AI 助理","连接电脑","返回",
     "上下键选择，确认键确定\n30秒无操作自动返回",
@@ -146,7 +155,7 @@ const char *ib_ui_pet_label(const char *state,bool standalone){
     const char *label=lookup(pets,COUNT(pets),state);
     return label?label:phases[IB_UI_ASSIST_ERROR];
 }
-size_t ib_ui_label_count(void){return COUNT(phases)+COUNT(connections)+COUNT(errors)+COUNT(pets)+1+COUNT(run_mode_text);}
+size_t ib_ui_label_count(void){return COUNT(phases)+COUNT(connections)+COUNT(errors)+COUNT(pets)+1+COUNT(run_mode_text)+COUNT(conversation_text)+COUNT(conversation_errors);}
 const char *ib_ui_label_at(size_t index){
     if(index<COUNT(phases))return phases[index];
     index-=COUNT(phases);
@@ -158,5 +167,9 @@ const char *ib_ui_label_at(size_t index){
     index-=COUNT(pets);
     if(index==0)return desktop;
     index--;
-    return index<COUNT(run_mode_text)?run_mode_text[index]:NULL;
+    if(index<COUNT(run_mode_text))return run_mode_text[index];
+    index-=COUNT(run_mode_text);
+    if(index<COUNT(conversation_text))return conversation_text[index];
+    index-=COUNT(conversation_text);
+    return index<COUNT(conversation_errors)?conversation_errors[index].label:NULL;
 }

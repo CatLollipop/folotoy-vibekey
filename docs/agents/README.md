@@ -1,99 +1,70 @@
-# AI 助理的应用接入
+# AI 助理的官方应用接入
 
-本模块在上游 Codex 导航、通知和听写链路之外增加 `AgentHub`。七个目标分别登记适配器，不把“可以粘贴”当成“可以读取回复和运行状态”。当前未完成真机/真实应用验收的能力仍显示缺失；模拟测试通过不能作为七个应用全部可用的验收证明。
+电脑模式只绑定原应用已有会话。ASR 的最终文本先成为 AI 助理本机草稿，用户确认后才通过该原实例的官方接口发送。没有官方双向通道的应用仅收提醒；不会经辅助功能、键盘、剪贴板、AppleScript 或第二个 Agent 进程发送/停止。普通听写是独立功能，本模块不改变其语义。
 
-## 自动检测与组件管理
+## 会话与能力边界
 
-设置页按「Codex 用量 → 智能体接入 → 可展开的会话测试 / Codex 兼容通知」排列。用量仍使用原有真实账户数据链路；紧凑模式把 Token 和周额度并排显示，空间不足时垂直排列。接入列表默认每行约51pt，能力明细和Kimi连接表单按需展开。
+`ConversationRouter → AgentHub.sendPrompt(text,in:session) → 原实例官方 Adapter → 原会话接收回执`。选择会话或通知跳转只改变本地绑定，不调用 Adapter.activate，不前置、打开、恢复或新建 Mac 会话。通知双击 OK 由设备/统一路由处理，只切 Passport；各会话未发送草稿继续留在本机。
 
-列表左侧使用28pt官方图标并保留原色：优先读取已安装/运行宿主的macOS App图标，未安装时读取客户端内置PNG；Claude Code和Claude Desktop共享Claude官方标记。图标读取不联网、不启动宿主，行高不随图标放大。Xcode平铺和SwiftPM/CLT文件夹打包均支持；来源、原始版本和文件哈希见 [图标来源清单](../../app/VibeKey/Resources/AgentIcons/sources.json)，第三方品牌权利保持原归属。
+`AssistantAgentSession` 的 application / instance / session 是结构化身份；显示名称不参与命令授权。JSON 三元组生成列表 ID，避免冒号等分隔符碰撞。Hub 合并正式发现与最多128个真实事件/通知身份；观察缓存仅用于选择和提醒，不能赋予写入能力。
 
-页面打开后立即检测，每10秒重新检测，并在macOS应用启动/退出通知后刷新；页面离开后取消定时任务。检测只查Launch Services、运行应用、常见可执行文件路径和原有适配器，不启动、重启或切换用户Agent。每行分别显示宿主存在/运行状态、组件安装状态、真实能力结果；安装完成不代表宿主已加载或双向能力通过。
+旧 Claude Hook 与 Mod 同时存在时，私有注册和事件信封携带的原 CLI PID + 原生 session 完全一致才优先 Mod；不同进程或不同会话继续独立提醒，不按标题、相同正文或相近时间猜配。Mod 等待提交回执期间独立续心跳；无可证 PID/session 时不建立 Mod 可写实例。此去重有协议夹具，尚未在用户原会话实测。
 
-| 条目 | 一键安装 | 一键卸载 |
+每次发送/停止都同步调用 `capabilities(for:)`，检查具体原实例和原生会话；应用诊断的能力汇总只供展示。Mailbox 控制能力要求正确的官方 transport、同会话与20秒内心跳。Hook 的 PID 存活可保留观察身份，不能延长控制租约。Kimi 要求当前连接代次中20秒内正式发现的会话。过期或缺少能力时明确阻塞，不切换服务、不改投云对话。
+
+原进程事件经 `ConversationEvent → AgentEventFilter` 按应用/实例/会话/轮次检查单调序号和 event ID；最终正文经 `AgentReply` 去重。只选择当前会话的真实状态联动宠物。通知允许来自其他会话；读取的只有当前事件提供的最终正文，不拉历史。朗读保持暂停。
+
+## 七类应用
+
+| 目标 | 当前官方通道 | 限制与验收边界 |
 | --- | --- | --- |
-| Claude Code | 合并完整生命周期Hook，保留原配置并备份 | 逐命令移除本应用Hook，保留组内其他命令、matcher和用户后来修改的设置 |
-| Claude Desktop / ChatGPT.App | 启用内置AX适配器 | 停用本应用适配器，不撤销系统辅助功能权限，不删除宿主应用 |
-| OMP | 安装本应用扩展包装文件 | 仅删除带本应用标记的包装文件；原会话需再次 `/reload` |
-| DeepSeek Harness | 在本机生成插件包，展开后可打开插件目录 | 仅删除该包固定文件，保留目录内其他文件；宿主已加载插件需自行停用或重新加载 |
-| Kimi Code | 注册本机连接配置，展开地址/令牌表单 | 清除本应用保存的Kimi地址和令牌，断开本应用WS，不停止原服务 |
-| WorkBuddy | 首次选择当前版本的实际Hook JSON；记住位置后可直接合并 | 从记住的JSON逐命令移除本应用Hook并清除路径登记 |
+| Claude Code | 旧 settings Hook 观察；新增官方原进程 Mod，调用 `$.prompt.submit({text,asUser:true})` 和 `$.turn.abort({turnId})`，以 `turn.complete.answer` 取得最终可见正文 | Mod 必须由用户在原交互 CLI 会话安装/重新加载；SDK/-p 不登记可写实例。Mod 先用官方 hookEnv 同时核对原 CLAUDE_PID 与 session ID；无法证明时不登记。当前文件助手使用 CLI 专属 `$.process.run`，不据此承诺 Desktop Code 或普通 Claude Desktop 可发送。公开 API/本机静态验证与夹具通过不等于真实实例加载/投递验收。 |
+| Claude Desktop | 无已验证的普通聊天官方发送通道 | 明确不可发送/停止，原 AX 实现已停用。Claude Code Mod API 不等同普通聊天 API。 |
+| ChatGPT.App / Codex | `codexHook` 生命周期与最终正文通知，保留原生 thread/instance 身份供只读选择 | 本机身份 `com.openai.codex`。官方 app-server 与跨进程 durable queue 已研究；当前没有证明 Desktop 原实例消费和关联回执的可用通道，保持通知能力。不会对当前聊天运行 queue/RPC，不启动第二个 app-server resume。 |
+| OMP / Oh My Pi | 原会话 extension 的 `pi.sendUserMessage` / `context.abort` | 在原实例 `/reload` 后才有能力。空闲发送等待同正文 user-message 入场，忙时使用官方 followUp 入队；最终完成要求真实 idle 且无队列。扩展不读写宿主 editor，草稿只在 AI 助理保存。 |
+| DeepSeek Harness | 原 Cordis runtime 插件，`agent.followup(createUserMessage(...))` / `agent.cancel(...,{keepInbox:true})` | 只列仍在运行的主 Agent，不列子 Agent、不 resume 冷会话。native API 接收/取消请求回执与最终完成/停止事件分别处理。新旧应用 Bundle ID 仅用于安装检测，不提供 AX 回退。 |
+| Kimi Code | 用户已启动的本机 Server REST / WS | 先核对运行版本 OpenAPI；loopback HTTP + 用户令牌；只列已有会话，WS 等真实订阅 ACK，拒绝占用/夺取。REST abort 后等待该原轮次的真实 stopped 事件。Kimi Work 是另一产品。 |
+| WorkBuddy | 合并其实际版本支持的 settings Hook | 只观察原生 session/instance 生命周期与最终正文；无已验证的官方双向通道时不能发送/停止，不再拼接 AX 会话控制。 |
 
-组件卸载后，Hub立即清理对应会话选择并停止发现/轮询，忽略该适配器的迟到事件与回复，防止旧扩展心跳重新恢复接入。未设置新偏好的旧用户默认保留原有接入，重新安装可启用。不会删除Agent程序、账户、聊天记录或用户其他插件，不替原应用进行工具批准。
+安装存在、组件文件存在、实例心跳与实测能力分别显示。缺少能力的应用不能以“可安装”宣称完整双向接入。原应用工具批准继续在原应用完成。
 
-配置安装备份为 `.vibekey-assistant.bak`，卸载前的当前配置另存 `.vibekey-assistant-uninstall.bak`；不会恢复整份旧备份。新写配置和备份从临时文件创建起均为0600。同名非本应用OMP文件或DSH包会明确失败并保留。
+## 安装与原会话加载
 
-运行 `bash app/scripts/test-agent-components.sh` 可在隔离临时目录验证合并、卸载、用户后续设置与同组Hook保留、重复操作、无效配置、权限和偏好隔离；不会安装到用户真实配置。该测试与真实应用版本的加载、权限、发送/停止验收分别记录。
+设置 › 智能体包含统一检测、组件安装与会话选择。检测仅查应用安装元数据、进程存在性、私有邮箱或已配置官方服务；不启动/重启用户 Agent。组件安装后重新检测才展示当前能力。
 
-## 调用链与接口
+- Claude Code 安装同时合并只读 Hook（保留备份）并导出本地 `claude-plugin` marketplace；“打开 Claude Mod 目录”仅打开 Finder。用户在**原交互会话**用 `/plugin marketplace add <该目录绝对路径>`、`/plugin install vibekey-assistant@vibekey-local`，按原应用提示重新加载插件。应用不代输命令、不调用 Claude CLI 安装、不重启会话。Mod 文件助手需要该 CLI 环境可找到 Node；加载失败或组织策略拒绝时没有可写心跳。
+- OMP 安装本应用扩展包装，在原会话 `/reload`；卸载后再 `/reload` 移除。
+- DSH 导出插件包，用户在原运行实例插件管理中加载/停用；宿主解析其官方模块。
+- Kimi 保存用户已运行服务的本机地址和访问令牌；不会自动创建 server。
+- WorkBuddy 首次选择实际 Hook JSON，合并写入并备份；看到原应用真实回调前不宣称接入完成。
+- Claude Desktop / ChatGPT 条目只启用/停用通知与诊断，不伪造外部插件或更改系统辅助功能权限。
 
-- 设置页 / AssistantController → AgentHub 选择的 `AssistantAgentSession` → AgentAdapter → 原应用 AX、原进程扩展或官方 Kimi Server API。
-- 原应用事件 → `ConversationEvent` → 按 application / instance / session / turn 检查序号与 event ID → 仅当前会话的宠物状态。
-- 原应用最终 assistant 正文 → `AgentReply` → 当前会话及 message ID 去重 → AssistantCoordinator → MiniMax TTS。思考、工具结果、错误和取消的半条回复不会朗读。
-- `discover / activate / submit / stop / observeState / readReply` 是完整双向接入要求；`insertDraft` 是可选能力。Kimi/DSH直接提交API没有原编辑器草稿接口，不因此被判定为缺少双向能力。
+卸载仅清除本应用标记组件和本机连接配置，保留原 Agent、聊天、账户及用户自有配置。Hook 卸载逐命令保留组内其他命令；备份不整份回滚。禁用源后立即撤销本地选择与写权并忽略迟到事件。Claude 已导出的本地插件需用户在原会话禁用/卸载并 reload，应用不会抢改该会话的插件清单。
 
-设置 › 智能体将 Codex 用量置于顶部，下方为 `AgentDiagnosticsView(hub:)` 的七项接入列表。旧 `.integrations` 入口转向 `.vibe`，侧栏仅保留一个「智能体」。Claude完整Hook在自身条目安装/卸载；原Codex通知独立收纳为可展开配置。
+## 私有邮箱和投递结果
 
-`AgentDiagnosticsView(hub:)` 提供逐应用能力、原会话选择、测试文本直接发送、写草稿、停止、扩展安装和 Kimi 连接设置。`onEvent`、`onReply`、`onSelectionChange` 均在主线程回调。切换会话取消旧播放，过期异步选择不能覆盖较新的选择。原有 Codex `AgentNotifier` 保留；新助手硬件接管开启时不调用原 Codex 导航或发送。
+应用私有 AgentBridge 目录0700，JSON0600；协议1。注册包含 instance / native sessions / capabilities / `controlTransport` / 更新时间。支持的控制 transport 是 `omp-extension`、`dsh-plugin`、`claude-mod`；缺少该字段的旧扩展需重新安装/加载才授予控制能力，Hook 保持观察。
 
-伴随模式长按下键打开当前发现的原会话与云对话菜单，上下选择、OK 确认；云对话选择清空 Hub，原会话选择等待真实 activate 后切换目的地。短按上键仅提交 Hub 已登记的助手草稿；AX/Claude/OMP在原端进一步核对正文，手动/修改后的草稿不会误发。短按下键取消本地播放并停止所选 Hub 任务，缺少停止回执仍明确报错。菜单页覆盖普通状态；关闭硬件接管才恢复旧设备桥。
+新发送流只用 `sendPrompt` / `stop`，不使用远端 `insertDraft` / `submit` / UI activate。命令带唯一 request ID、原生 session ID 和8秒有效期；邮箱写入和 `accepted` 仅代表运输已接收，`applied` 表示原宿主 API 已接收，既不代表模型任务完成，也不代表语音/文字回复已到达。完成/停止必须另据真实生命周期事件。
 
-## 适配方式与使用
+超时、进程退出、调用结果不明返回 `deliveryUnknown`。Kimi 的所有 POST 网络错误、非成功 HTTP、坏/缺失信封或未知业务码也属于未知；当前没有未经证明就允许重发的 POST 错误码白名单。原进程 API 已调用后抛错默认未知，只有调用前的确定性本地拒绝或官方明确 drop 才是 failed。不自动重发或自动清空草稿，由用户核对原会话后处理。扩展校验原实例/会话、期限、操作与64KiB文本上限；重复 request ID 不执行第二次。每份信封最多256KiB，事件成功读取后删除，孤立事件最多10分钟；不写正文日志、不另存永久历史或云凭据。
 
-| 目标 | 入口 | 真实限制 |
-| --- | --- | --- |
-| Claude Code | 安装 Hook 后在原会话加载；Hook登记原Claude进程与Terminal tty；发送只前置同tty标签页，并等待同会话、同prompt哈希的 UserPromptSubmit 回执 | 仅支持能验证身份的 Apple Terminal。不会向 `/dev/tty` 写输出冒充输入。无法关联停止回执时停止能力保持阻塞；已有草稿需先在原终端处理。 |
-| Claude Desktop | 辅助功能控制当前可见会话 | 需要唯一composer、明确发送/停止控件和带assistant身份的回复容器。只扫描整个窗口或复制全文无法通过朗读验收。 |
-| ChatGPT.App | 本机 `com.openai.codex` 与传统 `com.openai.chat` 分别识别；当前新增Hub使用AX兼容层 | 此Hub没有假称已附着到Desktop私有app-server；原Codex发送/停止/导航链仍保留。AX缺的能力明确阻塞。 |
-| OMP | 安装 `.omp/agent/extensions/vibekey-assistant.mjs` 后在原OMP会话 `/reload`；extension使用正式API | 不启动第二个OMP恢复已有session。闲时省略deliverAs才能启动；忙时followUp原生入队。用户消息正式入场才确认提交，真正idle且无队列才报告完成。 |
-| DeepSeek Harness | 导出插件，通过原DSH runtime的插件管理加载 | 新 `com.deepseek.dsh` 和旧 `ai.deepseek.dsh.desktop.next` 兼容识别。插件只列现有主Agent，使用稳定的 `followup(createUserMessage(...))` 和 `cancel`；不resume冷会话，不依赖发生过签名变化的内部prompt API。插件需由宿主解析 `@deepseek-ai/dsh-llm`。 |
-| Kimi Code Desktop | 用户已启动的 `kimi web`，配置本机地址与访问令牌 | 只允许loopback HTTP，默认端口58627。先检查运行版本 `/openapi.json`，通过REST列会话/提交/停止，WS订阅真实状态和最终回复。不夺取锁、不自动重发、不修改批准/模型设置。Kimi Work是另一产品。 |
-| WorkBuddy | 当前可见窗口AX + 选择实际配置JSON合并Hook | 配置位置依版本选择；未看到回调不算连接。只有Hook `session_title` 与当前窗口标题唯一一致，且窗口document/URL/Identifier明确含同一原生session ID，才将Hook状态/回复绑定到该会话；否则保持AX能力及明确缺口。 |
+## 官方依据
 
-Claude Hook安装保留用户现有条目，先写一次 `.vibekey-assistant.bak`；原Codex Hook不更改。加载扩展/Hook通常需要在原应用执行原生重新加载，不重启或打断用户任务。所有测试输入应在专用测试会话执行。
+- [Claude Mods 概览](https://code.claude.com/docs/en/plugins/mods/overview)、[API](https://code.claude.com/docs/en/plugins/mods/api)、[官方公开类型](https://github.com/anthropics/claude-code/blob/main/mods/types/claude-code.d.ts)：Mod 在原进程执行；prompt admission / drop 与 turn.complete 分离；turn.abort 必须带运行 turnId。`MessageDisplay` 是展示，`UserPromptExpansion` 作用于用户已有输入，都不作为任意发送接口。
+- [Claude 插件安装](https://code.claude.com/docs/en/plugins/install)：可添加本地 marketplace 并在原会话重新加载。这里只导出文件，真实安装由原会话用户执行。
+- [Codex 官方固定0.166.0 queue入口](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/tui/src/session_queue_commands.rs)、[queue processor](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/app-server/src/request_processors/thread_queue_processor.rs)、[跨进程共享队列消费](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/ext/queue/src/service.rs)：queue 可跨进程写共享队列，成功只证明 queued；不能单因无 Desktop socket 断言 API 不存在，也不能以 queued 冒充原 Desktop 已消费。
+- [Kimi Server API](https://moonshotai.github.io/kimi-code/en/reference/server-api.html)、[conversation](https://moonshotai.github.io/kimi-code/en/reference/server-api-conversation.html)、[sessions](https://moonshotai.github.io/kimi-code/en/reference/server-api-sessions.html)。Beta 字段仍以所连接版本 OpenAPI 为准。
 
-### 0.6.2桌面输入框提示与草稿
+## 无外部副作用的回归
 
-ChatGPT/Codex统一使用共享输入快照，写入前、写入后、提交前、提交后的内容判断一致。仅当绑定窗口/进程及完整输入证据可验证时，把生成的占位提示作为空内容；真实已有草稿（包括正文恰与提示相同）、textarea内附件及矛盾/未知快照均不会被覆盖。证据不足显示“无法确认原会话输入框内容，请在原应用检查”，不自动清空、不重试提交，也不改投云对话。
+```bash
+app/scripts/test-agent-hub.sh
+app/scripts/test-agent-bridges.sh
+app/scripts/test-agent-components.sh
+claude plugin validate app/AgentBridges/claude-mod --json
+```
 
-运行 `bash app/scripts/test-composer-snapshot.sh` 可用35个固定内存夹具检查正式解析与读取模型，不访问任何真实App/AX/设备/网络。该测试不证明特定ChatGPT版本已实际发送；仍需用户在专用会话核对投递与回复。textarea以外的附件区域和缺少原生聊天身份的AX能力边界维持原有验收限制。
+Hub 测试编译正式 Hub/Adapter 并注入临时邮箱及假宿主，覆盖本地选择不 activate、只读 Hook 通知保留、精确实例写权、名称不影响身份、碰撞隔离、未知投递无重试及禁用源撤权。现有 Swift core 验证 Kimi schema/REST/WS 和租约/代次隔离、事件过滤及 accepted/applied 区分。Node 夹具真正加载 OMP、DSH 和 Claude Mod 源码，验证官方原进程调用、草稿不触碰 editor、错误/子 Agent/思考隔离、原 turnId stop 和最终正文。
 
-## 文件邮箱协议
-
-`~/Library/Application Support/FoloButtonDev/AgentBridge/` 下目录权限0700，JSON文件0600。协议为1，注册位于 `instances/<instanceID>/registration.json`，包含application、process实例、会话、真实能力和心跳；命令仅允许 `activate / insertDraft / submit / sendPrompt / stop`。
-
-每条命令有独立request ID、session ID和8秒有效期。原扩展先返回 `accepted`，执行成功后返回 `applied`；Swift只有看到applied才返回成功。执行前拒绝过期、错误实例/会话和重复请求，未知投递不重发。消息最多256KiB，prompt最多64KiB。扩展停止后注册撤销，失去心跳的实例不参与发现。
-
-事件正文不写运行日志，Swift消费后删除邮箱事件，孤立事件超过10分钟清理。这里只传当前最终回复，不另存永久聊天历史或云凭据。Claude Hook不扫描历史transcript文件。第三方应用自身保存会话的行为不由本模块改变。
-
-## Kimi协议与回归
-
-Kimi正式文档：
-
-- https://moonshotai.github.io/kimi-code/en/reference/server-api.html
-- https://moonshotai.github.io/kimi-code/en/reference/server-api-conversation.html
-- https://moonshotai.github.io/kimi-code/en/reference/server-api-sessions.html
-
-Beta字段以运行版本schema为准。WS订阅要等匹配request ID的成功回执，响应40931等保持阻塞。ping/pong维持连接，认证失败停止自动重试。历史 `turns` 是替换快照，不播放已结束历史；`assistant_message` 与 `reasoning` 分开，取消/错误/撤销turn不播放。停止REST的 `aborted:true` 不证明已经停止，需等待原turn的interrupted结束事件。
-
-## 验证
-
-运行 `app/scripts/test-agent-bridges.sh`，只需macOS Command Line Tools和Node.js：
-
-- 编译真实Swift产品Models、Mailbox、Kimi API、Reducer和设备助手协议，不启动用户应用或收费模型。
-- Kimi官方REST envelope/schema夹具、主/子agent、历史/实时、reasoning、重复完成、用户取消、undo与错误数据。
-- 实际文件邮箱异步回执、accepted与applied区分、旧/错误会话、过期和重复命令。
-- 真正加载OMP/DSH桥接模块，模拟宿主正式API，验证原会话入队/停止、闲时启动、入场回执、完成时机和正文隔离。
-- 执行真正Python Hook，验证idle_prompt不会变成审批提示，prompt正文不进入事件文件。
-- 设备配置请求rid、成功rev/off匹配、迟到失败隔离、511字节行边界和288字节base64块。
-- 助手按键的短/长按归属、菜单移动/确认、通知ACK与断连复位隔离；MiniMax从助手复用同一Key/base、模型目录可选、删除共享Key和无重复凭据。
-- OMP拒绝手动和已经修改的草稿，真实回执后才清空仍相同的输入。
-
-另运行 `app/scripts/test-assistant-core.sh` 验证云LLM取消隔离、非成功finish_reason不朗读、关闭朗读仍取消旧操作，以及原应用终态/投递回执/最终回复的先后序：终态早于applied暂存，完成无正文也结束等待，早到正文优先，已播放的最终回复不会被随后completed/stopped/error截断。硬件submit/stop绑定按键当时的原会话身份，异步执行前复核，迟到失败不污染新会话。以上均不能代替实际App版本、AX授权、原插件加载及付费服务和设备的实测。
-
-
-### Mailbox测试就绪条件
-
-`AgentCoreTests`的邮箱原进程fixture使用一次性就绪屏障：peer发布registration后，必须能通过生产`AgentMailbox.registrations`读取并得到完整匹配的会话，桌面正例才开始command。peer启动失败会通过屏障直接抛出，不依赖增加固定sleep。accepted与applied之间的160ms是刻意跨过生产80ms轮询以检验投递语义，仍不等于启动同步。
-
-每个CLI核心case都有独立错误归属；Mailbox正例若在就绪后仍sessionChanged，会报告文件存在/解码/可见注册/身份匹配/租约age计数。不会自动重试、吞错或放宽真实注册安全校验。该fixture只用临时目录和专用文本，不访问私人会话。
+本机 Claude 2.1.325 静态 Mod 验证通过；不等于实际插件加载、官方策略批准、真实会话投递或七宿主完整验收。本轮测试不读取私人聊天、不操作 ChatGPT 窗口、不执行真实 queue/RPC/模型调用，也不刷写设备。旧0.6.2 AX composer 修复保留历史记录，但当前 AgentHub 已不调用其发送/停止路径。

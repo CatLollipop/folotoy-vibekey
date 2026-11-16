@@ -28,6 +28,11 @@ def main():
     adapter=os.environ.get('VIBEKEY_HOOK_ADAPTER','claudeCode')
     if adapter not in ['claudeCode','workBuddy']: return
     pid,tty=process_context() if adapter=='claudeCode' else (None,None)
+    if adapter=='claudeCode' and os.environ.get('CLAUDE_CODE_SESSION_ID')==session_id:
+        try:
+            native=int(os.environ.get('CLAUDE_PID','0'))
+            if native>0: os.kill(native,0);pid=native
+        except (ValueError,OSError): pass
     instance_id=adapter+'-'+str(pid or os.getppid())+'-'+hashlib.sha256(session_id.encode()).hexdigest()[:12]
     root=pathlib.Path(os.environ.get('VIBEKEY_BRIDGE_ROOT',pathlib.Path.home()/'Library/Application Support/FoloButtonDev/AgentBridge'))
     instance=root/'instances'/instance_id
@@ -35,6 +40,18 @@ def main():
         folder.mkdir(parents=True,exist_ok=True,mode=0o700)
         if folder.is_symlink() or folder.stat().st_uid!=os.getuid(): return
         folder.chmod(0o700)
+    # 官方Mod和旧Hook可同时安装；同一个原PID+原session只选Mod事件源。
+    # 不按窗口名、内容或时间相似度配对；当前租约来自私有注册协议。
+    if adapter=='claudeCode' and pid:
+        for candidate in list((root/'instances').iterdir())[:128]:
+            file=candidate/'registration.json'
+            try:
+                if candidate.is_symlink() or file.is_symlink(): continue
+                stat=file.stat()
+                if stat.st_uid!=os.getuid() or stat.st_size>262144: continue
+                mod=json.loads(file.read_text())
+                if mod.get('adapterID')=='claudeCode' and mod.get('controlTransport')=='claude-mod' and mod.get('processID')==pid and 0<=time.time()-mod.get('updatedAt',0)<20 and any(s.get('applicationID')=='claudeCode' and s.get('sessionID')==session_id for s in mod.get('sessions',[])): return
+            except (OSError,ValueError,TypeError): continue
     with (instance/'lock').open('a') as lock:
         os.chmod(instance/'lock',0o600);fcntl.flock(lock,fcntl.LOCK_EX)
         state_file=instance/'state.json'
@@ -61,11 +78,11 @@ def main():
           'sessions':[{'applicationID':adapter,'instanceID':instance_id,'sessionID':session_id,
                        'name':str(payload.get('session_title') or (name+' · '+pathlib.Path(str(payload.get('cwd',''))).name))[:200]}],
           'capabilities':['discover','observeState']+(['readReply'] if hook=='Stop' and payload.get('last_assistant_message') else []),
-          'processID':pid,'terminalTTY':tty,'updatedAt':time.time()}
+          'processID':pid,'terminalTTY':tty,'controlTransport':'settings-hook','updatedAt':time.time()}
         atomic(instance/'registration.json',registration)
         event={'applicationID':adapter,'instanceID':instance_id,'sessionID':session_id,'turnID':state['turn'],
           'eventID':str(uuid.uuid4()),'sequence':sequence,'state':status,'timestamp':time.time()}
-        envelope={'event':event}
+        envelope={'event':event,'nativeProcessID':pid}
         if hook=='Stop' and isinstance(payload.get('last_assistant_message'),str) and payload['last_assistant_message'].strip():
             text=payload['last_assistant_message'][:32000]
             envelope['reply']={'messageID':hashlib.sha256((state['turn']+text).encode()).hexdigest(),'text':text,'isFinal':True}

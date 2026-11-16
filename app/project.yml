@@ -26,8 +26,8 @@ settings:
     SWIFT_VERSION: "6.0"
     SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
     SWIFT_APPROACHABLE_CONCURRENCY: YES
-    MARKETING_VERSION: "0.6.2"
-    CURRENT_PROJECT_VERSION: "34"
+    MARKETING_VERSION: "0.7.0"
+    CURRENT_PROJECT_VERSION: "35"
     MACOSX_DEPLOYMENT_TARGET: "26.0"
     ARCHS: arm64
     ENABLE_HARDENED_RUNTIME: YES
@@ -81,7 +81,7 @@ targets:
         LSUIElement: true
         LSApplicationCategoryType: public.app-category.productivity
         CFBundleLocalizations: [zh-Hans, en]
-        NSAppleEventsUsageDescription: AI 助理需要控制你选中的终端会话，用于向 Claude Code 输入语音指令。
+        NSAppleEventsUsageDescription: 用于你主动选择的系统自动化操作。
         NSMicrophoneUsageDescription: AI 助理 需要使用麦克风，把你说的话转成文字输入。
         NSAudioCaptureUsageDescription: AI 助理 需要录制所选应用播放的声音，用于生成实时字幕。
         NSLocalNetworkUsageDescription: 通过同一 Wi-Fi 连接 Passport，传输按键、录音和设备状态。

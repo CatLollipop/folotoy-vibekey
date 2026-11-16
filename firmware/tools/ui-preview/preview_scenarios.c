@@ -25,6 +25,13 @@ static const char *s_filter;
 static int s_scale;
 static int s_index;
 static int s_failures;
+static bool s_conversation_enabled=true;
+static const char *conversation_preview_apply(const ib_conversation_t *view,void *ctx){(void)ctx;return ib_ui_conversation_update(view,s_conversation_enabled);}
+static void conversation_request(ib_conversation_t *view,const char *json,bool expected){
+    char response[256]={0};
+    if(!ib_conversation_handle(view,json,strlen(json),response,sizeof(response),preview_now(),conversation_preview_apply,NULL)||
+        (strstr(response,"\"ok\":1")!=NULL)!=expected){fprintf(stderr,"Conversation fixture ACK mismatch: %s\n",response);s_failures++;}
+}
 
 static void shot(const char *name)
 {
@@ -776,5 +783,49 @@ int preview_run_scenarios(const char *out_dir, int scale, const char *filter)
     ib_ui_local_menu_hide();ib_ui_show(IB_UI_OFFLINE,IB_UI_MODE_DICT,"");shot("down_menu_offline_return");
     if(ib_hints_page_window().active)s_failures++;
     printf("DOWN menus: awake remote/local entry and return hashes, background state/list/Agent ownership, production notice/reply page restore, latest error and offline exit passed; local list=%zuB.\n",sizeof(ib_ui_list_t));
+    // 方案B：真实左右两栏。Mac持完整历史，设备只接受绑定匹配的两个128B窗口。
+    int chat_failures_before=s_failures;
+    ib_conversation_t chat={0};ib_conversation_reset(&chat);ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");ib_ui_set_awake(true);
+#define CHAT_ID "0123456789abcdef0123456789abcdef"
+    conversation_request(&chat,"{\"cmd\":\"conversation\",\"op\":\"bind\",\"rid\":1,\"sid\":\"" CHAT_ID "\",\"rev\":21,\"title\":\"Claude Code\",\"writable\":1,\"view\":\"dialogue\"}",true);
+    conversation_request(&chat,"{\"cmd\":\"conversation\",\"op\":\"pane\",\"rid\":2,\"sid\":\"" CHAT_ID "\",\"rev\":21,\"role\":\"agent\",\"page\":3,\"pages\":12,\"text\":\"本轮检查完成。\\n原会话保持不变。\\n请在右栏口述\\n确认后才发送。\"}",true);
+    preview_advance(300);shot("conversation_bound_empty_draft");
+    conversation_request(&chat,"{\"cmd\":\"conversation\",\"op\":\"state\",\"rid\":3,\"sid\":\"" CHAT_ID "\",\"rev\":21,\"phase\":\"recording\",\"drev\":1,\"writable\":1,\"focus\":\"draft\"}",true);
+    conversation_request(&chat,"{\"cmd\":\"conversation\",\"op\":\"pane\",\"rid\":4,\"sid\":\"" CHAT_ID "\",\"rev\":21,\"role\":\"draft\",\"page\":1,\"pages\":1,\"text\":\"请帮我整理\\n今天的工作\"}",true);
+    ib_ui_set_capture_active(true);preview_advance(300);shot("conversation_actual_capture_green");
+    ib_ui_set_capture_active(false);
+    conversation_request(&chat,"{\"cmd\":\"conversation\",\"op\":\"state\",\"rid\":5,\"sid\":\"" CHAT_ID "\",\"rev\":21,\"phase\":\"draft\",\"drev\":2,\"writable\":1,\"focus\":\"draft\"}",true);
+    conversation_request(&chat,"{\"cmd\":\"conversation\",\"op\":\"pane\",\"rid\":6,\"sid\":\"" CHAT_ID "\",\"rev\":21,\"role\":\"draft\",\"page\":1,\"pages\":4,\"text\":\"请帮我整理\\n今天的工作，\\n暂时不要发送。\"}",true);
+    preview_advance(200);shot("conversation_draft_requires_confirmation");
+    if(preview_region_ink(43,284,176,35)!=0)s_failures++; // 普通阶段仅动画icon，无常驻状态caption。
+    unsigned left=preview_region_ink(27,94,84,160),right=preview_region_ink(131,94,82,160),mini=preview_region_ink(23,54,28,28),hint=preview_region_ink(220,260,18,20);
+    if(left<30||right<30||mini<20||hint<8||ib_hints_page_window().total!=4||ib_hints_current_icon(IB_UI_KEY_OK)!=IB_ICON_SEND)s_failures++;
+    printf("Conversation visible pixels: left=%u right=%u selected-mini=%u OK=%u; model=%zuB.\n",left,right,mini,hint,sizeof(chat));
+    printf("Conversation checks after first panes: %d\n",s_failures-chat_failures_before);
+    uint32_t draft_pixels=preview_region_hash(125,88,94,184);char oversized[480],wide[129];memset(wide,'W',128);wide[128]=0;
+    snprintf(oversized,sizeof(oversized),"{\"cmd\":\"conversation\",\"op\":\"pane\",\"rid\":7,\"sid\":\"%s\",\"rev\":21,\"role\":\"draft\",\"page\":1,\"pages\":4,\"text\":\"%s\"}",CHAT_ID,wide);
+    conversation_request(&chat,oversized,false);if(preview_region_hash(125,88,94,184)!=draft_pixels)s_failures++;
+    printf("Conversation checks after clip rejection: %d\n",s_failures-chat_failures_before);
+    conversation_request(&chat,"{\"cmd\":\"conversation\",\"op\":\"state\",\"rid\":8,\"sid\":\"" CHAT_ID "\",\"rev\":21,\"phase\":\"draft\",\"drev\":2,\"writable\":1,\"focus\":\"agent\"}",true);
+    shot("conversation_agent_focus_scroll_pips");if(ib_hints_page_window().total!=12||ib_hints_page_window().current!=2)s_failures++;
+    draft_pixels=preview_region_hash(125,88,94,184); // 焦点边框已切换，比较正文保留时使用相同focus。
+    uint32_t panes=preview_region_hash(21,88,198,184);
+    ib_ui_local_menu_show(&wifi);shot("conversation_network_menu_000ms");uint32_t chat_menu=preview_region_hash(0,24,240,296);
+    preview_advance(60);if(preview_region_hash(0,24,240,296)!=chat_menu)s_failures++;
+    ib_ui_local_menu_hide();ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");shot("conversation_network_menu_restored");
+    if(preview_region_hash(21,88,198,184)!=panes||ib_hints_page_window().total!=12)s_failures++;
+    printf("Conversation checks after menu: %d\n",s_failures-chat_failures_before);
+    if(ib_conversation_mark_action(&chat,81,false)||ib_ui_conversation_update(&chat,true))s_failures++;
+    shot("conversation_confirmation_pending");
+    conversation_request(&chat,"{\"cmd\":\"conversation\",\"op\":\"result\",\"rid\":9,\"gid\":81,\"status\":\"unknown\"}",true);
+    shot("conversation_unknown_keeps_draft");if(ib_conversation_can_confirm(&chat)||preview_region_hash(125,88,94,184)!=draft_pixels)s_failures++;
+    printf("Conversation checks after unknown: %d\n",s_failures-chat_failures_before);
+    s_conversation_enabled=false;if(ib_ui_conversation_update(&chat,false))s_failures++;shot("conversation_standalone_cache_not_overlay");
+    s_conversation_enabled=true;if(ib_ui_conversation_update(&chat,true))s_failures++;shot("conversation_companion_restores_columns");
+    conversation_request(&chat,"{\"cmd\":\"conversation\",\"op\":\"view\",\"rid\":10,\"sid\":\"" CHAT_ID "\",\"rev\":21,\"view\":\"pet\"}",true);
+    shot("conversation_pet_shortcut_view");
+    conversation_request(&chat,"{\"cmd\":\"conversation\",\"op\":\"clear\",\"rid\":11}",true);
+    printf("Conversation UI: production wire→atomic mapped glyph windows, true columns/mini/pips, reject clipping, menu return, confirmation lock and standalone gating checked; failures=%d.\n",s_failures-chat_failures_before);
+#undef CHAT_ID
     return s_failures;
 }

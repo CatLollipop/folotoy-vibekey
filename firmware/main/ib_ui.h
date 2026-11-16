@@ -10,6 +10,7 @@
 #include "ib_icons.h"
 #include "ib_ui_labels.h"
 #include "ib_reply_view.h"
+#include "ib_conversation.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -105,6 +106,8 @@ bool ib_ui_notification_show(uint32_t generation,const char *source,ib_ui_notifi
 bool ib_ui_notification_hide(void);
 bool ib_ui_notification_page(int delta);
 bool ib_ui_notification_visible(void);
+// 独立电脑会话窗口：只有实际companion且Mac在线才enabled；standalone只缓存，不抢云页面。
+const char *ib_ui_conversation_update(const ib_conversation_t *,bool enabled);
 
 // 建立全部页面与状态栏,初始显示 OFFLINE。需先 bsp_lvgl_init()。
 esp_err_t ib_ui_init(void);

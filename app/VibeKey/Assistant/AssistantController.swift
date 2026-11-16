@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 nonisolated enum AssistantPhase: String, Sendable {
-    case idle, recording, transcribing, thinking, replying, speaking, completed, stopped, failed
+    case idle, recording, transcribing, draft, thinking, replying, speaking, completed, stopped, failed
 }
 
 /// 每次操作都有 generation；旧网络、音频和事件回调不能改变新一轮会话。
@@ -19,14 +19,15 @@ nonisolated enum AssistantPhase: String, Sendable {
     private(set) var inputTokens = 0
     private(set) var outputTokens = 0
     var isRecording: Bool { phase == .recording }
-    var isBusy: Bool { ![.idle, .completed, .stopped, .failed].contains(phase) }
+    var isBusy: Bool { ![.idle, .draft, .completed, .stopped, .failed].contains(phase) }
     @ObservationIgnored var onPhase: ((AssistantPhase) -> Void)?
     /// 句final仍是录音中的增量；只有finish和事件流完整收敛才发final=true。
     @ObservationIgnored var onTranscript: ((String, Bool) -> Void)?
     /// 只发布最终回复正文；设备全文显示有独立协议，不混入ASR字幕。
     @ObservationIgnored var onReply: ((String) -> Void)?
     @ObservationIgnored var willRecord: (() -> Void)?
-    @ObservationIgnored var sendToApplication: ((String) async throws -> Void)?
+    /// Mac应用目的地只生成本地草稿；正式确认/投递由会话Router负责。
+    @ObservationIgnored var onApplicationDraft: ((String) -> Void)?
     @ObservationIgnored private let store: AssistantStore
     @ObservationIgnored private let service: any AssistantCloudServing
     @ObservationIgnored private let makeSource: () -> any AudioSource
@@ -34,7 +35,11 @@ nonisolated enum AssistantPhase: String, Sendable {
     @ObservationIgnored private let player: (any AssistantAudioPlaying)?
     @ObservationIgnored private var source: (any AudioSource)?
     @ObservationIgnored private var capture: AssistantCaptureGate?
-    @ObservationIgnored private var captureContext: (AssistantProfile, AssistantSecrets, Destination)?
+    private enum FinalTextTarget {
+        case cloud
+        case draft(((String) -> Void)?)
+    }
+    @ObservationIgnored private var captureContext: (AssistantProfile, AssistantSecrets, FinalTextTarget)?
     @ObservationIgnored private var recognition: (any ASRSession)?
     @ObservationIgnored private var recognitionEvents: Task<Void, Never>?
     @ObservationIgnored private var recognitionFailure: String?
@@ -45,9 +50,6 @@ nonisolated enum AssistantPhase: String, Sendable {
     @ObservationIgnored private var timer: Task<Void, Never>?
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var history = AssistantHistory()
-    @ObservationIgnored private var applicationWaiting = false
-    @ObservationIgnored private var awaitingApplicationReceipt = false
-    @ObservationIgnored private var pendingApplicationOutcome: ApplicationTurnOutcome?
 
     init(store: AssistantStore, service: any AssistantCloudServing = AssistantCloudClient(),
          player: (any AssistantAudioPlaying)? = nil,
@@ -58,8 +60,19 @@ nonisolated enum AssistantPhase: String, Sendable {
     }
 
     func beginRecording(using override: (any AudioSource)? = nil) {
+        let target: FinalTextTarget = destination == .cloud ? .cloud : .draft(onApplicationDraft)
+        beginCapture(using: override, target: target)
+    }
+
+    /// 设备录音只产出本generation的最终文本，不读取Mac试用目的地或发起LLM/Agent请求。
+    func beginDraftRecording(using source: any AudioSource, onFinal: @escaping (String) -> Void) {
+        beginCapture(using: source, target: .draft(onFinal))
+    }
+
+    private func beginCapture(using override: (any AudioSource)?, target: FinalTextTarget) {
         cancel()
         do {
+            if case .draft(nil) = target { throw AssistantDraftUnavailable() }
             willRecord?()
             let profile = store.profile, secrets = store.secrets
             try profile.validate(); try secrets.validateASR()
@@ -95,7 +108,8 @@ nonisolated enum AssistantPhase: String, Sendable {
                 }
             }
             self.capture = buffer; self.source = source
-            captureContext = (profile, secrets, destination)
+            // 目的地/回调与generation一起固定，不能在ASR收敛后再读取当前页面的handler。
+            captureContext = (profile, secrets, target)
             try source.start()
             setPhase(.recording)
             onTranscript?("", false)
@@ -116,7 +130,7 @@ nonisolated enum AssistantPhase: String, Sendable {
         capture = nil
         guard heardSpeech else { fail(AssistantError.noSpeech); return }
         guard let session = recognition, let events = recognitionEvents,
-              let (profile, secrets, destination) = captureContext else { fail(AssistantError.noSpeech); return }
+              let (profile, secrets, target) = captureContext else { fail(AssistantError.noSpeech); return }
         let token = generation
         setPhase(.transcribing)
         guard generation == token, phase == .transcribing else { return }
@@ -136,7 +150,7 @@ nonisolated enum AssistantPhase: String, Sendable {
                 recognition = nil; recognitionEvents = nil; captureContext = nil
                 transcript = text; onTranscript?(text, true)
                 try check(token)
-                try await route(text, destination: destination, profile: profile, secrets: secrets, token: token)
+                try await route(text, target: target, profile: profile, secrets: secrets, token: token)
             } catch { if generation == token, !Task.isCancelled { fail(error) } }
         }
     }
@@ -144,35 +158,28 @@ nonisolated enum AssistantPhase: String, Sendable {
     func send(text: String) {
         let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
+        let target: FinalTextTarget = destination == .cloud ? .cloud : .draft(onApplicationDraft)
         cancel()
         let token = generation
         transcript = value; reply = ""; error = nil; deviceReplyError = nil; truncated = false
         let profile = store.profile
         let secrets = store.secrets
-        let destination = destination
         operation = Task { [weak self] in
             guard let self else { return }
             do {
                 try profile.validate()
-                try await route(value, destination: destination, profile: profile, secrets: secrets, token: token)
+                try await route(value, target: target, profile: profile, secrets: secrets, token: token)
             } catch { if generation == token, !Task.isCancelled { fail(error) } }
         }
     }
 
-    private func route(_ text: String, destination: Destination, profile: AssistantProfile, secrets: AssistantSecrets, token: UUID) async throws {
+    private func route(_ text: String, target: FinalTextTarget, profile: AssistantProfile, secrets: AssistantSecrets, token: UUID) async throws {
         try check(token)
-        if destination == .application {
-            guard let sendToApplication else { throw AssistantError.device("application_not_selected") }
-            applicationWaiting = true; awaitingApplicationReceipt = true
-            setPhase(.thinking)
+        if case .draft(let handler) = target {
+            guard let handler else { throw AssistantDraftUnavailable() }
+            setPhase(.draft)
             try check(token)
-            try await sendToApplication(text)
-            try check(token)
-            awaitingApplicationReceipt = false
-            // accepted 是投递状态，不是 agent 完成；完成由原会话的正式事件驱动。
-            setPhase(.replying)
-            // 最终回复可在onPhase中发布并更换generation，稍早的终态不能覆盖它。
-            if generation == token, let pending = pendingApplicationOutcome { finishApplicationTurn(pending) }
+            handler(text)
             return
         }
         try secrets.validate()
@@ -190,22 +197,14 @@ nonisolated enum AssistantPhase: String, Sendable {
         setPhase(.completed)
     }
 
-    /// 原任务终止但没有正文也要结束等待；回执之前暂存，不覆盖已经展示的最终回复。
+    /// 兼容旧调用点；原应用任务/回执由Router管理，不再改变本地识别或草稿状态。
     func finishApplicationTurn(_ outcome: ApplicationTurnOutcome) {
-        guard applicationWaiting, phase == .thinking || phase == .replying else { return }
-        if awaitingApplicationReceipt { pendingApplicationOutcome = outcome; return }
-        applicationWaiting = false; pendingApplicationOutcome = nil
-        switch outcome {
-        case .completed: setPhase(.completed)
-        case .stopped: setPhase(.stopped)
-        case .failed:
-            error = String(localized: "原应用任务失败，请在原会话查看详情。", bundle: .l10n)
-            setPhase(.failed)
-        }
+        // 不把旁路Agent终态当成当前ASR结束或本地草稿的发送确认。
     }
 
     /// 只展示当前会话最终assistant正文；暂停朗读后任何旧偏好均不能触发TTS。
     func showApplicationReply(_ text:String) {
+        guard !isRecording, phase != .transcribing else { return }
         cancel()
         error = nil
         guard text.utf8.count <= 32_768 else { fail(AssistantError.responseTooLarge); return }
@@ -224,7 +223,6 @@ nonisolated enum AssistantPhase: String, Sendable {
         recognition?.cancel(); recognition = nil; recognitionEvents?.cancel(); recognitionEvents = nil
         recognitionFailure = nil; recognitionFinals = []; recognitionPartial = ""
         player?.stop()
-        applicationWaiting = false; awaitingApplicationReceipt = false; pendingApplicationOutcome = nil
         if isBusy { setPhase(.stopped) }
     }
     func newConversation() { cancel(); history.clear(); transcript = ""; reply = ""; error = nil; deviceReplyError = nil; setPhase(.idle) }
@@ -238,7 +236,6 @@ nonisolated enum AssistantPhase: String, Sendable {
         timer?.cancel(); timer = nil
         _ = capture?.seal(); source?.stop(); source = nil; capture = nil; captureContext = nil
         recognition?.cancel(); recognition = nil; recognitionEvents?.cancel(); recognitionEvents = nil
-        applicationWaiting = false; awaitingApplicationReceipt = false; pendingApplicationOutcome = nil
         self.error = error.localizedDescription; setPhase(.failed)
     }
 }
@@ -271,4 +268,10 @@ nonisolated private final class AssistantCaptureGate: @unchecked Sendable {
 nonisolated private struct AssistantRecognitionFailure: LocalizedError {
     let message: String
     var errorDescription: String? { message }
+}
+
+nonisolated private struct AssistantDraftUnavailable: LocalizedError {
+    var errorDescription: String? {
+        String(localized: "当前没有可接收草稿的会话，请重新选择原应用会话。", bundle: .l10n)
+    }
 }

@@ -1,0 +1,8 @@
+{
+  "name": "vibekey-assistant",
+  "version": "1.0.0",
+  "description": "AI 助理在本 Claude Code 会话内的官方双向接入；不创建或恢复其他会话。",
+  "author": {
+    "name": "VibeKey contributors"
+  }
+}

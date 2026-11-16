@@ -1,4 +1,20 @@
-# AI 助理 Mac0.6.2 / Passport0.6.1 验收记录
+# AI 助理0.7.0开发预览验收
+
+0.7选择App内统一已有会话路由。只接原应用已有会话；无官方发送时仅提醒；通知双击OK只切Passport；未发草稿在本次Mac运行中按会话保留。API Key/Wi-Fi/宠物与原数据目录保留。
+
+## 0.7当前证据
+
+- Mac整体SwiftPM编译通过，开发包版本0.7.0/build35；1024条字符串已提取，最终签名包和本机安装记录由交付步骤补充。
+- 100项会话/协议检查通过：原实例隔离、切页草稿、旧识别、同gid互斥、未知票据CAS、旧ACK不删新稿、UTF-8与511B整帧。
+- Controller、AgentHub、Agent bridge、组件配置与通知专项通过；Node桥接8项通过，Claude官方plugin validate静态通过。实际原会话尚未加载的插件不算可用接入。Codex Desktop queue消费/回执仍未验证，本版仅提醒；不存在辅助功能输入fallback。
+- Gzip原源码切片SIGTRAP独立复现，修后27子进程/136正式EOS/ASan通过；真实用户尾块大小未知。
+- 当前8MiB Flash备份完整，cardid与原始备份一致。固件0.7实际构建/保护刷写/回读、双击导航及真实ASR→草稿→官方投递验收待补充；当前设备仍为已验证0.6.1。
+- Mac草稿/票据不跨App重启恢复；没有宣称exactly-once。未安装、接口受限和没有原生双向通道的应用保留明确能力阻塞。
+
+## 历史验收（0.6.2未发布候选 / Passport0.6.1）
+
+0.6.2曾发生ASR EOS gzip崩溃，GitHub Release保持未发布草稿；下方为历史阶段证据，不能当成0.7实测。
+
 
 上游基线为 `nexsjournal/folotoy-vibekey@0eb628bf7a563e67d76fc9e7841bbfdb768b7473`，个人 Fork 为 `CatLollipop/folotoy-vibekey`，分支 `codex/ai-assistant`。历史观察与缺陷见 [阶段记录](assistant-acceptance-history.md)。本页区分主机自动化、真实设备链路、真实云服务和人眼/听音观察。
 

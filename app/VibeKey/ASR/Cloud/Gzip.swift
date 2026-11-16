@@ -27,9 +27,11 @@ nonisolated enum Gzip {
 
     private static func run(_ stream: inout z_stream, input: Data, decompress: Bool) throws -> Data {
         var output = Data()
-        var input = input  // 需要可变指针
-        try input.withUnsafeMutableBytes { (source: UnsafeMutableRawBufferPointer) in
-            stream.next_in = source.bindMemory(to: Bytef.self).baseAddress
+        // removeFirst后的空Data仍可能保留非零起始索引；Foundation对此切片的可变借用会trap。
+        // 显式物化连续独立字节，只读借用给zlib，避免Data切片COW及输入别名的可变访问。
+        let inputBytes = [UInt8](input)
+        try inputBytes.withUnsafeBufferPointer { source in
+            stream.next_in = UnsafeMutablePointer(mutating: source.baseAddress)
             stream.avail_in = uInt(source.count)
             var buffer = [UInt8](repeating: 0, count: 16_384)
             var status: Int32 = Z_OK

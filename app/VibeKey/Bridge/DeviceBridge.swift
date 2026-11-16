@@ -14,6 +14,9 @@ import AppKit
 final class DeviceBridge {
     /// 助手运行时暂时拥有设备页面；其余时候完全保留原听写/字幕/导航状态机。
     var assistantDisplay: (() -> (DeviceUIState, String)?)?
+    /// 新电脑模式只保留设备配置/页面投影，旧AX导航、输入和发送路径不再运行。
+    var officialSessionsOnly = false
+    var onOfficialNotice: ((AgentNotifier.Notice) -> Void)?
     /// 新独立通知事务接管后关闭旧23B ASCII通道，保留Mac胶囊/原对话导航。
     var forwardsLegacyAgentNotices = true
     /// 需要 AppState 提供的动作。
@@ -154,6 +157,7 @@ final class DeviceBridge {
         // 加到 common 模式:菜单打开、模态提示框(如"保存字幕吗?")显示时设备状态也继续同步。
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
+        if officialSessionsOnly { return }
         activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -197,6 +201,7 @@ final class DeviceBridge {
         lastState = nil
         lastConfig = nil
         sync()
+        if officialSessionsOnly { return }
         if connection != .disconnected, let notice = agent.current {
             agent.onNotice?(notice)
         }
@@ -211,6 +216,7 @@ final class DeviceBridge {
 
     /// 原始按键 → 手势 → 动作。手势规则见 `KeyPressTracker`(按压归属、松开判定短按、防抖锁定)。
     private func handle(_ key: DeviceKey, _ event: DeviceKeyEvent, ack: Bool) {
+        guard !officialSessionsOnly else { return }
         switch event {
         case .down:
             let blocked = openingNotice != nil || followupActionInFlight
@@ -242,6 +248,7 @@ final class DeviceBridge {
 
     /// Mac 胶囊和设备 ACK 共用入口。打开过程中保持按键隔离，避免同一次按压启动录音。
     func openNotice(_ notice: AgentNotifier.Notice, fromDevice: Bool = false) {
+        if officialSessionsOnly { onOfficialNotice?(notice); return }
         guard agent.current == notice else { return }
         guard let thread = notice.threadID else { agent.dismiss(fromDevice: fromDevice); return }
         guard !dictation.phase.isBusy, openingNotice == nil, !followupActionInFlight else { return }
@@ -871,6 +878,7 @@ final class DeviceBridge {
             }
             return
         }
+        if officialSessionsOnly { return }
 
         // 列表打开时开始了听写(Mac 上触发):设备已切到录音页,关闭列表,按键不再归列表。
         if list != nil, dictation.phase.isBusy {

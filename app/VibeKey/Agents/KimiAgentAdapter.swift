@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 
 /// Kimi Code 官方本机 Server API；只附着用户启动的 server，不创建或夺取已有会话。
 @MainActor final class KimiAgentAdapter: AgentAdapter {
@@ -13,6 +14,8 @@ import Foundation
     private var sequence: UInt64 = 0
     private var reducer = KimiConversationReducer()
     private var validated = false
+    private var knownSessions = Set<String>()
+    private var discoveredAt = Date.distantPast
     private var endedTurns: [String: ConversationState] = [:]
     private var connectionEpoch = UUID().uuidString
     private let network: URLSession
@@ -33,7 +36,7 @@ import Foundation
         guard Self.localURL(endpoint) != nil else { throw AgentAdapterError.blocked("Kimi 地址必须是本机 HTTP 服务，且不包含用户名、查询或路径") }
         UserDefaults.standard.set(endpoint, forKey: "assistant.kimi.endpoint")
         CredentialStore.shared.set(token, for: "agent.kimi.token")
-        connection = nil; connectionEpoch = UUID().uuidString; validated = false; disconnect()
+        connection = nil; connectionEpoch = UUID().uuidString; validated = false; knownSessions.removeAll(); discoveredAt = .distantPast; disconnect()
     }
 
     /// 仅清除AI助理保存的连接信息，不更改Kimi服务及其会话。
@@ -41,7 +44,7 @@ import Foundation
         disconnect()
         UserDefaults.standard.removeObject(forKey: "assistant.kimi.endpoint")
         CredentialStore.shared.set("", for: "agent.kimi.token")
-        connection = nil; connectionEpoch = UUID().uuidString; validated = false
+        connection = nil; connectionEpoch = UUID().uuidString; validated = false; knownSessions.removeAll(); discoveredAt = .distantPast
     }
 
     func diagnose() async -> AgentDiagnostic {
@@ -58,7 +61,7 @@ import Foundation
             return AgentDiagnostic(id: id, name: name, capabilities: [.discover, .activate, .submit, .stop, .observeState, .readReply],
                                    detail: "官方本机会话 API 已连接；直接提交，无原应用草稿接口", installed: true, verifiedAt: Date())
         } catch {
-            validated = false
+            validated = false; knownSessions.removeAll(); discoveredAt = .distantPast
             return AgentDiagnostic(id: id, name: name, capabilities: [], detail: error.localizedDescription, installed: !token.isEmpty, verifiedAt: Date())
         }
     }
@@ -67,15 +70,24 @@ import Foundation
         guard validated else { return [] }
         let data = try await request("GET", "/api/v1/sessions?page_size=100")
         guard let items = data["items"] as? [[String: Any]] else { throw AgentAdapterError.invalidResponse }
-        return items.compactMap { item in
+        let result = items.compactMap { item -> AssistantAgentSession? in
             guard let sessionID = item["id"] as? String, Self.safeID(sessionID) else { return nil }
             return AssistantAgentSession(applicationID: id, instanceID: connectionEpoch, sessionID: sessionID,
                                          name: (item["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Kimi Code")
         }
+        knownSessions = Set(result.map(\.sessionID)); discoveredAt = Date()
+        return result
+    }
+
+    /// 只授权当前连接代次中刚发现的原生会话；缓存通知不能赋予写权。
+    func capabilities(for session: AssistantAgentSession) -> Set<AgentCapability> {
+        guard validated, session.applicationID == id, session.instanceID == connectionEpoch,
+              knownSessions.contains(session.sessionID), Date().timeIntervalSince(discoveredAt) < 20 else { return [] }
+        return [.discover, .activate, .submit, .stop, .observeState, .readReply]
     }
 
     func activate(_ session: AssistantAgentSession) async throws {
-        guard validated, session.applicationID == id, session.instanceID == connectionEpoch, Self.safeID(session.sessionID) else { throw AgentAdapterError.sessionChanged }
+        guard capabilities(for: session).contains(.activate), Self.safeID(session.sessionID) else { throw AgentAdapterError.sessionChanged }
         if selected == session, webSocket != nil { return }
         disconnect()
         var components = URLComponents(url: try baseURL(), resolvingAgainstBaseURL: false)!
@@ -135,11 +147,11 @@ import Foundation
             "prompt_id": UUID().uuidString, "content": [["type": "text", "text": text]],
         ])
         guard let status = result["status"] as? String, ["running", "queued"].contains(status) else {
-            throw AgentAdapterError.blocked("Kimi 未接受消息；请检查原会话")
+            throw AgentAdapterError.deliveryUnknown
         }
     }
     func stop(in session: AssistantAgentSession) async throws {
-        guard selected == session else { throw AgentAdapterError.sessionChanged }
+        guard capabilities(for: session).contains(.stop), selected?.sessionID == session.sessionID, selected?.instanceID == session.instanceID else { throw AgentAdapterError.sessionChanged }
         guard let turnID = reducer.activeTurnIDs.first else { throw AgentAdapterError.blocked("尚未取得当前运行轮次，请等待状态同步后再停止") }
         _ = try await request("POST", "/api/v1/sessions/\(session.sessionID):abort", body: [:])
         let deadline = ContinuousClock.now + .seconds(8)
@@ -153,6 +165,11 @@ import Foundation
         throw AgentAdapterError.deliveryUnknown
     }
     func poll(_ session: AssistantAgentSession?) async {
+        // 心跳只在已核验连接上更新原会话列表；认证/网络失败后停下，需用户重新检测。
+        if validated, Date().timeIntervalSince(discoveredAt) > 10 {
+            do { _ = try await discover() }
+            catch { validated = false; knownSessions.removeAll(); discoveredAt = .distantPast; return }
+        }
         if let session, session.applicationID == id, webSocket == nil { try? await activate(session) }
     }
 
@@ -182,14 +199,26 @@ import Foundation
         var request = URLRequest(url: URL(string: path, relativeTo: try baseURL())!)
         request.httpMethod = method; request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
         if let body { request.httpBody = try JSONSerialization.data(withJSONObject: body); request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
-        let (data, response) = try await network.data(for: request)
+        let data: Data, response: URLResponse
+        do { (data, response) = try await network.data(for: request) }
+        catch { if method == "POST" { throw AgentAdapterError.deliveryUnknown }; throw error }
+        return try Self.responsePayload(method: method, data: data, response: response)
+    }
+    /// POST一旦离开客户端，普通HTTP失败/坏信封/未知业务码都不能证明服务端未执行。
+    /// 当前没有经过核实的POST“执行前拒绝”码白名单，保守返回未知；GET诊断仍可明确失败。
+    nonisolated static func responsePayload(method: String, data: Data, response: URLResponse) throws -> [String: Any] {
+        let uncertain = method == "POST"
+        let invalid: AgentAdapterError = uncertain ? .deliveryUnknown : .invalidResponse
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), data.count <= 2_097_152,
-              let envelope = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw AgentAdapterError.invalidResponse }
-        guard envelope["code"] as? Int == 0 else {
-            let code = envelope["code"] as? Int ?? -1
+              let envelope = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let number = envelope["code"] as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+              let code = envelope["code"] as? Int, number.doubleValue == Double(code) else { throw invalid }
+        guard code == 0 else {
+            if uncertain { throw AgentAdapterError.deliveryUnknown }
             throw AgentAdapterError.blocked("Kimi API 拒绝请求（\(code)）；不会自动夺取、重试或修改权限")
         }
-        return envelope["data"] as? [String: Any] ?? [:]
+        guard let payload = envelope["data"] as? [String: Any] else { throw invalid }
+        return payload
     }
     private func rawGET(_ path: String) async throws -> [String: Any] {
         var request = URLRequest(url: URL(string: path, relativeTo: try baseURL())!)

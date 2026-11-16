@@ -4,6 +4,11 @@ import Foundation
 nonisolated enum AgentLocalizedKeys {
     static func lookup(_ value: String) -> String {
         switch value {
+        case "当前接入没有官方双向通道，无法发送或停止": String(localized: "当前接入没有官方双向通道，无法发送或停止", bundle: .l10n)
+        case "请在会话页面保存草稿并确认发送": String(localized: "请在会话页面保存草稿并确认发送", bundle: .l10n)
+        case "原进程官方桥接已连接；发送等待原会话接收回执": String(localized: "原进程官方桥接已连接；发送等待原会话接收回执", bundle: .l10n)
+        case "当前应用未连接官方双向接口，界面控制已停用": String(localized: "当前应用未连接官方双向接口，界面控制已停用", bundle: .l10n)
+        case "Hook 仅提供生命周期和回复，发送与停止需要官方双向接口": String(localized: "Hook 仅提供生命周期和回复，发送与停止需要官方双向接口", bundle: .l10n)
         case "所选会话没有由助手写入的待发送草稿": String(localized: "所选会话没有由助手写入的待发送草稿", bundle: .l10n)
         case "Claude Code 正在工作或等待确认，请先在原终端处理": String(localized: "Claude Code 正在工作或等待确认，请先在原终端处理", bundle: .l10n)
         case "Hook 已合并并备份；在原 Claude Code 会话重新加载配置后检测": String(localized: "Hook 已合并并备份；在原 Claude Code 会话重新加载配置后检测", bundle: .l10n)

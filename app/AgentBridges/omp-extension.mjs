@@ -1,12 +1,11 @@
 // 使用Oh My Pi正式extension API，在用户原会话进程内加载；不启动第二个omp。
 import crypto from 'node:crypto';
-import { Mailbox } from './mailbox.mjs';
+import { Mailbox,NotDeliveredError } from './mailbox.mjs';
 
 export default function vibekeyExtension(pi) {
-  let bridge, context, sessionID, timer, finalMessage, finalStop, pendingEnd, ownedDraft;
+  let bridge, context, sessionID, timer, finalMessage, finalStop, pendingEnd;
   const admissions=new Map();
-  const capabilities = () => ['discover','activate','submit','stop','observeState','readReply',
-    ...(context?.ui?.supportsEditor ? ['insertDraft'] : [])];
+  const capabilities = () => ['discover','activate','submit','stop','observeState','readReply'];
   const publish = () => {
     if (!bridge || !context) return;
     const liveID = context.sessionManager.getSessionId();
@@ -15,7 +14,7 @@ export default function vibekeyExtension(pi) {
     bridge.register([bridge.session(sessionID, 'OMP · '+context.cwd.split('/').pop())], capabilities());
   };
   const submit = async text => {
-    if (typeof text !== 'string' || !text.trim()) throw new Error('Empty prompt');
+    if (typeof text !== 'string' || !text.trim()) throw new NotDeliveredError('Empty prompt');
     // 显式followUp在空闲时也只排队、不启动，因此空闲必须走省略deliverAs的原生入口。
     if(!context.isIdle()) { await pi.sendUserMessage(text,{deliverAs:'followUp'}); return; }
     const key=crypto.createHash('sha256').update(text).digest('hex');
@@ -30,7 +29,7 @@ export default function vibekeyExtension(pi) {
     } finally { clearTimeout(timeout);admissions.delete(key); }
   };
   pi.on('session_start', async (_event, ctx) => {
-    context=ctx; bridge?.close(); bridge=new Mailbox('omp','OMP'); finalMessage=undefined; ownedDraft=undefined; publish();
+    context=ctx; bridge?.close(); bridge=new Mailbox('omp','OMP',{controlTransport:'omp-extension'}); finalMessage=undefined; publish();
     clearInterval(timer);
     timer=setInterval(async()=>{
       try {
@@ -40,24 +39,11 @@ export default function vibekeyExtension(pi) {
           bridge.emit(sessionID,pendingEnd.state,{turnID:pendingEnd.turnID,reply:pendingEnd.reply});pendingEnd=undefined;
         }
         await bridge.drain(async request=>{
-          if (request.sessionID!==String(context.sessionManager.getSessionId())) throw new Error('Original OMP session changed');
+          if (request.sessionID!==String(context.sessionManager.getSessionId())) throw new NotDeliveredError('Original OMP session changed');
           if (request.operation==='activate') return; // 绑定原会话；无需抢占终端输入。
           if (request.operation==='sendPrompt') return submit(request.text);
-          if (request.operation==='insertDraft') {
-            if (!context.ui.supportsEditor) throw new Error('Original editor is unavailable');
-            if (context.ui.getEditorText().trim()) throw new Error('Original editor already contains a draft');
-            context.ui.setEditorText(request.text); ownedDraft=request.text; return;
-          }
-          if (request.operation==='submit') {
-            if (!context.ui.supportsEditor) throw new Error('Original editor is unavailable');
-            const text=context.ui.getEditorText();
-            if(typeof ownedDraft!=='string' || text!==ownedDraft) throw new Error('Original assistant draft changed');
-            await submit(text);
-            if(context.ui.getEditorText()===text) context.ui.setEditorText('');
-            ownedDraft=undefined; return;
-          }
           if (request.operation==='stop') { await context.abort(); return; }
-          throw new Error('Unsupported operation');
+          throw new NotDeliveredError('Unsupported operation');
         });
       } catch { /* 桥接失败不影响agent本身；心跳失效后桌面会显示阻塞。 */ }
     },200); timer.unref?.();

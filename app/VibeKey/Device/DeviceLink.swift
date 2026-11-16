@@ -55,8 +55,10 @@ import Security
     /// 连接状态变化,主线程调用。连上时 config / state 已经重发过。
     @ObservationIgnored var onConnectionChange: ((Connection) -> Void)?
     @ObservationIgnored var onAssistantMessage: ((DeviceAssistantMessage) -> Void)?
+    @ObservationIgnored var onConversationEvent: ((DeviceConversationMessage) -> Void)?
     private var assistantPending: AssistantPending?
     private var notificationPending: NotificationPending?
+    private var conversationPending: ConversationPending?
     /// 16 kHz 单声道 float 样本,在后台串行队列上调用。
     @ObservationIgnored var onMicSamples: (@Sendable ([Float]) -> Void)? {
         didSet { mic.setHandler(onMicSamples) }
@@ -584,7 +586,7 @@ import Security
 
     /// 切换当前连接链路,同步 `connection` 与麦克风过滤;连接状态真正变化时才回调 `onConnectionChange`。
     private func setActive(_ link: DeviceLinkKind?) {
-        if active != link { failAssistantRequest(); failNotificationRequest() }
+        if active != link { failAssistantRequest(); failNotificationRequest(); failConversationRequest() }
         active = link
         mic.setActive(link)
         let newConnection: Connection = switch link {
@@ -709,6 +711,20 @@ import Security
         lastMessageDate = Date()
 
         switch message {
+        case .conversation(let reply):
+            guard isHandshaken(link), link == active else { return }
+            if reply.op == "event" {
+                guard reply.boot == lastDeviceBoot else { return }
+                onConversationEvent?(reply); return
+            }
+            guard let pending = conversationPending, pending.link == link,
+                  reply.requestID == pending.requestID, reply.op == pending.op else { return }
+            if reply.ok, let session = pending.session {
+                guard reply.session == session, reply.revision == pending.revision else { return }
+            }
+            conversationPending = nil; pending.timeout.cancel()
+            if reply.ok { pending.continuation.resume(returning: reply) }
+            else { pending.continuation.resume(throwing: AssistantError.device(reply.error)) }
         case .notification(let reply):
             guard isHandshaken(link), link == active, let pending = notificationPending, pending.link == link,
                   DeviceNotificationProtocol.matches(reply, requestID: pending.requestID, op: pending.op,
@@ -1157,6 +1173,47 @@ import Security
         assistantPending = nil
         pending.timeout.cancel()
         pending.continuation.resume(throwing: AssistantError.deliveryUnknown)
+    }
+
+    private struct ConversationPending {
+        let requestID: UInt32
+        let link: DeviceLinkKind
+        let op: String
+        let session: String?
+        let revision: UInt32?
+        let continuation: CheckedContinuation<DeviceConversationMessage, Error>
+        let timeout: Task<Void, Never>
+    }
+    private func failConversationRequest() {
+        guard let pending = conversationPending else { return }
+        conversationPending = nil; pending.timeout.cancel()
+        pending.continuation.resume(throwing: AssistantError.deliveryUnknown)
+    }
+    /// 独立ACK槽；超时仅报告未知，绝不自动重放用户确认或原应用消息。
+    func conversationRequest(_ op: String, fields: [(String, FlatJSON.Value)] = [],
+                             binding: ConversationRouter.Binding? = nil) async throws -> DeviceConversationMessage {
+        guard let link = active, isHandshaken(link), link == .usb || link == .wifi else { throw AssistantError.deviceUnavailable }
+        guard conversationPending == nil else { throw AssistantError.device("busy") }
+        let rid = UInt32.random(in: 1...UInt32.max)
+        let route: [(String, FlatJSON.Value)] = binding.map { [("sid", .string($0.wireID)), ("rev", .int(Int($0.revision)))] } ?? []
+        let packet = try DeviceConversationProtocol.encode(op: op, requestID: rid, fields: route + fields)
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await withCheckedThrowingContinuation { continuation in
+                let timeout = Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(4))
+                    guard !Task.isCancelled, self?.conversationPending?.requestID == rid else { return }
+                    self?.failConversationRequest()
+                }
+                conversationPending = .init(requestID: rid, link: link, op: op, session: binding?.wireID,
+                    revision: binding?.revision, continuation: continuation, timeout: timeout)
+                sendRaw(packet, via: link)
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                if self?.conversationPending?.requestID == rid { self?.failConversationRequest() }
+            }
+        }
     }
 
     private struct AssistantPending {

@@ -1,13 +1,13 @@
 # AI 助理：Mac 运行链路
 
 本分支基于 nexsjournal/folotoy-vibekey 提交 `0eb628bf7a563e67d76fc9e7841bbfdb768b7473`。
-新增功能保留原有听写、字幕、Codex 操作以及内部 Bundle ID、URL scheme、数据目录。
+新增功能保留原有听写、字幕以及内部 Bundle ID、URL scheme、数据目录。电脑会话接入已改为官方通道，旧 AX 发送/停止不作为回退。
 
 ## 运行模式
 
 电脑端云对话：`AssistantPane / 快捷键 → AssistantController → AudioSource → 录音期豆包实时 ASR → DeepSeek → 文字回复`。
 
-电脑应用会话：`AssistantController → AgentHub → 已选原应用会话 → ConversationEvent / AgentReply → AssistantCoordinator → PetController / 文字回复`。
+电脑应用会话：`ASR → ConversationRouter 本机草稿 → 用户确认 → AgentHub.sendPrompt(in:) → 原实例官方 Adapter → ConversationEvent / AgentReply → AssistantCoordinator → PetController / 文字回复`。原会话选择只绑定本地身份，不改变 Mac 窗口；无官方发送能力时仅收提醒，不改投云端。详见 [应用接入](agents/README.md)。
 
 设备独立对话不经过 Mac，见 [设备助手协议](assistant-device-protocol.md)。设备模式持久化，电脑断连不会把桌面应用指令自动改发 DeepSeek。
 
@@ -44,7 +44,7 @@ DeepSeek SSE 必须有合法终止原因和 `[DONE]`，只收 assistant 正文�
 设置 › AI 助理包含 DeepSeek 连接/测试、对话参数、文字或按住说话试用、权限与设备同步；「前往语音设置」打开识别模型页。识别模型的豆包卡片显示实时识别Key、地址、资源ID和录音上限，提供按实时节奏发送合成文件的识别测试；朗读相关控件和试听已暂停。其它云识别服务仍保留原独立配置入口。
 应用接入诊断、原会话选择、Hook/扩展安装、原 Codex 用量与兼容通知合并到「智能体」；旧 integrations 路由仍转向此页。宠物保留独立分类。
 原听写引导仍可从原入口打开。全局听写快捷键默认仍执行听写，可显式改为 AI 助理。
-Passport伴随模式默认可按住OK调用AI助理。接管开启后硬件事件不进入原 Codex 桥：短按上键只提交当前 Hub 的助手草稿，下键停止当前 Hub 任务/本地播放；长按下键打开「云对话 / 已发现原应用会话 / BACK」，上下移动、OK确认，30秒无操作关闭。切换会话同步 Hub 与对话目的地，并取消旧朗读；断连/关闭接管取消尚未完成的选择。可在设置中关闭接管，恢复原设备听写/导航。Passport页在接管开启时展示助手按键说明和统一智能体入口，仅关闭接管时才显示旧按键映射，避免两套说明冲突。
+Passport 电脑模式按住 OK 识别成当前已有会话的本机草稿，确认后才通过官方通道发送；未选择已有会话时不发送云端。会话/快捷控制及完成通知的 Passport 跳转由统一路由处理，切换后原会话草稿保留。选择不前置或打开 Mac 会话；没有官方双向接口时明确只收提醒。旧 Bridge 的普通听写独立保留。
 
 ## 开发版安装与下载
 
@@ -67,6 +67,7 @@ Command Line Tools路径：`app/scripts/build-clt.sh`。SwiftPM编译真实应�
 ```bash
 app/scripts/test-assistant-core.sh
 app/scripts/test-agent-bridges.sh
+app/scripts/test-agent-hub.sh
 firmware/tools/validate.sh --host
 ```
 

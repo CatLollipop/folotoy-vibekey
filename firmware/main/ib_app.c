@@ -31,6 +31,8 @@
 #include "ib_pet_bundle.h"
 #include "ib_pet.h"
 #include "ib_run_menu.h"
+#include "ib_conversation.h"
+#include "ib_dialogue_keys.h"
 #include "ib_cloud_stream.h"
 #include "cJSON.h"
 #include "ib_ble.h"
@@ -98,6 +100,7 @@ typedef struct {
     bool subscribed;        // EV_LINK
     uint16_t command_size;
     char *command_line;
+    int64_t key_at;         // 物理沿时间；队列/绘制延迟不能把长持误判成短按确认。
 } app_event_t;
 
 static portMUX_TYPE s_assist_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -123,6 +126,12 @@ static uint32_t s_completion_revision,s_completion_seen;
 static esp_partition_mmap_handle_t s_pet_mapping;
 static bool s_pet_mapping_live;
 static ib_run_menu_t s_run_menu;
+static ib_conversation_t s_conversation;
+static ib_dialogue_keys_t s_dialogue_keys;
+static struct {char sid[33],nid[33];uint32_t rev,drev,nrev;bool solo;} s_dialogue_owner;
+static int64_t s_conversation_deadline;
+static bool s_jump_binding_ready;
+static uint32_t s_conversation_ui_seen;static bool s_conversation_ui_enabled;
 static bool s_run_replaying;
 static ib_ui_run_mode_notice_t s_run_notice;
 static QueueHandle_t s_queue;
@@ -184,6 +193,10 @@ static bool notification_apply(void *context);
 static bool notification_hide(void *context);
 static void refresh_boot_frame(void);
 static void handle_key(ib_key_t,ib_key_ev_t,int64_t);
+static void conversation_refresh(int64_t now);
+static bool conversation_key(ib_key_t,ib_key_ev_t,int64_t);
+static bool notification_has_text(void);
+static bool conversation_command(ib_link_t,const char *,size_t,int64_t);
 _Static_assert(IB_CAPTION_MAX == IB_UI_CAPTION_MAX, "caption buffer size mismatch");
 _Static_assert(IB_CAPTION_APP_MAX == IB_UI_CAPTION_APP_MAX, "caption app buffer size mismatch");
 static ib_ui_screen_t s_screen = IB_UI_OFFLINE;
@@ -237,7 +250,7 @@ void ib_app_on_button(bsp_btn_t btn, bsp_btn_ev_t ev, void *user)
 {
     (void)user;
     if (!s_queue || (unsigned)btn >= IB_KEY_COUNT) return;
-    app_event_t event = { .type = EV_KEY, .key = (ib_key_t)btn };
+    app_event_t event = { .type = EV_KEY, .key = (ib_key_t)btn,.key_at=now_ms() };
     switch (ev) {
     case BSP_BTN_PRESS: event.key_ev = IB_KEY_EV_DOWN; break;
     case BSP_BTN_RELEASE: event.key_ev = IB_KEY_EV_UP; break;
@@ -629,7 +642,7 @@ static void apply_state(const ib_cmd_t *cmd, int64_t now)
     if (s_st == IB_ST_REC) {
         s_mic_local = false;
         s_mic_tail_until = 0;
-    } else if (s_audio_ok && ib_audio_mic_active()) {
+    } else if (s_audio_ok && ib_audio_mic_active()&&!(s_conversation.bound&&s_dialogue_keys.recording)) {
         bool grace = (s_st == IB_ST_IDLE || s_st == IB_ST_SUB || s_st == IB_ST_USAGE) && s_mic_local
             && now - s_mic_local_ms < (s_mic_prestart ? MIC_LOCAL_WAIT_MS : MIC_LOCAL_GRACE_MS);
         bool tail = s_st == IB_ST_PROC && prev == IB_ST_REC;
@@ -729,7 +742,13 @@ static void refresh_links(int64_t now)
         }
     }
 
-    if(!ib_links_any(&s_links,now))ib_assistant_companion_release();
+    if(!ib_links_any(&s_links,now)){
+        ib_assistant_companion_release();
+        if(s_conversation.bound&&!ib_assistant_standalone()){
+            mic_stop();ib_dialogue_keys_reset(&s_dialogue_keys);ib_conversation_reset(&s_conversation);
+            s_conversation_deadline=0;s_jump_binding_ready=false;
+        }
+    }
 
     if (ib_assistant_standalone()) {
         s_online=false;
@@ -779,12 +798,115 @@ static bool reply_has_text(void){
     if(s_screen==IB_UI_LIST||s_screen==IB_UI_USAGE||s_screen==IB_UI_SUB||s_screen==IB_UI_OFFLINE)return false;
     ib_reply_snapshot_t view;ib_reply_store_snapshot(&view);return view.active&&view.length>0;
 }
+static ib_link_t conversation_link(int64_t now){
+    if(ib_links_alive(&s_links,IB_LINK_USB,now))return IB_LINK_USB;
+    if(ib_links_alive(&s_links,IB_LINK_WIFI,now))return IB_LINK_WIFI;
+    return IB_LINK_COUNT;
+}
+// 输入归属与视觉模式分开：PET同样只走新会话手势，不回落旧Mac录音路径。
+static bool conversation_input_owned(void){return ib_conversation_input_owner(&s_conversation,ib_assistant_standalone(),s_online,s_run_menu.open||s_wifi_menu||s_screen==IB_UI_LIST);}
+static uint32_t conversation_gid(void){uint32_t gid=++s_dialogue_keys.counter;if(!gid)gid=++s_dialogue_keys.counter;return gid;}
+static void conversation_send(const char *action,uint32_t gid,bool pinned,int64_t now){
+    ib_conversation_t owner={0};const ib_conversation_t *view=&s_conversation;
+    if(pinned){owner.bound=s_dialogue_owner.sid[0]!=0;strcpy(owner.sid,s_dialogue_owner.sid);owner.rev=s_dialogue_owner.rev;owner.drev=s_dialogue_owner.drev;view=&owner;}
+    char packet[256];size_t n=ib_conversation_event(packet,sizeof(packet),action,view,gid,s_boot_id,s_dialogue_owner.nid,s_dialogue_owner.nrev);
+    ib_link_t link=conversation_link(now);if(link!=IB_LINK_COUNT&&n){ib_conversation_note_event(&s_conversation,gid,!strcmp(action,"record_start"));send_to(link,packet,n);}
+}
+static const char *conversation_apply(const ib_conversation_t *view,void *context){
+    (void)context;return s_ui_ok?ib_ui_conversation_update(view,!ib_assistant_standalone()&&s_online):NULL;
+}
+static void conversation_refresh(int64_t now){
+    bool enabled=!ib_assistant_standalone()&&s_online;
+    if(s_conversation.feedback_until&&now>=s_conversation.feedback_until){s_conversation.error[0]=0;s_conversation.feedback_until=0;s_conversation.revision++;}
+    if(s_conversation_deadline&&now>=s_conversation_deadline){s_conversation_deadline=0;s_conversation.pending_gid=0;s_conversation.pending_jump=false;s_conversation.phase=IB_CONV_UNKNOWN;ib_conversation_feedback(&s_conversation,"unknown",now);}
+    if(s_jump_binding_ready&&enabled){if(ib_assistant_notification_dismiss())s_jump_binding_ready=false;}
+    if(s_conversation_ui_seen!=s_conversation.revision||s_conversation_ui_enabled!=enabled){
+        if(!conversation_apply(&s_conversation,NULL)){s_conversation_ui_seen=s_conversation.revision;s_conversation_ui_enabled=enabled;}
+    }
+}
+static ib_dialogue_key_context_t conversation_context(int64_t now){
+    bool solo=ib_assistant_standalone(),online=conversation_link(now)!=IB_LINK_COUNT;
+    bool available=solo?!ib_assistant_busy():ib_conversation_can_record(&s_conversation);
+    return (ib_dialogue_key_context_t){notification_has_text(),conversation_input_owned(),solo||online,
+        available&&!s_conversation.pending_gid&&!s_run_menu.open&&!s_wifi_menu&&!ib_assistant_store_uploading(),ib_conversation_can_confirm(&s_conversation)};
+}
+static void conversation_action(ib_dialogue_key_result_t r,int64_t now){
+    if(r.action==IB_DIALOGUE_KEY_NONE)return;
+    switch(r.action){
+    case IB_DIALOGUE_KEY_RECORD_START:
+        if(!ib_assistant_notification_dismiss()){ib_dialogue_keys_reset(&s_dialogue_keys);ib_conversation_feedback(&s_conversation,"busy",now);break;}
+        if(s_dialogue_owner.solo)ib_assistant_press();
+        else conversation_send("record_start",r.gesture,true,now);
+        break;
+    case IB_DIALOGUE_KEY_RECORD_STOP:
+        if(s_dialogue_owner.solo)ib_assistant_release();
+        else{mic_stop();conversation_send("record_stop",r.gesture,true,now);}
+        break;
+    case IB_DIALOGUE_KEY_CONFIRM:
+        if(!strcmp(s_dialogue_owner.sid,s_conversation.sid)&&s_dialogue_owner.rev==s_conversation.rev&&s_dialogue_owner.drev==s_conversation.drev&&!ib_conversation_mark_action(&s_conversation,r.gesture,false)){
+            conversation_send("confirm",r.gesture,true,now);s_conversation_deadline=now+8000;
+        }else ib_conversation_feedback(&s_conversation,"stale",now);
+        break;
+    case IB_DIALOGUE_KEY_NOTICE_DISMISS:(void)ib_assistant_notification_dismiss();break;
+    case IB_DIALOGUE_KEY_NOTICE_JUMP:{
+        ib_notification_snapshot_t notice;ib_notification_snapshot(&notice);
+        if(conversation_link(now)==IB_LINK_COUNT)ib_conversation_feedback(&s_conversation,"no_mac",now);
+        else if(!notice.active||strcmp(notice.nid,s_dialogue_owner.nid)||notice.rev<s_dialogue_owner.nrev)ib_conversation_feedback(&s_conversation,"stale",now);
+        else if(notice.kind!=IB_NOTIFICATION_DONE)ib_conversation_feedback(&s_conversation,"unavailable",now);
+        else if(ib_conversation_mark_action(&s_conversation,r.gesture,true))ib_conversation_feedback(&s_conversation,"busy",now);
+        else{conversation_send("jump",r.gesture,true,now);s_conversation_deadline=now+8000;}
+        break;}
+    case IB_DIALOGUE_KEY_UNAVAILABLE:
+        ib_conversation_feedback(&s_conversation,conversation_link(now)==IB_LINK_COUNT?"no_mac":!s_conversation.bound?"unbound":!s_conversation.writable?"read_only":"busy",now);break;
+    default:break;
+    }
+    conversation_refresh(now);wake(now);
+}
+static bool conversation_key(ib_key_t key,ib_key_ev_t event,int64_t now){
+    if(key!=IB_KEY_OK)return false;
+    bool owned=s_dialogue_keys.pressed||s_dialogue_keys.pending_tap||s_dialogue_keys.ignore_press;
+    if(!owned&&(s_run_menu.open||s_wifi_menu||s_screen==IB_UI_LIST))return false;
+    ib_dialogue_key_context_t ctx=conversation_context(now);
+    if(!owned&&!ctx.dialogue&&!ctx.notification)return false;
+    if(event==IB_KEY_EV_DOWN&&!s_dialogue_keys.pressed&&!s_dialogue_keys.pending_tap){
+        memset(&s_dialogue_owner,0,sizeof(s_dialogue_owner));strcpy(s_dialogue_owner.sid,s_conversation.sid);
+        s_dialogue_owner.rev=s_conversation.rev;s_dialogue_owner.drev=s_conversation.drev;s_dialogue_owner.solo=ib_assistant_standalone();
+        ib_notification_snapshot_t notice;ib_notification_snapshot(&notice);if(notice.active){strcpy(s_dialogue_owner.nid,notice.nid);s_dialogue_owner.nrev=notice.rev;}
+    }
+    ib_dialogue_key_result_t r=ib_dialogue_keys_event(&s_dialogue_keys,event,now,ctx);
+    if(r.consumed){if(event==IB_KEY_EV_DOWN)wake(now);conversation_action(r,now);}return r.consumed;
+}
+static bool conversation_command(ib_link_t link,const char *line,size_t length,int64_t now){
+    if(!strstr(line,"\"conversation\""))return false;
+    if(link==IB_LINK_BLE)return true;
+    ib_links_seen(&s_links,link,now);refresh_links(now);
+    char response[256],previous_sid[33];strcpy(previous_sid,s_conversation.sid);uint32_t previous_rev=s_conversation.rev;
+    bool pending_jump=s_conversation.pending_jump;
+    if(!ib_conversation_handle(&s_conversation,line,length,response,sizeof(response),now,conversation_apply,NULL))return false;
+    bool changed=strcmp(previous_sid,s_conversation.sid)||previous_rev!=s_conversation.rev;
+    if(changed){
+        if(s_dialogue_keys.recording){if(s_dialogue_owner.solo)ib_assistant_release();else{mic_stop();conversation_send("record_stop",s_dialogue_keys.gesture,true,now);}}
+        ib_dialogue_keys_reset(&s_dialogue_keys);ib_keys_reset(&s_keys);
+        if(pending_jump&&s_conversation.bound)s_jump_binding_ready=true;
+        if(s_conversation.bound&&!ib_assistant_standalone())show_screen(IB_UI_IDLE);
+    }
+    if(!s_conversation.pending_gid)s_conversation_deadline=0;
+    if(pending_jump&&!s_conversation.pending_jump&&s_conversation.feedback_until)s_jump_binding_ready=false;
+    if(s_dialogue_keys.recording&&!s_dialogue_owner.solo&&(s_conversation.phase==IB_CONV_ERROR||s_conversation.phase==IB_CONV_UNKNOWN||
+       (s_conversation.last_result_gid==s_dialogue_keys.gesture&&s_conversation.feedback_until))){
+        mic_stop();ib_dialogue_keys_reset(&s_dialogue_keys);
+    }
+    send_to(link,response,strlen(response));conversation_refresh(now);wake(now);return true;
+}
 static bool notification_has_text(void){return s_ui_ok&&ib_ui_notification_visible();}
-static bool text_has_page(void){return notification_has_text()||reply_has_text();}
+static bool text_has_page(void){return notification_has_text()||conversation_input_owned()||reply_has_text();}
 static void text_page(int delta,int64_t now){
     if(notification_has_text()){
         (void)ib_ui_notification_page(delta);
         if(xSemaphoreTake(s_notification_ui_lock,pdMS_TO_TICKS(50))==pdTRUE){s_notification_deadline=now+30000;xSemaphoreGive(s_notification_ui_lock);}
+    }else if(conversation_input_owned()){
+        const ib_conversation_pane_t *p=s_conversation.focus==IB_CONV_AGENT?&s_conversation.agent:&s_conversation.draft;
+        if(p->text[0]&&((delta<0&&p->page>1)||(delta>0&&p->page<p->pages)))conversation_send(delta<0?"page_prev":"page_next",conversation_gid(),false,now);
     }else if(s_ui_ok)(void)ib_ui_reply_page(delta);
 }
 static bool reply_down_key(ib_key_t key,ib_key_ev_t event,int64_t now){
@@ -855,6 +977,7 @@ static bool run_menu_key(ib_key_t key,ib_key_ev_t event,int64_t now){
 
 static void handle_key(ib_key_t key, ib_key_ev_t ev, int64_t now)
 {
+    if(conversation_key(key,ev,now))return;
     if(!s_reply_nav_replaying&&key==IB_KEY_UP&&ev==IB_KEY_EV_DOWN&&!s_run_menu.open&&!s_wifi_menu)s_reply_up_text=text_has_page();
     // OK首沿先关闭/释放通知，然后走同一个PTT路径；不吞键、不加长按等待，保留首句采集。
     if(key==IB_KEY_OK&&ev==IB_KEY_EV_DOWN&&!s_run_menu.open&&!s_wifi_menu)(void)ib_assistant_notification_dismiss();
@@ -970,7 +1093,8 @@ static void handle_command(ib_link_t link, const ib_cmd_t *cmd, int64_t now)
         break;
     case IB_CMD_MIC:
         if (cmd->on) {
-            mic_start(link, false, now);
+            // 对话录音只归已判定的长持；迟到mic-on不能在松开后重开一次采集。
+            if(ib_conversation_accept_mic(&s_conversation,s_dialogue_keys.recording))mic_start(link, false, now);
         } else {
             mic_stop();
         }
@@ -1300,9 +1424,10 @@ static void app_task(void *arg)
             int64_t now = now_ms();
             switch (ev.type) {
             case EV_KEY:
-                handle_key(ev.key, ev.key_ev, now);
+                handle_key(ev.key, ev.key_ev, ev.key_at?ev.key_at:now);
                 break;
             case EV_COMMAND:{
+                if(conversation_command(ev.link,ev.command_line,ev.command_size,now)){free(ev.command_line);break;}
                 ib_cmd_t command;
                 bool valid=ib_parse_command(ev.command_line,ev.command_size,&command);
                 free(ev.command_line);
@@ -1319,6 +1444,8 @@ static void app_task(void *arg)
         int64_t now = now_ms();
         if(ib_assistant_take_restart_request()&&!s_restart_at)s_restart_at=now+500;
         refresh_links(now);
+        conversation_refresh(now);
+        conversation_action(ib_dialogue_keys_tick(&s_dialogue_keys,now,conversation_context(now)),now);
         refresh_assistant(now);
         if(s_ui_ok)ib_ui_set_capture_active(ib_assistant_standalone()?ib_assistant_capture_active():ib_audio_mic_active());
         refresh_transcript();
@@ -1341,6 +1468,7 @@ esp_err_t ib_app_start(bool ui_ok, bool battery_ok)
     esp_app_get_elf_sha256(s_build_id, sizeof(s_build_id));
     ib_links_init(&s_links);
     ib_keys_reset(&s_keys);
+    ib_conversation_reset(&s_conversation);ib_dialogue_keys_reset(&s_dialogue_keys);
     ib_charge_init(&s_charge);
 
     s_queue = xQueueCreate(EVENT_QUEUE_LEN, sizeof(app_event_t));

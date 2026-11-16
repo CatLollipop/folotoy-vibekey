@@ -140,3 +140,10 @@ JSON Lines:每条消息是一行扁平 UTF-8 JSON 对象,以 `\n` 结尾,单行�
 ## assistant 扩展（schema 1）
 
 新增`cmd=assistant`，支持capabilities/status、带CRC的profile/pet分块事务、mode、clear及44态pet_state。每个请求携带uint32 rid，回执原样回显，异步state无rid；客户端同时匹配链路/op/rid。单行仍≤511字节，每chunk解码≤288字节，profile≤16384字节、pet≤131072字节（AORAPET2二进制；旧4KiB设置JSON兼容）。首次USB同步后才能通过已配对TLS Wi-Fi更新，BLE不传云凭据。成功commit才表示新配置已原子生效。模式/错误/诊断字段和完整示例以 [assistant-device-protocol.md](assistant-device-protocol.md) 为准。
+
+
+## conversation 扩展（0.7，schema1）
+
+单行仍最多511B UTF-8。独立命令：`cap`返回`schema:1,split:1`；`bind`携带sid(32位小写hex)/rev>0/title≤32B/writable0或1/view(dialogue|pet)；`state`携带同binding、phase(idle/recording/transcribing/draft/sending/working/waiting/done/error/unknown)、drev、writable及可选focus(agent|draft)/error机器码；`pane`携带role(agent|draft)、1-based page/pages≤65535、text≤128B；`view`切dialogue/pet；`clear`无binding清当前投影，带binding则必须匹配；`result`携带gid和status(ok/unavailable/stale/unknown)。ACK回显t=conversation/op/rid/ok；带binding请求成功回显sid/rev。
+
+设备上行 `op:event`，action为record_start/record_stop/confirm/page_prev/page_next/focus/view/jump，含8位hex boot与非零uint32 gid。除jump外附sid/rev/drev；jump附nid/nrev，按首次OK时固定身份导航。Host验证当前握手boot及binding，并以boot/gid记录互斥手势owner。start/stop只配对一次，不可再confirm。成功写入显示不等于原Agent投递；原消息由另一不可变票据/官方回执管理。详情见[会话路由](conversation-routing.md)。

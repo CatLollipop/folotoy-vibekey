@@ -27,7 +27,7 @@ CA链、主机名、证书有效期均验证；先同步可信时钟，不提供
 
 客户端消息为4字节v1 header、4字节big-endian payload长度、正文。完整请求type1/JSON，音频type2/rawPCM；最后type2使用flags2负包，允许空尾包。首次请求为`audio pcm/raw/rate16000/bits16/channel1`、`model_name bigmodel`、`result_type full`、`show_utterances:true`、`enable_nonstream:true`、ITN/标点开启。200ms音频一包，最多6400字节PCM。
 
-设备明确协商compression0。官方规定服务端使用客户端的序列化和压缩方法，因此响应同为非压缩JSON；无需在C3额外分配gzip字典。收到未协商的gzip明确返回`asr_unsupported_compression`，不能把压缩字节当正文或假定成功。Mac现有gzip编解码可继续使用；两端不要求相同传输压缩方式。
+设备明确协商compression0。官方规定服务端使用客户端的序列化和压缩方法，因此响应同为非压缩JSON；无需在C3额外分配gzip字典。收到未协商的gzip明确返回`asr_unsupported_compression`，不能把压缩字节当正文或假定成功。Mac使用独立有界gzip编解码，输入切片所有权见下文；两端不要求相同传输压缩方式。
 
 服务type9结果支持flags0无序号、flags1有signed序号、flags2整轮结束无序号、flags3整轮结束且有signed序号。旧表描述flags3负seq，但本次真实服务以flags3/+13返回完整终包，官方新版ResponseParser也只按bit1判last。固件保留signed序号解码，严格校验字段存在及header、大端长度、实际完整payload、UTF-8与JSON语法；type15数值错误码映射稳定机器码，不把服务错误正文写日志。终包缺少完整识别正文、提前终包、提前断开、坏帧、超时均不进入LLM。
 
@@ -94,3 +94,17 @@ CA链、主机名、证书有效期均验证；先同步可信时钟，不提供
 稳态只保留一份同步宠物。新bank校验、头最后提交并切换mmap成功后，擦除旧inactive整bank并逐字读回全FF，commit ACK才返回retired_clean1；失败不回滚新active，返回cleanup_failed/retired_clean0并在空闲维护中重试。清理与事务共享control，采音或相伴麦克风活跃时不清理；新begin/clear要先处理退休bank，暂存仍保障断电原子性。重启扫描整个inactive bank，不能只凭被擦掉的旧头误称资源已删除。Flash分区继续保留作下一次staging，不变成RAM。
 
 0.4端口修复后用户已确认真实实时出字；0.5全文分页、冷启动首帧、单副本回收和连续对话仍以主任务最终真机验收为准，不能以宿主夹具代替。
+
+## Mac gzip输入切片所有权与结束帧
+
+`CloudStreamPump.sendChunks(prefix/removeFirst) → 剩余pending → VolcengineCodec.finishMessages → Gzip.compress`可能传递非零起始索引的Data尾切片，长度也可能为0。Gzip先把输入物化为独立连续的UInt8数组，再在只读buffer借用期内调用zlib；输出缓冲独立，完整压缩/解压结束才释放输入借用，不对原Data进行可变借用或修改共享别名。该修复仅在Mac端，不改变设备compression0或其内存策略。
+
+0.6.2原生App曾在上述EOS路径进入Foundation Data.InlineSlice.withUnsafeMutableBytes后SIGTRAP。独立命令行子进程以原源码重现：6400B合成数据removeFirst到startIndex6400/count0时崩溃；修后同案产生20B合法gzip，另0/1/6399/6400/6401/12799/12800/12801/25600的remove/drop/plain共27子进程通过。原崩溃日志未含真实尾块大小，不能据该合成复现断言用户那次必为空尾块。
+
+离线回归命令为`bash app/scripts/test-gzip.sh`，ASan为`SANITIZE=1 bash app/scripts/test-gzip.sh`。正式Gzip和真实VolcfinishMessages参与136检查：非零/空尾slice、单字节与多块、共享prefix/压缩slice不变、EOS flags与负载字节一致、所有截断gzip拒绝、正好4MiB输出接受与超出拒绝。输入耗尽不替代Z_STREAM_END，输出上限未放宽。检查只使用固定合成字节，不启动App、调用AX、访问密钥/网络/API/设备；不能代替整App和真机语音回归。
+
+## Mac识别只产草稿的Controller边界
+
+`beginDraftRecording(using:onFinal:) → 同一流式ASR/采音门禁 → finish及events完整收敛 → generation检查 → draft阶段 → 本代onFinal`只产最终文本，不经过LLM、Agent或TTS。Router在调用前捕获原会话与绑定版本，在会话切换/取消时使generation失效；回调不得事后重新读取当前选中会话来猜接收方。普通Mac应用目的地的文本/录音也只调用开始时捕获的onApplicationDraft；缺handler在录音建会话前拒绝，不静默改投云端。
+
+普通Mac显式cloud试用继续调用云服务。Controller不再拥有原应用投递回执/accepted状态，应用正式确认由Router单独负责。draft不是忙碌状态；兼容的finishApplicationTurn不消费本地草稿，showApplicationReply在录音/转写中不抢占或取消当前代。`app/scripts/test-assistant-core.sh`验证这些生产Controller行为与原SSE/取消/ASR终态规则；这里只说明Controller接口，完整App路由与设备确认的集成验收单列。

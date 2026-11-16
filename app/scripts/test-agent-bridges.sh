@@ -8,7 +8,7 @@ swiftc -swift-version 6 -default-isolation MainActor -parse-as-library \
   VibeKey/Agents/KimiAgentAdapter.swift VibeKey/Agents/KimiConversationReducer.swift \
   VibeKey/Support/AppLanguage.swift VibeKey/Support/Localization.swift \
   VibeKey/Support/CredentialStore.swift VibeKey/Support/Log.swift \
-  VibeKey/Device/DeviceProtocol.swift VibeKey/Device/DeviceAssistantProtocol.swift \
+  VibeKey/Device/DeviceProtocol.swift VibeKey/Device/DeviceAssistantProtocol.swift VibeKey/Device/DeviceConversationProtocol.swift \
   VibeKey/Device/DeviceTypes.swift VibeKey/Device/DeviceText.swift VibeKey/Assistant/AssistantProfile.swift \
   VibeKey/Bridge/KeyPressTracker.swift VibeKey/Assistant/AssistantHardwareRouter.swift \
   VibeKey/Assistant/AssistantStore.swift VibeKey/ASR/Cloud/CloudProvider.swift \

@@ -6,7 +6,7 @@ mkdir -p build/notification-tests
 swiftc -swift-version 6 -default-isolation MainActor -parse-as-library \
   VibeKey/Agents/AgentModels.swift VibeKey/Agents/AgentLocalizedKeys.swift \
   VibeKey/Agents/AgentNotificationReducer.swift VibeKey/Agents/AgentNotificationQueue.swift \
-  VibeKey/Device/DeviceProtocol.swift VibeKey/Device/DeviceNotificationProtocol.swift \
+  VibeKey/Device/DeviceProtocol.swift VibeKey/Device/DeviceNotificationProtocol.swift VibeKey/Device/DeviceConversationProtocol.swift \
   VibeKey/Device/DeviceAssistantProtocol.swift VibeKey/Device/DeviceTypes.swift VibeKey/Device/DeviceText.swift \
   VibeKey/Support/CRC32.swift VibeKey/Assistant/AssistantProfile.swift \
   VibeKey/Vibe/AgentNotifier.swift VibeKey/Support/Log.swift \

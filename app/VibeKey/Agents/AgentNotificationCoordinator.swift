@@ -4,6 +4,8 @@ import Foundation
 /// busy、断连、丢ACK均重试同nid/rev，最多16项/5分钟；设备commit负责去重，Mac不重复造新事件。
 @MainActor final class AgentNotificationCoordinator {
     var onDelivered: ((PassportNotification, DeviceNotificationDelivery) -> Void)?
+    /// 只注册真实来源身份供设备导航；不会因此授予发送能力，也不激活Mac窗口。
+    var onConversationNotice: ((PassportNotification, AssistantAgentSession) -> Void)?
     private(set) var lastError: String?
     private(set) var suppressedUnboundLegacy = 0
     private let hub: AgentHub
@@ -69,10 +71,15 @@ import Foundation
     }
     func receive(_ event: ConversationEvent) {
         observedModernSources.insert(event.applicationID)
-        if let notice = reducer.receive(event) { enqueue(notice) }
+        if let notice = reducer.receive(event) {
+            bind(notice, to: .init(applicationID: event.applicationID, instanceID: event.instanceID,
+                 sessionID: event.sessionID, name: AgentNotificationReducer.source(event.applicationID)))
+            enqueue(notice)
+        }
     }
     func receive(_ reply: AgentReply) {
         if let notice = reducer.receive(reply) {
+            bind(notice, to: reply.session)
             enqueue(notice)
         }
     }
@@ -104,7 +111,11 @@ import Foundation
         let event = ConversationEvent(applicationID: application, instanceID: notice.instanceID ?? "legacy-hook",
             sessionID: notice.threadID?.uuidString.lowercased() ?? "unbound", turnID: turn,
             eventID: eventID, sequence: 1, state: notice.event == .done ? .completed : .waitingInput, timestamp: notice.date)
-        if let result = reducer.receive(event) { enqueue(result) }
+        if let result = reducer.receive(event) {
+            bind(result, to: .init(applicationID: event.applicationID, instanceID: event.instanceID,
+                 sessionID: event.sessionID, name: notice.source))
+            enqueue(result)
+        }
         let id = DeviceNotificationProtocol.identity([application, event.instanceID, event.sessionID, turn, eventID])
         legacyIdentities[notice.notificationID] = id
         if legacyIdentities.count > 128 { legacyIdentities = legacyIdentities.filter { latestNotices[$0.value] != nil } }
@@ -116,5 +127,10 @@ import Foundation
             let old = noticeOrder.removeFirst(); latestNotices.removeValue(forKey: old); deliveredRevisions.removeValue(forKey: old)
         }
         queue.enqueue(notice, at: Date())
+    }
+    private func bind(_ notice: PassportNotification, to session: AssistantAgentSession) {
+        guard !session.instanceID.isEmpty, !session.sessionID.isEmpty, session.sessionID != "unbound" else { return }
+        hub.registerNotificationSession(session)
+        onConversationNotice?(notice, session)
     }
 }

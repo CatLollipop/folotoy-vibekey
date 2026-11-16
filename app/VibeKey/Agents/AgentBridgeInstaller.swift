@@ -23,6 +23,7 @@ import AppKit
     static var claudeCodeConfigURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/settings.json") }
     static var ompExtensionURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".omp/agent/extensions/vibekey-assistant.mjs") }
     static var dshPluginDirectory: URL { installedDirectory.appendingPathComponent("deepseek-plugin", isDirectory: true) }
+    static var claudeModDirectory: URL { installedDirectory.appendingPathComponent("claude-plugin", isDirectory: true) }
     static func installOMP() throws {
         let source = try installResources().appendingPathComponent("omp-extension.mjs").absoluteString
         let folder = ompExtensionURL.deletingLastPathComponent()
@@ -35,11 +36,47 @@ import AppKit
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
     }
     static func installClaudeCode(configURL: URL? = nil) throws {
+        try exportClaudeMod()
         let file = configURL ?? claudeCodeConfigURL
         try installHookConfig(adapter: "claudeCode", configURL: file)
         let legacy = Set(AgentHookInstaller.Agent.claudeCode.events.map { AgentHookInstaller.command($0.event, agent: .claudeCode) })
         // 只迁移本应用旧精确命令；通用scheme、用户自写Hook和Codex通知都不删除。
         try AgentComponentConfiguration.uninstall(at: file) { legacy.contains($0) }
+    }
+    /// 只导出本地marketplace，用户在原交互会话安装/重新加载后才会产生双向实例。
+    /// 不调用claude、不启动新会话，也不修改用户现有plugin安装清单。
+    static func exportClaudeMod() throws {
+        let fm = FileManager.default
+        let root = claudeModDirectory
+        let plugin = root.appendingPathComponent("plugin")
+        let existingManifest = plugin.appendingPathComponent(".claude-plugin/plugin.json")
+        if fm.fileExists(atPath: existingManifest.path) {
+            guard let data = try? Data(contentsOf: existingManifest),
+                  let item = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  item["name"] as? String == "vibekey-assistant" else { throw AgentComponentConfiguration.Failure.foreignComponent }
+        }
+        let files = [(".claude-plugin/plugin.json", ".claude-plugin/plugin.json"),
+                     ("hooks/hooks.json", "hooks/hooks.json"), ("hooks/register.js", "hooks/register.js"),
+                     ("hooks/mailbox-helper.mjs", "hooks/mailbox-helper.mjs")]
+        for (source, target) in files {
+            guard let resource = Bundle.main.resourceURL?.appendingPathComponent("AgentBridges/claude-mod").appendingPathComponent(source),
+                  fm.fileExists(atPath: resource.path) else { throw AgentAdapterError.blocked("安装包缺少应用桥接资源，请重新构建应用") }
+            let destination = plugin.appendingPathComponent(target)
+            try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            try Data(contentsOf: resource).write(to: destination, options: .atomic)
+            try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destination.path)
+        }
+        guard let mailbox = Bundle.main.url(forResource: "mailbox.mjs", withExtension: nil, subdirectory: "AgentBridges") else {
+            throw AgentAdapterError.blocked("安装包缺少应用桥接资源，请重新构建应用")
+        }
+        let target = plugin.appendingPathComponent("hooks/mailbox.mjs")
+        try Data(contentsOf: mailbox).write(to: target, options: .atomic)
+        try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target.path)
+        let manifest = #"{"name":"vibekey-local","owner":{"name":"VibeKey contributors"},"plugins":[{"name":"vibekey-assistant","source":"./plugin"}]}"#
+        let catalog = root.appendingPathComponent(".claude-plugin/marketplace.json")
+        try fm.createDirectory(at: catalog.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try Data(manifest.utf8).write(to: catalog, options: .atomic)
+        try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: catalog.path)
     }
     /// WorkBuddy配置位置依实际版本选择；未观察到原应用回调之前，安装不代表接入成功。
     static func installWorkBuddy(configURL: URL) throws { try installHookConfig(adapter: "workBuddy", configURL: configURL) }

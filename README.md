@@ -1,10 +1,10 @@
 # AI 助理 · FoloVibe Key Fork
 
-0.6.2仅更新Mac：统一处理ChatGPT/Codex输入框占位提示，保留真实草稿与窗口归属检查；投递失败时设备引导查看Mac详情。Passport继续使用已验收的0.6.1固件。
+0.7.0开发预览：统一已有会话路由、官方接入、语音草稿确认、Passport左右双栏与通知双击OK进入会话。只接原应用已有会话，缺少官方发送接口时仅提醒；不创建独立会话，不前置Mac。详见[会话路由](docs/conversation-routing.md)和[当前验收](docs/assistant-acceptance.md)。
 
 0.6.1：右键桌面宠物 →“宠物设置”；权限页独立轮询并在返回应用时重查；修正长按下键网络/电脑会话菜单闪旧页面与后台状态抢屏。
 
-[下载 0.6.2 Mac开发预览版](https://github.com/CatLollipop/folotoy-vibekey/releases/tag/v0.6.2)：Apple Silicon / macOS26+，包含Mac安装ZIP、SHA-256、使用说明和验收记录。设备固件仍在[0.6.1 Release](https://github.com/CatLollipop/folotoy-vibekey/releases/tag/v0.6.1)。Mac为ad-hoc签名、尚未公证；解压后将“AI 助理.app”放入应用程序，退出并移走同Bundle ID的旧应用，原配置沿用。
+[已发布的 0.6.1 Release](https://github.com/CatLollipop/folotoy-vibekey/releases/tag/v0.6.1)。0.6.2候选曾触发Mac ASR gzip尾切片崩溃，其Release仍为未发布草稿；0.7.0包含该修复。Mac开发版为Apple Silicon / macOS26+、ad-hoc签名、尚未公证；原Bundle ID和配置沿用。
 
 0.6新增设备无重启模式切换、两种模式下的独立应用通知和短完成音。状态词改为紧凑动画图标，长正文分页使用右侧滚动圆点与省略点。通知协议及宿主实际能力边界见[通知说明](docs/agent-notifications.md)。
 
@@ -15,7 +15,7 @@
 在「识别模型」配置豆包实时识别，在「AI 助理」配置 DeepSeek 对话。**当前按用户要求暂停朗读，回复只显示文字，不调用 MiniMax TTS，也不向设备同步 MiniMax Key；原本机配置保留。** Passport 首次通过 USB 同步云配置，再切换独立模式。
 设备按住 OK 说话，底部实时显示转写；松开后等待识别完整终包，再发起对话，单句最长30秒。回复支持分行和分页；显示回复时短按 ▲/▼ 翻页，长按 ▲ 仍打开「AI 助理 / 连接电脑」运行模式菜单，长按 ▼ 打开网络菜单。新一轮说话清除旧回复。
 设备固件必须支持 profile schema2、豆包字幕和`reply_text`能力；旧固件会提示升级，不会误报同步成功。离线屏不再常驻时间栏，启动会先应用已保存宠物再显示第一帧。
-电脑助手接管开启时，长按下键打开云对话 / 原应用会话菜单，上下键选择、OK 确认。短按上键只提交当前 Hub 会话中由助手写入且未被修改的草稿；短按下键停止当前任务。关闭接管后才恢复下文原 Codex 设备行为。
+连接电脑模式中长按下键选择已有会话，也可切换宠物/对话视图、阅读栏和停止当前任务。对话视图左侧迷你宠物与Agent正文，右侧实时ASR和本地草稿；松开录音不发送，短按OK确认。上下键翻当前阅读栏；通知可见时双击OK只在Passport切到对应会话。未发草稿在本次Mac运行中按会话保留。关闭接管不会恢复旧界面自动发送路径。独立云模式仍为松开后ASR→DeepSeek文字回复。
 
 ```bash
 ./scripts/setup-dev.sh                 # CLI工具、Python3.12、隔离ESP-IDF5.5.3
@@ -36,7 +36,7 @@ Aora Bot固定0.2.0 / source `164ffa38b3c27a8512e7c09cfceb7cf0c98f5144`，保留
 
 ---
 
-以下为原项目已有功能与使用说明。
+以下为原项目历史功能与使用说明；其中设备AX导航、自动前置/聚焦和上键发送被本Fork的官方会话路由替代，不作为0.7功能承诺。通用Mac听写与字幕独立保留。
 
 
 FoloVibe Key：全面的 AI 语音指令助手。macOS 本地语音输入 app，配套 FoloToy AI Passport 硬件。默认所有语音识别都在本机完成，也可以接入自己的云端识别服务。

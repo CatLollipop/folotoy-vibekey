@@ -81,7 +81,7 @@ struct AgentDiagnosticsView: View {
                         }
                         HStack(spacing: 8) {
                             presenceLabel(status.presence)
-                            Text(status.componentInstalled ? (kind.isBuiltIn ? "内置接入已启用" : "组件已安装") : "组件未安装")
+                            Text(status.componentInstalled ? (kind.isBuiltIn ? "通知接入已启用" : "组件已安装") : "组件未安装")
                                 .foregroundStyle(.secondary)
                         }.font(.caption)
                     }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
@@ -127,7 +127,11 @@ struct AgentDiagnosticsView: View {
     @ViewBuilder private func componentHelp(_ kind: AgentIntegrationKind) -> some View {
         Group {
             switch kind {
-            case .claudeCode: Text("Hook 合并写入并备份；请在原 Claude Code 会话重新加载配置。")
+            case .claudeCode:
+                Text("Hook 仅收提醒；官方 Mod 已导出，需在原 Claude Code 交互会话安装并重新加载。仅加载后的原实例允许发送。")
+                if integrations.status(kind).componentInstalled {
+                    Button("打开 Claude Mod 目录") { NSWorkspace.shared.activateFileViewerSelecting([AgentBridgeInstaller.claudeModDirectory]) }.controlSize(.small)
+                }
             case .omp: Text("扩展安装后，在原 OMP 会话输入 /reload 加载；卸载后再次 /reload。")
             case .deepseekHarness:
                 Text("安装生成本机插件包；需在 DSH 插件管理中加载到原运行实例。卸载后需在宿主中停用或重新加载。")
@@ -136,7 +140,7 @@ struct AgentDiagnosticsView: View {
                 }
             case .workBuddy: Text("首次安装请选择当前 WorkBuddy 版本使用的 Hook JSON；此后记住位置，合并安装并保留备份。")
             case .kimiCode: Text("连接原 kimi web 服务；安装注册连接，卸载清除 AI 助理保存的地址和令牌。")
-            case .claudeDesktop, .chatGPT: Text("内置辅助功能接入；安装启用，卸载停用。系统辅助功能权限与原应用数据保持不变。")
+            case .claudeDesktop, .chatGPT: Text("仅接收官方生命周期通知；没有已验证的原实例双向接口时无法发送或停止。")
             }
         }.font(.caption).foregroundStyle(.secondary)
     }
@@ -169,15 +173,14 @@ struct AgentDiagnosticsView: View {
                 HStack { sessionActions }
                 VStack(alignment: .leading, spacing: 6) { sessionActions }
             }.controlSize(.small)
-            Text("仅当前选中会话联动宠物与回复；发送、停止和最终回复需在原应用实测。")
+            Text("确认后通过原实例官方通道发送；没有发送能力的会话仅接收提醒，草稿保留在 AI 助理。")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
     @ViewBuilder private var sessionActions: some View {
         Button("发送到所选会话") { let text = draft; perform { try await hub.sendPrompt(text); draft = "" } }
-            .disabled(hub.selectedSession == nil || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy || hub.isSending)
-        Button("只写入原应用草稿") { perform { try await hub.insertDraft(draft) } }.disabled(hub.selectedSession == nil || draft.isEmpty || busy)
-        Button("停止所选任务") { perform { try await hub.stop() } }.disabled(hub.selectedSession == nil || busy)
+            .disabled((hub.selectedSession.map { !hub.capabilities(for: $0).contains(.submit) } ?? true) || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy || hub.isSending)
+        Button("停止所选任务") { perform { try await hub.stop() } }.disabled((hub.selectedSession.map { !hub.capabilities(for: $0).contains(.stop) } ?? true) || busy)
     }
     private func toggleComponent(_ kind: AgentIntegrationKind, installed: Bool) {
         message = nil

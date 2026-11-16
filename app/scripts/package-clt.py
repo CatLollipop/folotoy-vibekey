@@ -33,7 +33,7 @@ info.update(CFBundleName='AI 助理', CFBundleDisplayName='AI 助理', CFBundleI
             CFBundleExecutable='FoloVibe Key', CFBundleDevelopmentRegion='zh-Hans',
             CFBundleShortVersionString=project_version('MARKETING_VERSION'),
             CFBundleVersion=project_version('CURRENT_PROJECT_VERSION'), LSMinimumSystemVersion='26.0',
-            NSAppleEventsUsageDescription='AI 助理需要控制你选中的终端会话，用于向 Claude Code 输入语音指令。')
+            NSAppleEventsUsageDescription='用于你主动选择的系统自动化操作。')
 for key in list(info):
     if isinstance(info[key], str) and '$(' in info[key]:
         info[key] = ''

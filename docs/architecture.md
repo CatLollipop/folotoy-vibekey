@@ -984,3 +984,18 @@ codec实际reader flag→app→ib_ui_set_capture_active→hints绿色Mic循环�
 只有完整结构和文字证据才能排除提示：placeholder-only子树的实际静态提示文本需与raw值/正式提示一致，允许AX段落多带一个行末，不折叠用户空格。真实正文恰等提示时，非placeholder正文节点或缺乏完整一致提示结构的正数count/range仍按正文保留；count0与非空range矛盾时保留range，零长range不能抹掉非空raw冲突。无法读取、未知/截断/循环树、textarea子树内附件或嵌套编辑器返回nil，不覆盖、不提交；真实非空旧草稿继续拒绝覆盖。快照上限24层/512节点，临时内容不写日志/磁盘；不扩大到textarea外的附件区域或复合聊天身份能力。
 
 `app/scripts/test-composer-snapshot.sh`编译正式共享解析器和原生读取实现，仅以注入内存Source运行35个夹具，覆盖提示/正文/矛盾元数据/附件/未知树/窗口PID和四阶段读取。该检查未查询任何真实AX、应用、设备或云API；真实ChatGPT版本投递验收仍需用户在专用会话确认，不能由夹具成功替代。
+
+## 官方原会话通道与本地选择（本轮，取代旧 AgentHub 的 AX 发送/停止链）
+
+`ASR final → ConversationRouter（按原生会话保留本机草稿）→ 用户确认 → AgentHub.sendPrompt(text,in:session) → Adapter.capabilities(for:同一原实例/会话) → 官方原进程 API → admission/applied`。`AgentHub.select/selectReadOnly/registerNotificationSession` 只更新有界本地身份，不调用 activate、GUI、键盘或剪贴板；通知选择不赋予写权，无法发送时不自动新建/恢复原会话或改投云端。应用汇总能力仅供诊断。
+
+正式控制路径为原进程 OMP extension、DSH Cordis plugin、Claude Code Mod（原 CLI 的 prompt.submit / turn.abort），以及已配置原 Kimi Server REST/WS。Claude settings Hook、WorkBuddy Hook 与 codexHook 仅观察；普通 Claude Desktop 与尚未证明原实例消费回执的 Codex Desktop 无发送/停止能力。`DesktopAXAgentAdapter` 历史类名保留为无 UI 控制的阻塞适配器，DSH 的 PreferredBridge/AX fallback 已删除。原生事件/最终正文仍路由到宠物与通知；任务完成/停止不由接收入队回执推断。
+
+`AgentMailbox` 命令只匹配原生 application/instance/session，名称不参与匹配；支持的 controlTransport、20秒心跳与会话声明缺一不可。Hook PID 仅保留观察身份。`accepted` 不是 `applied`，`applied` 不是完成；传输后取消/超时结果未知，不自动重发。Kimi 在已验证连接上每10秒刷新已有会话，失败即撤销写权等待用户重新检测。CLI Mod 私有文件助手只搬邮箱，真正输入/停止仍在加载插件的原 Claude 进程；导出/静态验证不等于原实例加载验收。
+
+隔离回归：`test-agent-hub.sh` 编译正式 Hub 与 Adapter，验证本地选择、通知只读、实例/租约隔离和未知结果无重试；`test-agent-bridges.sh` 编译核心并加载 OMP/DSH/Claude Mod 夹具；本机官方 `claude plugin validate` 仅静态验证，不加载插件、读取私人聊天或发真实消息。详细接口、原会话安装步骤与限制见 `docs/agents/README.md`。
+
+
+## 0.7 已有会话统一路由（替代设备AX控制）
+
+当前电脑模式由 `AssistantCoordinator → ConversationRouter → AgentHub → 原进程官方Adapter` 统一接入。硬件不再共享Mac云端试用的destination；识别只stage，确认生成原会话不可变票据，通知双击只导航设备。`DeviceBridge.officialSessionsOnly` 使旧设备AX导航/聚焦/自动发送/停止及usage自动扫描退出运行路径；原通用Mac听写/字幕仍独立。草稿和未知票据为本次运行内存，不宣称重启恢复。所有官方能力按原实例/会话的新鲜声明判断，缺通道仅提醒。新协议、资源预算、失败与替代方案见[会话路由](conversation-routing.md)，应用可用边界见[接入](agents/README.md)。上文历史AX接入描述不再是0.7电脑模式的实现。
