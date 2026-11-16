@@ -10,6 +10,7 @@
 //
 // 图层顺序(由下到上):页面层 → 状态栏 → 右侧按键提示列 → Agent 通知层。
 #include "ib_ui.h"
+#include "ib_pet.h"
 
 #include "bsp_display.h"
 #include "ib_ui_agent.h"
@@ -43,6 +44,9 @@ static const ib_ui_page_t *const PAGES[IB_UI_SCREEN_COUNT] = {
 };
 
 static lv_obj_t *s_roots[IB_UI_SCREEN_COUNT];
+static lv_obj_t *s_pet_root, *s_pet_label;
+static uint16_t s_pet_pixels[IB_PET_SIZE * IB_PET_SIZE];
+static volatile uint32_t s_pet_frame_max_ms,s_pet_frame_last_ms;
 static lv_obj_t *s_footer;
 static lv_obj_t *s_footer_time;
 static ib_ui_screen_t s_screen = IB_UI_OFFLINE;
@@ -50,6 +54,7 @@ static ib_ui_ctx_t s_ctx;
 static lv_timer_t *s_frame_timer;
 static bool s_ready;
 static bool s_awake = true;
+static bool s_waiting_refresh;
 
 static void copy_text(char *dst, size_t cap, const char *src)
 {
@@ -77,6 +82,40 @@ static void copy_utf8(char *dst, size_t cap, const char *src)
     dst[n] = '\0';
 }
 
+// 点阵绘制只读缓存；模拟在frame_cb运行，避免LVGL重绘时被fps限流清空。
+static void pet_pixel(uint8_t col,uint8_t row,uint32_t rgb,uint8_t brightness,void *context)
+{
+    (void)context; if(col>=IB_PET_SIZE||row>=IB_PET_SIZE)return;
+    unsigned i=row*IB_PET_SIZE+col;
+    unsigned r=((rgb>>16)&255)*brightness/100,g=((rgb>>8)&255)*brightness/100,b=(rgb&255)*brightness/100;
+    s_pet_pixels[i]=(uint16_t)(((r>>3)<<11)|((g>>2)<<5)|(b>>3));
+}
+static void pet_draw(lv_event_t *event)
+{
+    lv_layer_t *layer=lv_event_get_layer(event);lv_area_t area;lv_obj_get_coords(s_pet_root,&area);
+    const lv_area_t *clip=&layer->_clip_area;int left=(lv_obj_get_width(s_pet_root)-IB_PET_SIZE*7)/2;
+    // 4行DMA会按clip多次调用自绘；先裁剪再建图元，不能每块都处理784颗点。
+    lv_draw_rect_dsc_t d;lv_draw_rect_dsc_init(&d);d.bg_opa=LV_OPA_COVER;d.radius=LV_RADIUS_CIRCLE;
+    for(int row=0;row<IB_PET_SIZE;row++){
+        int y1=area.y1+4+row*7,y2=y1+5;if(y2<clip->y1||y1>clip->y2)continue;
+        for(int col=0;col<IB_PET_SIZE;col++){
+            int x1=area.x1+left+col*7,x2=x1+5;if(x2<clip->x1||x1>clip->x2)continue;
+            uint16_t c=s_pet_pixels[row*IB_PET_SIZE+col];
+            uint32_t r=((c>>11)&31)*255/31,g=((c>>5)&63)*255/63,b=(c&31)*255/31;
+            d.bg_color=lv_color_hex((r<<16)|(g<<8)|b);
+            lv_area_t dot={x1,y1,x2,y2};lv_draw_rect(layer,&d,&dot);
+        }
+    }
+}
+static void pet_visibility(void)
+{
+    if(!s_pet_root)return;
+    bool offline=s_screen==IB_UI_OFFLINE;
+    bool show=(offline||ib_pet_enabled())&&s_screen!=IB_UI_LIST&&s_screen!=IB_UI_USAGE&&s_screen!=IB_UI_SUB;
+    lv_obj_set_size(s_pet_root,offline?IB_UI_W:218,offline?208:250);
+    if(offline)lv_obj_add_flag(s_pet_label,LV_OBJ_FLAG_HIDDEN);else lv_obj_remove_flag(s_pet_label,LV_OBJ_FLAG_HIDDEN);
+    if(show)lv_obj_remove_flag(s_pet_root,LV_OBJ_FLAG_HIDDEN);else lv_obj_add_flag(s_pet_root,LV_OBJ_FLAG_HIDDEN);
+}
 // ---------------------------------------------------------------------------
 // 页面切换动画(LVGL 任务)
 // ---------------------------------------------------------------------------
@@ -149,7 +188,7 @@ static void switch_to(ib_ui_screen_t screen)
     // 旧页面还没完全显示出来(例如正在淡入)时不直切,免得新页面从一个没出现过的画面开始变形。
     bool dot_cut = cut_transition(s_screen, screen) && !lv_obj_has_flag(old, LV_OBJ_FLAG_HIDDEN) &&
                    lv_obj_get_style_opa(old, 0) == LV_OPA_COVER;
-    bool cut = !s_awake || dot_cut;
+    bool cut = !s_awake || dot_cut || screen==IB_UI_OFFLINE || s_screen==IB_UI_OFFLINE;
     s_ctx.prev_screen = dot_cut && s_awake ? s_screen : IB_UI_SCREEN_NONE;
 
     if (cut) {
@@ -164,10 +203,11 @@ static void switch_to(ib_ui_screen_t screen)
         s_ctx.enter_ms = now;
         s_ctx.now_ms = now;
         ib_bar_set_mode(bar_mode_for(screen), now);
-        ib_hints_set_visible(true);
+        ib_hints_set_visible(screen!=IB_UI_OFFLINE);
         ib_hints_set_disabled(screen == IB_UI_PROC);
         ib_agent_set_banner(screen == IB_UI_REC, now);
         PAGES[screen]->enter(&s_ctx);
+        pet_visibility();lv_obj_invalidate(neu);
         return;
     }
 
@@ -199,6 +239,17 @@ static void switch_to(ib_ui_screen_t screen)
     PAGES[screen]->enter(&s_ctx);
 }
 
+static void refresh_ready(lv_event_t *event)
+{
+    (void)event;
+    // 完整刷新后才安排下一帧。让lv_timer_handler返回，port解锁后vTaskDelay(1)
+    // 真正让出CPU给main/IDLE；不能在重绘慢于timer周期时无限追赶已过期帧。
+    if(s_waiting_refresh&&s_frame_timer){
+        s_waiting_refresh=false;
+        if(s_awake){lv_timer_reset(s_frame_timer);lv_timer_resume(s_frame_timer);}
+    }
+}
+
 static void frame_cb(lv_timer_t *t)
 {
     (void)t;
@@ -211,6 +262,18 @@ static void frame_cb(lv_timer_t *t)
     bool started = (int32_t)(s_ctx.now_ms - s_ctx.enter_ms) >= 0;
     if (started && !ib_agent_covering()) PAGES[s_screen]->frame(&s_ctx);
     ib_agent_frame(s_ctx.now_ms);
+    if(started&&s_screen==IB_UI_OFFLINE){const char *desired=s_ctx.now_ms-s_ctx.enter_ms>45000?"sleeping":"idle";if(strcmp(ib_pet_state_name(),desired))ib_pet_set_state_name(desired,s_ctx.now_ms);}
+    pet_visibility();
+    if(s_pet_root&&!lv_obj_has_flag(s_pet_root,LV_OBJ_FLAG_HIDDEN)){
+        uint32_t before=lv_tick_get();
+        if(ib_pet_render(s_ctx.now_ms,pet_pixel,NULL)){
+            uint32_t elapsed=lv_tick_get()-before;s_pet_frame_last_ms=elapsed;if(elapsed>s_pet_frame_max_ms)s_pet_frame_max_ms=elapsed;
+            lv_obj_invalidate(s_pet_root);
+        }
+    }
+    // 无图元变化时也恢复refresh timer，以便REFR_READY解除等待；熄屏仍保持暂停。
+    lv_timer_pause(t);s_waiting_refresh=true;
+    lv_timer_resume(lv_display_get_refr_timer(lv_display_get_default()));
 }
 
 // ---------------------------------------------------------------------------
@@ -245,6 +308,15 @@ esp_err_t ib_ui_init(void)
     lv_obj_set_style_text_align(s_footer_time, LV_TEXT_ALIGN_LEFT, 0);
     lv_label_set_text_static(s_footer_time, "TIME // --:--");
     lv_obj_add_flag(s_footer, LV_OBJ_FLAG_HIDDEN);
+    ib_pet_init();
+    s_pet_root=ib_box_create(scr,0,IB_UI_BAR_H,218,250);
+    lv_obj_set_style_bg_color(s_pet_root,lv_color_hex(0x17181D),0);
+    lv_obj_set_style_bg_opa(s_pet_root,LV_OPA_COVER,0);
+    lv_obj_add_event_cb(s_pet_root,pet_draw,LV_EVENT_DRAW_MAIN,NULL);
+    s_pet_label=ib_label_create(s_pet_root,&ib_cjk_font_12,0xE0E0E0,209,198);
+    lv_obj_set_x(s_pet_label,10);lv_obj_set_height(s_pet_label,38);
+    lv_label_set_long_mode(s_pet_label,LV_LABEL_LONG_DOT);
+    lv_label_set_text(s_pet_label,"AI 助理");
     ib_bar_create(scr);     // 后建,位于页面之上
     ib_hints_create(scr);
     ib_hints_set_visible(false);
@@ -256,6 +328,7 @@ esp_err_t ib_ui_init(void)
     PAGES[s_screen]->enter(&s_ctx);
 
     s_frame_timer = lv_timer_create(frame_cb, FRAME_MS, NULL);
+    lv_display_add_event_cb(lv_display_get_default(),refresh_ready,LV_EVENT_REFR_READY,NULL);
     s_ready = true;
     bsp_lvgl_unlock();
     return s_frame_timer ? ESP_OK : ESP_ERR_NO_MEM;
@@ -285,6 +358,7 @@ void ib_ui_set_level(uint8_t level)
 {
     // 单字节写入,LVGL 任务每帧读取;不需要加锁。
     s_ctx.level = level > 100 ? 100 : level;
+    ib_pet_set_level(s_ctx.level);
 }
 
 void ib_ui_set_caption(const char *src, const char *dst, const char *app, bool live)
@@ -430,4 +504,33 @@ void ib_ui_set_awake(bool awake)
         lv_timer_pause(s_frame_timer);
     }
     bsp_lvgl_unlock();
+}
+
+bool ib_ui_pet_state(const char *name,const char *body,bool standalone)
+{
+    if(!s_ready||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return false;
+    (void)standalone;bool ok=ib_pet_set_state_name(name,lv_tick_get());
+    if(body&&body[0]){char text[192];copy_utf8(text,sizeof(text),body);lv_label_set_text(s_pet_label,text);}
+    pet_visibility();bsp_lvgl_unlock();return ok;
+}
+void ib_ui_pet_config(bool enabled,uint8_t fps,uint8_t brightness,uint32_t rgb)
+{
+    if(!s_ready||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return;
+    ib_pet_configure(enabled,fps,brightness);ib_pet_set_color(rgb);pet_visibility();lv_obj_invalidate(s_pet_root);bsp_lvgl_unlock();
+}
+
+bool ib_ui_pet_load(const void *data,size_t size)
+{
+    if(!s_ready||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return false;
+    bool ok=ib_pet_load_bundle(data,size);
+    if(ok){pet_visibility();lv_obj_invalidate(s_pet_root);}
+    bsp_lvgl_unlock();return ok;
+}
+
+uint32_t ib_ui_pet_max_frame_ms(void){return s_pet_frame_max_ms;}
+
+uint32_t ib_ui_pet_last_frame_ms(void){return s_pet_frame_last_ms;}
+uint32_t ib_ui_lvgl_peak_bytes(void){
+    if(!s_ready||!bsp_lvgl_lock(LOCK_TIMEOUT_MS))return 0;
+    lv_mem_monitor_t memory;lv_mem_monitor(&memory);bsp_lvgl_unlock();return memory.max_used;
 }

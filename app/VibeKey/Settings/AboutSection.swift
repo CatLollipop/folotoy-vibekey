@@ -19,7 +19,7 @@ struct AboutSection: View {
                             .frame(width: 52, height: 52)
                             .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(verbatim: "FoloVibe Key").font(.system(size: 15, weight: .semibold))
+                            Text("AI 助理").font(.system(size: 15, weight: .semibold))
                             Text("版本 \(Self.version)")
                                 .font(.system(size: 12))
                                 .foregroundStyle(.secondary)
@@ -39,7 +39,7 @@ struct AboutSection: View {
                     }
                     Divider()
                     HStack(spacing: DS.Space.l) {
-                        Link("官网", destination: Self.website)
+                        Link("上游项目", destination: Self.website)
                         Link(destination: Self.github) { Text(verbatim: "GitHub") }
                         Link("支持与反馈", destination: Self.support)
                         Spacer()
@@ -51,9 +51,9 @@ struct AboutSection: View {
         }
     }
 
-    private static let website = URL(string: "https://input.0os.io")!
-    private static let github = URL(string: "https://github.com/nexsjournal/folotoy-vibekey")!
-    private static let support = URL(string: "https://input.0os.io/support/")!
+    private static let website = URL(string: "https://github.com/nexsjournal/folotoy-vibekey")!
+    private static let github = URL(string: "https://github.com/CatLollipop/folotoy-vibekey")!
+    private static let support = URL(string: "https://github.com/CatLollipop/folotoy-vibekey/tree/codex/ai-assistant")!
 
     /// 版本号与构建号,如「0.1.4 (5)」。
     private static var version: String {

@@ -23,6 +23,8 @@ run_host() {
     "${CC:-cc}" "${cflags[@]}" tests/test_ib_charge.c main/ib_charge.c -o "${out}/charge"
     "${CC:-cc}" "${cflags[@]}" tests/test_ib_wallpaper.c main/ib_base64.c main/ib_crc32.c -o "${out}/wallpaper"
     "${CC:-cc}" "${cflags[@]}" tests/test_ib_wifi_store.c main/ib_wifi_store.c -o "${out}/wifi_store"
+    "${CC:-cc}" "${cflags[@]}" tests/test_ib_cloud_stream.c main/ib_cloud_stream.c -o "${out}/cloud_stream"
+    "${out}/cloud_stream"
     "${out}/protocol"
     "${out}/adpcm"
     "${out}/clock"
@@ -61,6 +63,11 @@ run_firmware() {
     # 自定义壁纸分区必须完整落在 factory 与 cardid 之间的空闲区。
     if ! grep -Eq '^wallpaper,[[:space:]]*data,[[:space:]]*0x40,[[:space:]]*0x310000,[[:space:]]*0x30000' partitions.csv; then
         echo "ERROR: wallpaper 分区必须为 0x310000 / 0x30000" >&2
+        return 1
+    fi
+    if ! grep -Eq '^assistant,[[:space:]]*data,[[:space:]]*0x41,[[:space:]]*0x360000,[[:space:]]*0x80000' partitions.csv ||
+       ! grep -Eq '^audio_scratch,[[:space:]]*data,[[:space:]]*0x42,[[:space:]]*0x400000,[[:space:]]*0x200000' partitions.csv; then
+        echo "ERROR: assistant/audio_scratch 分区布局不匹配" >&2
         return 1
     fi
     local size

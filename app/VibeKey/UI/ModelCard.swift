@@ -137,8 +137,10 @@ struct ModelList: View {
     var allowsDelete = false
     /// 要列出的模型(默认全部:本地模型在前,云端在后)。
     var items: [ModelInfo] = ModelCatalog.all
+    /// MiniMax统一语音配置需要同时更新AI助理的公开参数与同一凭据缓存。
+    let assistant: AssistantStore
     /// 正在编辑配置的云端服务(弹出配置表单)。
-    @State private var editing: CloudProvider? = ModelList.initialEditing
+    @State private var editing: CloudProvider?
 
     /// 调试用:环境变量 IB_CLOUD_CONFIG=<CloudProvider.rawValue> 时,列表出现后直接弹出该服务的配置表单。
     private static var initialEditing: CloudProvider? {
@@ -167,10 +169,13 @@ struct ModelList: View {
             }
         }
         .sheet(item: $editing) { provider in
-            CloudConfigSheet(provider: provider, store: cloud) {
+            CloudConfigSheet(provider: provider, store: cloud, assistant: assistant) {
                 // 第一次配置好且当前模型不可用时,自动选用它。
                 if !models.isInstalled(selection) { selection = provider.modelID }
             }
+        }
+        .onAppear {
+            if let provider = Self.initialEditing, items.contains(where: { $0.cloudProvider == provider }) { editing = provider }
         }
     }
 }

@@ -32,3 +32,12 @@ ib_link_t ib_audio_mic_link(void);
 
 // 异步播放提示音;正在播放时新的提示音替换排队中的那个。
 void ib_audio_play(ib_sound_t sound);
+
+// 独立助手独占 codec：成功后允许同一所有者直接调用 BSP PCM read/write。
+// 不与提示音或伴随麦克风重叠；调用者必须在结束/取消/错误路径释放。
+esp_err_t ib_audio_pcm_begin(void);
+void ib_audio_pcm_end(void);
+// 取消时只静音输出，不关闭仍在被worker读写的codec。
+void ib_audio_pcm_interrupt(void);
+
+esp_err_t ib_audio_init_mode(ib_audio_tx_cb_t tx,bool companion);

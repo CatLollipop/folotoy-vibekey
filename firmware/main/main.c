@@ -29,5 +29,7 @@ void app_main(void)
         ESP_LOGE(TAG, "app start failed");
         return;
     }
-    if (bsp_button_init(ib_app_on_button, NULL) != ESP_OK) ESP_LOGE(TAG, "button init failed");
+    bool buttons_ready=bsp_button_init(ib_app_on_button,NULL)==ESP_OK;
+    if(!buttons_ready)ESP_LOGE(TAG,"button init failed");
+    ib_app_finish_start(buttons_ready);
 }

@@ -3,6 +3,13 @@
 idf_component_register(
     SRCS "main.c"
          "ib_app.c"
+         "ib_assistant.c"
+         "ib_assistant_store.c"
+         "ib_assistant_cloud.c"
+         "ib_cloud_stream.c"
+         "ib_pet.c"
+         "ib_pet_motion.c"
+         "ib_pet_bundle.c"
          "ib_keys.c"
          "ib_links.c"
          "ib_charge.c"
@@ -43,7 +50,6 @@ idf_component_register(
          "icons/ib_icon_font_12.c"
          "icons/ib_icon_font_56.c"
     INCLUDE_DIRS "."
-    REQUIRES bsp bt esp_app_format esp_driver_usb_serial_jtag esp_hw_support esp_timer nvs_flash vfs esp_wifi esp_event esp_netif esp-tls json mdns
+    REQUIRES bsp bt esp_app_format esp_driver_usb_serial_jtag esp_hw_support esp_timer nvs_flash vfs esp_wifi esp_event esp_netif esp-tls esp_http_client mbedtls json mdns
 )
-include(assets/offline-art.cmake)
 target_include_directories(${COMPONENT_LIB} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")

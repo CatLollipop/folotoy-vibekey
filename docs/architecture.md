@@ -10,8 +10,8 @@
 - READY / USAGE 页的 OK 按下后先采音；Mac 在前 500 毫秒保留原页面，短按松开切页并取消采音，按住超过阈值才同步录音页。熄屏唤醒时设备已在本地开麦并显示录音页。
 - USB 断开时优先启用已握手 Wi-Fi；若 Wi-Fi 尚未握手，恢复已有握手或立即重试已保存的网络。Wi-Fi 正在尝试或等待重试时不重复启动连接。
 - 无线连接：`WiFiClient(Network TLS-PSK) → DeviceLink.beginHandshake → ib_wifi(server_task/esp_tls) → ib_app`。Mac 同时尝试所有本机已保存的 `host.local`，第一个完成 TLS 握手的就是设备当前网络，因此设备端换网后无需 USB 先通知 Mac。TLS 任务独占 socket，音频任务经有界队列发送；同一份协议解析器与 MicStream 解码器服务 USB/Wi-Fi。
-- 无线模式互斥：NVS `ib_wifi/networks` 非空时，本轮启动不初始化 BLE，使用官方 `esp_bt_mem_release` 释放蓝牙内存；无网络时保持 BLE。新增、选择或移除网络后重启到新的 host / PSK；USB 清除全部配网后重启恢复 BLE。Wi-Fi 已配置但无 USB、25 秒拿不到 IP 时，设备把 BLE 单栈标记写入 NVS 后重启，保留配网并改用 BLE 广播；从 BLE 或 Wi-Fi 离线页选择已保存的网络都会清除该标记并重启尝试 Wi-Fi，即使它已是 NVS 首选项。只有对应 Wi-Fi 链路实际在线时，选择当前网络才直接关闭菜单。C3 无法让 Wi-Fi + BLE + TLS 同时常驻。
-- C3 内存预算：Wi-Fi 静态 RX 4、动态 RX/TX 各 8；NimBLE MSYS 各 6；TLS 动态缓冲、输入 4096 / 输出 1024 字节；Wi-Fi 发送队列每项 512 字节；LVGL 双缓冲每块 240×10。真机首次暴露默认 Wi-Fi 缓冲初始化不足，不能用“编译通过”替代入网测试。
+- 无线模式互斥：NVS `ib_wifi/networks`非空时使用单Wi-Fi；独立模式在RF初始化前禁LAN TLS。BLE仅在free heap≥96KiB且largest≥32KiB的预算门限下可选启用，否则释放BLE内存并保留USB/Wi-Fi，禁用自动BLE回退重启。新增、选择或移除网络后重启到新的 host / PSK；USB 清除全部配网后重启恢复 BLE。Wi-Fi 已配置但无 USB、25 秒拿不到 IP 时，设备把 BLE 单栈标记写入 NVS 后重启，保留配网并改用 BLE 广播；从 BLE 或 Wi-Fi 离线页选择已保存的网络都会清除该标记并重启尝试 Wi-Fi，即使它已是 NVS 首选项。只有对应 Wi-Fi 链路实际在线时，选择当前网络才直接关闭菜单。C3 无法让 Wi-Fi + BLE + TLS 同时常驻。
+- C3 内存预算：Wi-Fi 静态 RX 4、动态 RX/TX 各 8；NimBLE MSYS 各 6；TLS 动态缓冲、输入 16384 / 输出 1024 字节；Wi-Fi 发送队列每项 512 字节；LVGL双缓冲每块240×4。真机首次暴露默认 Wi-Fi 缓冲初始化不足，不能用“编译通过”替代入网测试。
 - 拔线：`DeviceLink.linkLost → 选择 USB > Wi-Fi > BLE → resendCachedState → setActive → MicStream.setActive`。Wi-Fi 在 USB 期间保持待机，重连沿用已有配对资料。
 - 独立输入：`设备 OK down → DeviceBridge → DictationController.pressDown → 立即启动 PassportMicSource + 并行 DeviceInputTarget.prepare（最多 5 s；通用 AX 遍历失败时用 Codex 适配器复核）→ AppSwitcher.activate/focusTextInput → ASR → 后处理 → 等待目标准备完成 → TextInserter`。目标失败或取消会关闭音源，迟到结果不能插入。
 - 用量首页恢复：`DeviceBridge.start / 连接恢复 / 目标 App 激活 → restoreUsageHomeIfNeeded`。已记住的已知 Agent 即使尚未读取用量，也先建立 `usageHome` 占位，READY 页才会持续显示 `TAP OK: USAGE`，短按 OK 不会误走听写。
@@ -219,7 +219,7 @@ Mac 握手:DeviceLink.beginHandshake → hello → handleHello
  → ib_links_usb_present(ib_usb_host_present() 原始 SOF 判断, now)   USB 在位去抖:连续 1 s 不在位才算拔线
  → ib_links_drop(USB)(确认拔线时)→ ib_links_any
  → 在线→离线:go_offline(OFFLINE 页、停麦、清 Agent;保留 s_st / s_msg,done/err 收拢到常驻页),不 wake
-   OFFLINE 页由 ib_ui_offline 叠加 Flash 中的 RGB565 像素背景和现有实时点阵时钟，主机预览与固件共用背景数据
+   OFFLINE页由ib_ui绘制当前宠物点阵，ib_ui_offline保留时钟/日期/连接提示，照片不再渲染
  → 离线→在线:show_screen(screen_for(s_st)) 回到离线前页面 + wake
 命令:handle_command → ib_links_seen → refresh_links → state: apply_state(+ wake) | config: 只更新设置,不 wake
 背光:app_task → refresh_backlight(在线且 rec/proc/sub 常亮;否则 now - s_last_activity_ms ≥ screen_off 熄屏)
@@ -699,27 +699,11 @@ PassportSetupView「刷入固件」→ PassportSetupModel.flashFirmware
  → (可选)readFlash 整片 8 MB 存成 passport-<MAC>-flash.bin → writeFlash(eraseAll: false,flash 参数 keep)→ after(hard_reset)
 ```
 
-## 9a. 离线页自定义壁纸
+## 9a. 离线宠物（移除照片背景）
 
-```
-设置 › Passport › 离线页背景
- → fileImporter 选图 → WallpaperProcessor.process(url:)
-     → CGImage 3:4 居中裁切 → 60×80 降采样 → 亮度 + Bayer 抖动 → 24 级绿色
-     → 顶部 40 px / 底部 y=200 起压暗 → 4×4 放大成 240×320 预览
-     → 240×320 RGB565 小端、行优先输出(153600 字节)
- → WallpaperSection.apply → DeviceLink.uploadWallpaper
-     → wallpaper start(size,crc) → 等设备回 p:"start"(擦除完成,15 s 超时)
-     → 每块 288 字节 base64,off 递增,每块 6 ms 节流
-     → wallpaper fin=1 → 设备校验长度 + CRC32、写头、回 p:"done"、500 ms 后重启
- → WallpaperStore.save(240×320 预览 PNG)
+设备启动 → store迁移/加载V2 → mmap当前pet bundle → LVGL锁内ib_pet_load_bundle → ib_ui本地点阵绘制。保留底部时钟、日期和连接提示；无Mac/无Wi-Fi时本地idle，45秒后sleep，固定表情优先。照片入口与offline-art编译依赖移除。
 
-固件启动:ib_app_start → ib_wallpaper_init
- → esp_partition_find_first(data, 0x40, "wallpaper")
- → esp_partition_mmap(头 + 153600 字节) → 校验 VKW1 / size / CRC32
- → ib_ui_offline.create 用映射指针构造 lv_image_dsc_t;无效则用 ib_offline_art.inc 内置猫图
-```
-
-壁纸分区 `0x310000/0x30000` 在 factory 与 cardid 之间；写头放在最后，断电或分块中断只会让 CRC 失效并回退默认图。Mac 端不保存用户原图，只保存处理后的预览；原图与像素数据都不进仓库。
+旧wallpaper分区0x310000/0x30000保留，不自动擦除、不映射/显示；上传协议仅供兼容。新pet事务在cardid后的双256KiB bank内，profile≤16KiB、pet≤128KiB，头最后提交；每次提交同步切换UI mmap后才ACK，避免下一事务擦掉旧渲染源。详见 [assistant-device-protocol.md](assistant-device-protocol.md)。
 
 ## 10. 界面语言
 
@@ -867,3 +851,37 @@ Electron 控件可见性：DeviceInputTarget 和 AccessibilityCodexDesktopAdapte
 AX 遍历按 AXUIElement 的真实相等性去重，不能按 CFHash 的数值去重。窗口与输入框标识由每个适配器拥有的有界匿名注册表提供，同一 AX 元素复用 ID，哈希碰撞的不同元素仍有独立 ID；仅在内存保存，不写入用户文本或磁盘。
 
 连续发送真机验收：2026-11-07 最新安装版在同一常驻进程中，经 Wi-Fi 上键完成三次真实提交，均确认同聊天输入框清空（约 0.4 秒），用户确认成功；无 UNKNOWN。只读检查日志排除了测试宿主，未记录草稿全文。
+
+## Passport 独立助手与 Aora（本分支）
+
+设备调用链为 `ib_app按键 → ib_assistant worker → 双槽PCM Flash采音 → ib_assistant_cloud ASR → DeepSeek SSE → MiniMax PCM SSE → ib_audio/ES8311`。cloud stream模块只处理有界字节流，store模块只处理CRC/字段验证/双bank原子提交。会话UI消费app任务中的状态快照，通过ib_pet通用44态motion/栅格器绘制所选Aora角色；配置提交在LVGL锁内同步切换mmap后才回执，云worker不调用LVGL。
+
+Mac配置调用链为 `AssistantDeviceSync → assistant begin/chunk/commit（rid匹配）→ ib_assistant_store → commit回执 → app消费新generation → ib_ui_pet_config`。profile/pet独立更新互相保留，首次USB提交后才允许已配对TLS Wi-Fi同步。独立模式暂停局域网TLS并保留STA，公网只顺序建立一个TLS；返回相伴恢复服务。详细协议、字段/内存上限及尚需真机验收项目见 [assistant-device-protocol.md](assistant-device-protocol.md)，Aora来源与许可见 [pet-runtime.md](pet-runtime.md)。
+
+
+## AI 助理设置与硬件接管（本分支）
+
+设置侧栏只有一个 `智能体(.vibe)`，承载 `AgentDiagnosticsView → AgentHub`、Codex用量与旧Codex通知；`.integrations`是兼容路由。Claude完整状态/回复Hook只保留统一安装入口，避免两套配置互相覆盖。
+
+语音设置调用链：`ModelsPane → ModelList(MiniMax) → CloudConfigSheet → MiniMaxVoiceConfigSheet → AssistantStore.save + CloudASRStore.update(.minimax)`。两者通过同一个`CredentialStore`只写`assistant.minimaxKey`；地址和音色/录音上限/自动朗读保存到助手公开配置。MiniMax已加入`CloudProvider/ModelCatalog`，可选为听写/字幕模型：`CloudASREngine → SegmentedSession → MiniMaxASRDecoder → AssistantCloudClient原生speech_to_text`，不将其伪装为OpenAI转写URL。DeepSeek的对话配置、实际对话、权限和设备同步留在`AssistantPane`。
+
+设备新链：`DeviceLink.onKey → AssistantHardwareRouter → AssistantCoordinator → AssistantController / AgentHub`。长按下键打开云对话/当前发现原会话列表，`up/down/OK → 菜单导航/activate → Hub选择+目的地`，原会话激活真实成功才切换。短按上键需要Hub登记的助手草稿；原端再次校验未修改，不能提交私人手动草稿。下键取消本地语音并调用当前Hub.stop。断连、关闭接管取消异步选择与按压状态；旧选择完成不能覆盖新选择。`bridge.assistantDisplay → .list优先/当前助手状态`，状态按变化发送，菜单时不执行旧导航；接管关闭才调用完整旧Bridge。独立模式按键由固件接管，Mac不再转发。
+
+## C3核心启动与RAM门禁
+
+先建立16项小事件队列与8KiB app任务，再初始化可选无线/音频。JSON按实际len（≤511B）短期分配，由消费者解析后立即释放。app任务等待main完成按键初始化后的boot barrier；接收任务只转移短期原始行所有权，唯一app任务解析1744B的ib_cmd_t，队列闲时节省约27KiB RAM，保持16项容量。profile从Flash mmap直接解析，commit保留一次验证结果更新全局，不复制整份JSON或重复parse。
+
+模式切换先校验wifi_required/profile_required，再持久化mode并回restarting=1；核心app延迟500ms重启。独立启动在RF之前就禁BLE与LAN TLS，避免先分配10KiB worker才释放已有无线栈。BLE可选启动门限为free≥96KiB、largest≥32KiB，低预算保留USB/Wi-Fi。status同时暴露app_ready/buttons/wifi_configured/wifi_ready/ble，须配合普通hello/pong确认启动，不能仅以assistant capabilities成功判定。
+
+
+### 助手配置归并与设备重启确认
+
+`识别模型 MiniMax 卡片 → MiniMaxVoiceConfigSheet → AssistantStore / CloudASRStore → 共享 CredentialStore key → MiniMaxASRDecoder / AssistantCloudClient`；ASR/TTS使用同一Key/base，DeepSeek对话独立配置。`SettingsNavigation.integrations → vibe → AgentDiagnosticsView + 原用量/通知`保留旧深链。
+
+`AssistantDeviceSync.setMode → mode ACK restarting → DeviceLink 新 boot ID 握手 → status 复核 mode`，超时只报告未知，不自动重发模式提交。`PassportPane → usePassportForAssistant` 决定显示助手说明或旧按键映射。
+
+公网请求采用两遍纯C JSON writer：先精确计数，再256B分块写HTTP，字符串控制字节完整转义；保留UTF-8原字节，计数与实际上传使用同一逻辑。LLM/TTS不再分配完整cJSON请求树或body副本。历史仅在成功响应cleanup TLS后按1KiB增长至8KiB上限，低内存裁旧完整轮次。独立boot不启动mDNS与相伴ADPCM/提示音任务；显示双DMA缓冲各4行，RGB565宠物缓存与错峰工作区减少静态RAM。证书链在验证/握手后释放，认证仍完整执行。LVGL池保留40KiB，用status lvgl_peak测量后再调整。
+
+## LVGL有界刷新与调度
+
+pet自绘使用当前layer clip先裁行/列，只为可见圆点创建draw任务，每次callback复用一个descriptor。frame callback结束后暂停自身，display REFR_READY再reset/resume，防止小DMA缓冲与慢绘制令timer无限追赶过期帧。无invalid area时仍resume display refresh timer完成等待闭环，熄屏不恢复frame。ESP-IDF port在handler返回并解锁后已有vTaskDelay(1)，此结构确保它能运行，保留任务看门狗。目标fps为上限，实际刷新受C3/显示负载限制。

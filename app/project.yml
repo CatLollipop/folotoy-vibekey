@@ -26,8 +26,8 @@ settings:
     SWIFT_VERSION: "6.0"
     SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
     SWIFT_APPROACHABLE_CONCURRENCY: YES
-    MARKETING_VERSION: "0.2.13"
-    CURRENT_PROJECT_VERSION: "24"
+    MARKETING_VERSION: "0.3.0"
+    CURRENT_PROJECT_VERSION: "25"
     MACOSX_DEPLOYMENT_TARGET: "26.0"
     ARCHS: arm64
     ENABLE_HARDENED_RUNTIME: YES
@@ -43,6 +43,12 @@ targets:
         excludes:
           - "*.entitlements"
           - "Info.plist"
+          - "Pet/Resources"
+      - path: VibeKey/Pet/Resources/AoraPet.bundle
+        type: folder
+      - path: AgentBridges
+        type: folder
+        optional: true
       # Passport 烧录工具 esptool(scripts/bundle-device-assets.sh 生成),整个目录拷进 Resources/DeviceAssets;固件从官网下载。
       - path: DeviceAssets
         type: folder
@@ -62,23 +68,25 @@ targets:
       properties:
         com.apple.security.device.audio-input: true
         com.apple.security.device.bluetooth: true
+        com.apple.security.automation.apple-events: true
     info:
       path: VibeKey/Info.plist
       properties:
         # 对外品牌使用 FoloVibe Key；Bundle ID / URL scheme / 数据目录仍保留兼容标识。
-        CFBundleName: FoloVibe Key
-        CFBundleDisplayName: FoloVibe Key
+        CFBundleName: AI 助理
+        CFBundleDisplayName: AI 助理
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         LSUIElement: true
         LSApplicationCategoryType: public.app-category.productivity
         CFBundleLocalizations: [zh-Hans, en]
-        NSMicrophoneUsageDescription: FoloVibe Key 需要使用麦克风，把你说的话转成文字输入。
-        NSAudioCaptureUsageDescription: FoloVibe Key 需要录制所选应用播放的声音，用于生成实时字幕。
+        NSAppleEventsUsageDescription: AI 助理需要控制你选中的终端会话，用于向 Claude Code 输入语音指令。
+        NSMicrophoneUsageDescription: AI 助理 需要使用麦克风，把你说的话转成文字输入。
+        NSAudioCaptureUsageDescription: AI 助理 需要录制所选应用播放的声音，用于生成实时字幕。
         NSLocalNetworkUsageDescription: 通过同一 Wi-Fi 连接 Passport，传输按键、录音和设备状态。
         NSBonjourServices: ["_folobutton._tcp"]
-        NSBluetoothAlwaysUsageDescription: FoloVibe Key 通过蓝牙连接 Passport，接收按键并显示状态。
+        NSBluetoothAlwaysUsageDescription: AI 助理 通过蓝牙连接 Passport，接收按键并显示状态。
         NSSpeechRecognitionUsageDescription: 使用 Apple 语音识别引擎在本机转录语音。
         # 检查更新的接口与应用标识,来自 Config/App.xcconfig(本机 Update.local.xcconfig 填写);为空时不检查更新。
         IBUpdateFeedURL: $(IB_UPDATE_FEED_URL)

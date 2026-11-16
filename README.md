@@ -1,4 +1,33 @@
-# FoloVibe Key
+# AI 助理 · FoloVibe Key Fork
+
+本个人 Fork 增加 Mac 云端语音助手、Passport 独立云对话、应用会话双向桥接与 Aora Bot 球球。
+**默认球球；支持完整新版宠物外观、脸型和表情选择，Mac 高清矢量渲染，设备点阵渲染。不使用旧 JSON / NX 旧版兼容层。**
+
+新增使用入口：设置 → **AI 助理 / 识别模型 / 智能体 / 宠物**。在「识别模型」的 MiniMax 卡片统一配置 ASR、TTS、音色、录音上限和自动朗读，听写、字幕和助手共用一个 MiniMax Key；在「AI 助理」配置 DeepSeek 对话。保存后可分别测试语音和对话服务；Passport 首次通过 USB 同步云配置，再切换独立模式。
+设备按住 OK 说话、松开上传识别；MiniMax ASR 是文件转写，默认单句最长30秒。
+电脑助手接管开启时，长按下键打开云对话 / 原应用会话菜单，上下键选择、OK 确认。短按上键只提交当前 Hub 会话中由助手写入且未被修改的草稿；短按下键停止当前任务。关闭接管后才恢复下文原 Codex 设备行为。
+
+```bash
+./scripts/setup-dev.sh                 # CLI工具、Python3.12、隔离ESP-IDF5.5.3
+source scripts/dev-env.sh
+./app/scripts/build-clt.sh             # 无完整Xcode也可构建开发app
+./app/scripts/test-assistant-core.sh
+./app/scripts/test-agent-bridges.sh
+cd firmware && idf.py build
+```
+
+完整 Xcode 26.2 / XcodeGen 工程和原有构建入口继续保留。CLI开发版产物为 `app/build/AI 助理.app`。
+[Mac运行与构建](docs/assistant-desktop.md) · [设备协议与独立模式](docs/assistant-device-protocol.md) · [宠物](docs/pet-runtime.md) · [应用接入](docs/agents/README.md)
+
+应用诊断按能力显示真实结果：安装桥接不等于原会话已加载，输入文字也不等于可读回复或可停止。需在原应用加载OMP/DSH扩展、配置Claude/WorkBuddy Hook或连接Kimi Code原服务，并逐项验收。
+固件刷写使用已有受保护脚本，必须先完成8MiB备份且永不覆盖出厂cardid；不要直接整片擦除。
+
+Aora Bot固定0.2.0 / source `164ffa38b3c27a8512e7c09cfceb7cf0c98f5144`，保留其独立许可。[Powered by Aora Bot](https://github.com/sam70361/aora-bot)。
+
+---
+
+以下为原项目已有功能与使用说明。
+
 
 FoloVibe Key：全面的 AI 语音指令助手。macOS 本地语音输入 app，配套 FoloToy AI Passport 硬件。默认所有语音识别都在本机完成，也可以接入自己的云端识别服务。
 
@@ -21,7 +50,7 @@ FoloVibe Key 基于 [InputBetter](https://github.com/racall/InputBetter) 提交 
   - 设置 › Passport › 连接状态显示当前链路、最后在线、固件 build、电量和充电电压；Agent 导航可逐个检测 Codex、DeepSeek、WorkBuddy、ZCode、Claude 等是否能读到项目和会话；
   - 设置 › 智能体 › 用量：读取 Codex 官方 app-server 的真实账户数据，显示今日 / 本周 / 累计 Token、每周额度剩余、重置倒计时、套餐和重置券；不读聊天正文，其他 Agent 没有公开用量接口时显示暂无数据；
   - 进入 Codex、DSH NEXT、WorkBuddy、ZCode、Claude 等 Agent 后，Passport 先显示该应用的 USAGE 首页：Codex 显示今日 / 本周 / 累计 Token、5 小时与每周额度；DSH 显示上下文、会话数、模型、轮次；Claude / ZCode / WorkBuddy 显示各自的 sessions / turns / traces / spans 与最近活动；短按 OK 进入 READY，READY 再次短按 OK 返回用量首页，长按 OK 直接说话，短按上下切换周期；
-  - 离线页背景可换：设置 › Passport › 离线页背景选一张照片，Mac 会自动裁成 240×320、做绿色像素化和上下暗带，再经 USB / Wi-Fi 写入设备；不调用生图模型，也不上传原图。恢复默认可随时回到内置像素猫；
+  - 离线页固定显示当前所选宠物的点阵画，不再提供独立背景照片选择；宠物外观、脸型和表情在设置 › 宠物中选择并同步到设备。
   - 按住 OK 立即采音，同时自动前置并聚焦记住的目标应用（默认 Codex），松开后输入识别或翻译结果;
   - 上键安全发送当前 Codex 输入框中的手动／语音草稿,下键停止当前 Codex 任务(默认值;也可在 设置 › Passport › 按键 改成普通快捷键);
   - 长按上键切换模式;
@@ -191,13 +220,11 @@ app 不内置固件,刷写时从官网下载最新固件([input.0os.io/firmware/
 
 ## 智能体通知
 
-在 设置 › 智能体 里查看 Codex 用量，并对 Claude Code 和 Codex 分别点「一键配置」:
+设置 › 智能体统一提供应用能力诊断、原会话选择、Hook / 扩展安装和 Codex 用量，不再有单独的「应用接入」设置页。
 
-- Claude Code:写入 `~/.claude/settings.json` 的 hooks。
-- Codex:写入 `~/.codex/hooks.json` 或原位升级旧完成 Hook。首次配置或命令升级后，在终端运行 `codex`，用 `/hooks` 审查并信任新版 `Stop`。
-- Codex 本轮结束后,Passport 显示 `DONE / OK OPEN`。短按 OK 或点击 Mac 通知可打开原对话,等 `READY TO TALK` 后按住 OK 说话,松开形成草稿,短按上键发送。完成卡显示 15 秒。
-
-首次配置时原文件会备份为 `.folobutton-dev.bak`。已有其他 Hook 配置保留。
+- Claude Code：使用页面上方「安装 Claude Code Hook」，写入完整状态和最终回复 Hook；保留其他条目并备份为 `.vibekey-assistant.bak`。原会话加载后重新检测，不再同时提供另一套 Claude 通知安装按钮。
+- Codex：在「Codex 兼容通知」保留原「一键配置」，写入 `~/.codex/hooks.json` 或原位升级旧完成 Hook。首次配置或命令升级后，在终端运行 `codex`，用 `/hooks` 审查并信任新版 `Stop`；原文件备份为 `.folobutton-dev.bak`。
+- 关闭「Passport 按住说话用于 AI 助理」后，才使用原 Codex 设备流程：本轮结束显示 `DONE / OK OPEN`，短按 OK 或点击 Mac 通知打开原对话，等 `READY TO TALK` 后按住 OK 说话、松开形成草稿、上键发送。完成卡显示 15 秒。
 
 ## 本地化
 

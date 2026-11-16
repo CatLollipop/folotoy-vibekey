@@ -10,6 +10,7 @@
 #include "ib_icons.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 typedef enum {
@@ -145,3 +146,15 @@ void ib_ui_agent_hide(void);
 
 // 屏幕是否点亮。熄屏时暂停逐帧动画以省电,点亮时恢复。
 void ib_ui_set_awake(bool awake);
+
+// 宠物由同一个LVGL任务执行；名称为Aora canonical状态，body显示UTF-8两行摘要。
+bool ib_ui_pet_state(const char *state, const char *body, bool standalone);
+void ib_ui_pet_config(bool enabled, uint8_t fps, uint8_t brightness, uint32_t rgb888);
+
+/* 已提交Flash资产，调用者保证指针直到下一次成功load前有效；NULL恢复内置Dot。 */
+bool ib_ui_pet_load(const void *data,size_t size);
+
+uint32_t ib_ui_pet_max_frame_ms(void);
+
+uint32_t ib_ui_pet_last_frame_ms(void);
+uint32_t ib_ui_lvgl_peak_bytes(void);

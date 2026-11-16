@@ -7,6 +7,7 @@ struct VibePane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            AgentDiagnosticsView(hub: app.agentHub).padding(.top, DS.Space.l)
             SettingsSection(title: "用量",
                             footer: "读取 Codex 账户的真实用量与会话元数据，不读取聊天正文。其他 Agent 暂无公开的用量接口时显示暂无数据。") {
                 AgentUsageDashboard()
@@ -15,25 +16,22 @@ struct VibePane: View {
             SettingsSection(title: "工作流") {
                 Card {
                     VStack(alignment: .leading, spacing: DS.Space.s) {
-                        step("1", "按住 Passport 的 OK 键（或快捷键）对 Claude Code / Codex 说出需求")
-                        step("2", "按 ▲ 安全发送到当前 Codex；任务跑偏时按 ▼ 停止")
-                        step("3", "Agent 完成或请求确认时，Passport 响铃并亮屏，状态条也会提醒")
+                        step("1", "在上方选择原应用会话，或长按 Passport 下键选择云对话 / 应用会话")
+                        step("2", "按住 OK 说话；上键只提交所选会话的助手草稿，下键停止所选任务")
+                        step("3", "当前会话的状态联动宠物；最终回复按语音设置自动朗读")
                     }
                 }
             }
 
-            SettingsSection(title: "Agent 通知", footer: "一键配置会写入各自的 hook 配置，只追加本开发版自己的条目；原文件会先备份为 .folobutton-dev.bak。") {
+            SettingsSection(title: "Codex 兼容通知", footer: "仅保留原 Codex 通知配置；Claude Code 的完整状态与回复 Hook 统一在上方安装。关闭 AI 助理硬件接管后，Passport 恢复原 Codex 操作。") {
                 Card {
                     VStack(spacing: DS.Space.m) {
-                        ForEach(AgentHookInstaller.Agent.allCases) { agent in
-                            AgentHookRow(agent: agent)
-                            if agent != AgentHookInstaller.Agent.allCases.last { Divider() }
-                        }
+                        AgentHookRow(agent: .codex)
                     }
                 }
                 HStack {
                     Spacer()
-                    Button("测试通知") { app.agent.post(.done, source: "Claude Code") }
+                    Button("测试通知") { app.agent.post(.done, source: "Codex") }
                         .buttonStyle(SecondaryButtonStyle())
                 }
                 .padding(.top, DS.Space.xs)

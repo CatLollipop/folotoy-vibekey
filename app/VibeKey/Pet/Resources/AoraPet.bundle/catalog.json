@@ -1,0 +1,2648 @@
+{
+  "casts": [
+    {
+      "id": "dot",
+      "name": "球球",
+      "englishName": "Dot",
+      "shape": "circle",
+      "color": "cream",
+      "face": "capsule",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "mochi",
+      "name": "糯糯",
+      "englishName": "Mochi",
+      "shape": "mochi",
+      "color": "blue",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "pip",
+      "name": "团团",
+      "englishName": "Pip",
+      "shape": "blob",
+      "color": "cyan",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "byte",
+      "name": "比特",
+      "englishName": "Byte",
+      "shape": "pebble",
+      "color": "violet",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "momo",
+      "name": "桃桃",
+      "englishName": "Momo",
+      "shape": "egg",
+      "color": "red",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "bao",
+      "name": "包包",
+      "englishName": "Bao",
+      "shape": "bun",
+      "color": "yellow",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "teal",
+      "name": "青青",
+      "englishName": "Teal",
+      "shape": "tofu",
+      "color": "cyan",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "tato",
+      "name": "薯薯",
+      "englishName": "Tato",
+      "shape": "pill",
+      "color": "red",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "hexa",
+      "name": "六六",
+      "englishName": "Hexa",
+      "shape": "hex",
+      "color": "cyan",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "tri",
+      "name": "尖尖",
+      "englishName": "Tri",
+      "shape": "onigiri",
+      "color": "magenta",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "gemma",
+      "name": "晶晶",
+      "englishName": "Gemma",
+      "shape": "gem",
+      "color": "cyan",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "nimbo",
+      "name": "云宝",
+      "englishName": "Nimbo",
+      "shape": "cloud",
+      "color": "blue",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "dew",
+      "name": "滴滴",
+      "englishName": "Dew",
+      "shape": "drop",
+      "color": "blue",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "leafy",
+      "name": "叶叶",
+      "englishName": "Leafy",
+      "shape": "leaf",
+      "color": "green",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "bloom",
+      "name": "仙仙",
+      "englishName": "Bloom",
+      "shape": "flower",
+      "color": "magenta",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "lucky",
+      "name": "幸幸",
+      "englishName": "Lucky",
+      "shape": "clover",
+      "color": "green",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "sprout",
+      "name": "芽芽",
+      "englishName": "Sprout",
+      "shape": "sprout",
+      "color": "green",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "shroom",
+      "name": "菇菇",
+      "englishName": "Shroom",
+      "shape": "mushroom",
+      "color": "red",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "oak",
+      "name": "橡橡",
+      "englishName": "Oak",
+      "shape": "acorn",
+      "color": "brown",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "pokey",
+      "name": "刺刺",
+      "englishName": "Pokey",
+      "shape": "cactus",
+      "color": "green",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "aubie",
+      "name": "茄茄",
+      "englishName": "Aubie",
+      "shape": "eggplant",
+      "color": "violet",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "nashi",
+      "name": "梨梨",
+      "englishName": "Nashi",
+      "shape": "pear",
+      "color": "yellow",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "pomme",
+      "name": "苹苹",
+      "englishName": "Pomme",
+      "shape": "apple",
+      "color": "green",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "berry",
+      "name": "莓莓",
+      "englishName": "Berry",
+      "shape": "strawberry",
+      "color": "red",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "cheri",
+      "name": "樱樱",
+      "englishName": "Cheri",
+      "shape": "cherry",
+      "color": "magenta",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "avo",
+      "name": "油油",
+      "englishName": "Avo",
+      "shape": "avocado",
+      "color": "yellow",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "melo",
+      "name": "瓜瓜",
+      "englishName": "Melo",
+      "shape": "melon",
+      "color": "red",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "pud",
+      "name": "布布",
+      "englishName": "Pud",
+      "shape": "pudding",
+      "color": "yellow",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "toasty",
+      "name": "脆脆",
+      "englishName": "Toasty",
+      "shape": "toast",
+      "color": "brown",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "scoop",
+      "name": "冰冰",
+      "englishName": "Scoop",
+      "shape": "icecream",
+      "color": "pink",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "cuppy",
+      "name": "杯杯",
+      "englishName": "Cuppy",
+      "shape": "cupcake",
+      "color": "pink",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "fry",
+      "name": "条条",
+      "englishName": "Fry",
+      "shape": "fries",
+      "color": "yellow",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "candy",
+      "name": "糖糖",
+      "englishName": "Candy",
+      "shape": "candy",
+      "color": "blue",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "patty",
+      "name": "堡堡",
+      "englishName": "Patty",
+      "shape": "burger",
+      "color": "brown",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "twinkle",
+      "name": "亮亮",
+      "englishName": "Twinkle",
+      "shape": "star",
+      "color": "yellow",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "luv",
+      "name": "心心",
+      "englishName": "Luv",
+      "shape": "heart",
+      "color": "red",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "ember",
+      "name": "焰焰",
+      "englishName": "Ember",
+      "shape": "flame",
+      "color": "orange",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "chime",
+      "name": "叮叮",
+      "englishName": "Chime",
+      "shape": "bell",
+      "color": "violet",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "jelly",
+      "name": "水灵",
+      "englishName": "Jelly",
+      "shape": "ghost",
+      "color": "orange",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "beep",
+      "name": "哔哔",
+      "englishName": "Beep",
+      "shape": "bot",
+      "color": "cyan",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "luna",
+      "name": "露娜",
+      "englishName": "Luna",
+      "shape": "crescent",
+      "color": "yellow",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "boba",
+      "name": "波波",
+      "englishName": "Boba",
+      "shape": "boba",
+      "color": "brown",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "orbi",
+      "name": "环环",
+      "englishName": "Orbi",
+      "shape": "planet",
+      "color": "violet",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "nook",
+      "name": "窝窝",
+      "englishName": "Nook",
+      "shape": "cottage",
+      "color": "orange",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "chatty",
+      "name": "叨叨",
+      "englishName": "Chatty",
+      "shape": "chat",
+      "color": "cyan",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "joy",
+      "name": "喜喜",
+      "englishName": "Joy",
+      "shape": "gift",
+      "color": "magenta",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "lumi",
+      "name": "点点",
+      "englishName": "Lumi",
+      "shape": "bulb",
+      "color": "yellow",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "finn",
+      "name": "鱼鱼",
+      "englishName": "Finn",
+      "shape": "fish",
+      "color": "cyan",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "inky",
+      "name": "墨墨",
+      "englishName": "Inky",
+      "shape": "octopus",
+      "color": "violet",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "roly",
+      "name": "噜噜",
+      "englishName": "Roly",
+      "shape": "seal",
+      "color": "blue",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "puff",
+      "name": "鼓鼓",
+      "englishName": "Puff",
+      "shape": "puffer",
+      "color": "green",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "miso",
+      "name": "喵喵",
+      "englishName": "Miso",
+      "shape": "cat",
+      "color": "orange",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "hop",
+      "name": "跳跳",
+      "englishName": "Hop",
+      "shape": "bunny",
+      "color": "magenta",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "bruno",
+      "name": "熊熊",
+      "englishName": "Bruno",
+      "shape": "bear",
+      "color": "brown",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "chirp",
+      "name": "啾啾",
+      "englishName": "Chirp",
+      "shape": "chick",
+      "color": "yellow",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "waddle",
+      "name": "摇摇",
+      "englishName": "Waddle",
+      "shape": "penguin",
+      "color": "blue",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "oink",
+      "name": "哼哼",
+      "englishName": "Oink",
+      "shape": "pig",
+      "color": "pink",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "rusty",
+      "name": "狐狐",
+      "englishName": "Rusty",
+      "shape": "fox",
+      "color": "orange",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "leo",
+      "name": "狮狮",
+      "englishName": "Leo",
+      "shape": "lion",
+      "color": "orange",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "hammy",
+      "name": "囤囤",
+      "englishName": "Hammy",
+      "shape": "hamster",
+      "color": "orange",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "prickle",
+      "name": "扎扎",
+      "englishName": "Prickle",
+      "shape": "hedgehog",
+      "color": "brown",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "koko",
+      "name": "抱抱",
+      "englishName": "Koko",
+      "shape": "koala",
+      "color": "gray",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "flap",
+      "name": "扑扑",
+      "englishName": "Flap",
+      "shape": "bat",
+      "color": "violet",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "kiki",
+      "name": "琪琪",
+      "englishName": "Kiki",
+      "shape": "bob",
+      "color": "brown",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "maru",
+      "name": "丸丸",
+      "englishName": "Maru",
+      "shape": "topknot",
+      "color": "pink",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "zip",
+      "name": "小刺",
+      "englishName": "Zip",
+      "shape": "spiky",
+      "color": "blue",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "fuzz",
+      "name": "卷卷",
+      "englishName": "Fuzz",
+      "shape": "curly",
+      "color": "green",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "lulu",
+      "name": "露露",
+      "englishName": "Lulu",
+      "shape": "twinbuns",
+      "color": "violet",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "cinder",
+      "name": "红红",
+      "englishName": "Cinder",
+      "shape": "chunk",
+      "color": "night",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "sooty",
+      "name": "烟烟",
+      "englishName": "Sooty",
+      "shape": "lump",
+      "color": "night",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "ashy",
+      "name": "灰灰",
+      "englishName": "Ashy",
+      "shape": "fluff",
+      "color": "night",
+      "face": "cute",
+      "theme": "core",
+      "themeName": "基础角色",
+      "englishThemeName": "Core cast"
+    },
+    {
+      "id": "floaty",
+      "name": "飘飘",
+      "englishName": "Floaty",
+      "shape": "spook",
+      "color": "cream",
+      "face": "cute",
+      "theme": "halloween",
+      "themeName": "万圣节",
+      "englishThemeName": "Halloween"
+    },
+    {
+      "id": "gourdy",
+      "name": "南南",
+      "englishName": "Gourdy",
+      "shape": "pumpkin",
+      "color": "orange",
+      "face": "cute",
+      "theme": "halloween",
+      "themeName": "万圣节",
+      "englishThemeName": "Halloween"
+    },
+    {
+      "id": "coal",
+      "name": "煤球",
+      "englishName": "Coal",
+      "shape": "nightcat",
+      "color": "night",
+      "face": "cute",
+      "theme": "halloween",
+      "themeName": "万圣节",
+      "englishThemeName": "Halloween"
+    },
+    {
+      "id": "flitter",
+      "name": "蝠蝠",
+      "englishName": "Flitter",
+      "shape": "batling",
+      "color": "violet",
+      "face": "cute",
+      "theme": "halloween",
+      "themeName": "万圣节",
+      "englishThemeName": "Halloween"
+    },
+    {
+      "id": "bubbles",
+      "name": "咕咕",
+      "englishName": "Bubbles",
+      "shape": "cauldron",
+      "color": "night",
+      "face": "cute",
+      "theme": "halloween",
+      "themeName": "万圣节",
+      "englishThemeName": "Halloween"
+    },
+    {
+      "id": "hatty",
+      "name": "帽帽",
+      "englishName": "Hatty",
+      "shape": "witch",
+      "color": "green",
+      "face": "cute",
+      "theme": "halloween",
+      "themeName": "万圣节",
+      "englishThemeName": "Halloween"
+    },
+    {
+      "id": "twisty",
+      "name": "橘橘",
+      "englishName": "Twisty",
+      "shape": "toffee",
+      "color": "orange",
+      "face": "cute",
+      "theme": "halloween",
+      "themeName": "万圣节",
+      "englishThemeName": "Halloween"
+    },
+    {
+      "id": "creaky",
+      "name": "屋屋",
+      "englishName": "Creaky",
+      "shape": "manor",
+      "color": "night",
+      "face": "cute",
+      "theme": "halloween",
+      "themeName": "万圣节",
+      "englishThemeName": "Halloween"
+    },
+    {
+      "id": "wisp",
+      "name": "溜溜",
+      "englishName": "Wisp",
+      "shape": "wisp",
+      "color": "lilac",
+      "face": "cute",
+      "theme": "halloween",
+      "themeName": "万圣节",
+      "englishThemeName": "Halloween"
+    },
+    {
+      "id": "knotty",
+      "name": "枝枝",
+      "englishName": "Knotty",
+      "shape": "deadtree",
+      "color": "brown",
+      "face": "cute",
+      "theme": "halloween",
+      "themeName": "万圣节",
+      "englishThemeName": "Halloween"
+    },
+    {
+      "id": "patch",
+      "name": "稻稻",
+      "englishName": "Patch",
+      "shape": "scarecrow",
+      "color": "cream",
+      "face": "cute",
+      "theme": "halloween",
+      "themeName": "万圣节",
+      "englishThemeName": "Halloween"
+    },
+    {
+      "id": "resty",
+      "name": "安安",
+      "englishName": "Resty",
+      "shape": "tombstone",
+      "color": "lilac",
+      "face": "cute",
+      "theme": "halloween",
+      "themeName": "万圣节",
+      "englishThemeName": "Halloween"
+    },
+    {
+      "id": "corny",
+      "name": "甜甜",
+      "englishName": "Corny",
+      "shape": "candycorn",
+      "color": "orange",
+      "face": "cute",
+      "theme": "halloween",
+      "themeName": "万圣节",
+      "englishThemeName": "Halloween"
+    },
+    {
+      "id": "wraps",
+      "name": "绷绷",
+      "englishName": "Wraps",
+      "shape": "mummy",
+      "color": "cream",
+      "face": "cute",
+      "theme": "halloween",
+      "themeName": "万圣节",
+      "englishThemeName": "Halloween"
+    },
+    {
+      "id": "rattle",
+      "name": "骨骨",
+      "englishName": "Rattle",
+      "shape": "skull",
+      "color": "cream",
+      "face": "cute",
+      "theme": "halloween",
+      "themeName": "万圣节",
+      "englishThemeName": "Halloween"
+    },
+    {
+      "id": "dangle",
+      "name": "丝丝",
+      "englishName": "Dangle",
+      "shape": "spider",
+      "color": "night",
+      "face": "cute",
+      "theme": "halloween",
+      "themeName": "万圣节",
+      "englishThemeName": "Halloween"
+    },
+    {
+      "id": "hoot",
+      "name": "呼呼",
+      "englishName": "Hoot",
+      "shape": "owl",
+      "color": "brown",
+      "face": "cute",
+      "theme": "halloween",
+      "themeName": "万圣节",
+      "englishThemeName": "Halloween"
+    },
+    {
+      "id": "pail",
+      "name": "桶桶",
+      "englishName": "Pail",
+      "shape": "pail",
+      "color": "orange",
+      "face": "cute",
+      "theme": "halloween",
+      "themeName": "万圣节",
+      "englishThemeName": "Halloween"
+    },
+    {
+      "id": "wick",
+      "name": "蜡蜡",
+      "englishName": "Wick",
+      "shape": "candle",
+      "color": "pink",
+      "face": "cute",
+      "theme": "halloween",
+      "themeName": "万圣节",
+      "englishThemeName": "Halloween"
+    },
+    {
+      "id": "cape",
+      "name": "斗斗",
+      "englishName": "Cape",
+      "shape": "vampire",
+      "color": "cyan",
+      "face": "cute",
+      "theme": "halloween",
+      "themeName": "万圣节",
+      "englishThemeName": "Halloween"
+    },
+    {
+      "id": "witchmochi",
+      "name": "巫师帽糯糯",
+      "englishName": "Witch Hat Mochi",
+      "shape": "witchmochi",
+      "color": "cream",
+      "face": "cute",
+      "theme": "halloween",
+      "themeName": "万圣节",
+      "englishThemeName": "Halloween"
+    },
+    {
+      "id": "lanternmiso",
+      "name": "南瓜灯喵喵",
+      "englishName": "Lantern Miso",
+      "shape": "lanterncat",
+      "color": "night",
+      "face": "cute",
+      "theme": "halloween",
+      "themeName": "万圣节",
+      "englishThemeName": "Halloween"
+    },
+    {
+      "id": "nightcapluna",
+      "name": "睡帽露娜",
+      "englishName": "Nightcap Luna",
+      "shape": "nightcapmoon",
+      "color": "yellow",
+      "face": "cute",
+      "theme": "halloween",
+      "themeName": "万圣节",
+      "englishThemeName": "Halloween"
+    },
+    {
+      "id": "xm-tree",
+      "name": "杉杉",
+      "englishName": "Spruce",
+      "shape": "xm-tree",
+      "color": "pine",
+      "face": "cute",
+      "theme": "christmas",
+      "themeName": "圣诞节",
+      "englishThemeName": "Christmas"
+    },
+    {
+      "id": "xm-snowman",
+      "name": "堆堆",
+      "englishName": "Chilly",
+      "shape": "xm-snowman",
+      "color": "snow",
+      "face": "cute",
+      "theme": "christmas",
+      "themeName": "圣诞节",
+      "englishThemeName": "Christmas"
+    },
+    {
+      "id": "xm-ginger",
+      "name": "姜姜",
+      "englishName": "Crumb",
+      "shape": "xm-ginger",
+      "color": "brown",
+      "face": "cute",
+      "theme": "christmas",
+      "themeName": "圣诞节",
+      "englishThemeName": "Christmas"
+    },
+    {
+      "id": "xm-deer",
+      "name": "驯驯",
+      "englishName": "Fawn",
+      "shape": "xm-deer",
+      "color": "cocoa",
+      "face": "cute",
+      "theme": "christmas",
+      "themeName": "圣诞节",
+      "englishThemeName": "Christmas"
+    },
+    {
+      "id": "xm-stocking",
+      "name": "袜袜",
+      "englishName": "Cozy",
+      "shape": "xm-stocking",
+      "color": "crimson",
+      "face": "cute",
+      "theme": "christmas",
+      "themeName": "圣诞节",
+      "englishThemeName": "Christmas"
+    },
+    {
+      "id": "xm-cane",
+      "name": "拐拐",
+      "englishName": "Hooky",
+      "shape": "xm-cane",
+      "color": "snow",
+      "face": "cute",
+      "theme": "christmas",
+      "themeName": "圣诞节",
+      "englishThemeName": "Christmas"
+    },
+    {
+      "id": "xm-globe",
+      "name": "莹莹",
+      "englishName": "Swirly",
+      "shape": "xm-globe",
+      "color": "sky",
+      "face": "cute",
+      "theme": "christmas",
+      "themeName": "圣诞节",
+      "englishThemeName": "Christmas"
+    },
+    {
+      "id": "xm-santa",
+      "name": "胡胡",
+      "englishName": "Jolly",
+      "shape": "xm-santa",
+      "color": "peach",
+      "face": "cute",
+      "theme": "christmas",
+      "themeName": "圣诞节",
+      "englishThemeName": "Christmas"
+    },
+    {
+      "id": "xm-cocoa",
+      "name": "可可",
+      "englishName": "Mocha",
+      "shape": "xm-cocoa",
+      "color": "pine",
+      "face": "cute",
+      "theme": "christmas",
+      "themeName": "圣诞节",
+      "englishThemeName": "Christmas"
+    },
+    {
+      "id": "xm-bauble",
+      "name": "挂挂",
+      "englishName": "Bobble",
+      "shape": "xm-bauble",
+      "color": "yellow",
+      "face": "cute",
+      "theme": "christmas",
+      "themeName": "圣诞节",
+      "englishThemeName": "Christmas"
+    },
+    {
+      "id": "xm-mochi-hat",
+      "name": "圣诞帽糯糯",
+      "englishName": "Santa Hat Mochi",
+      "shape": "xm-mochi-hat",
+      "color": "snow",
+      "face": "cute",
+      "theme": "christmas",
+      "themeName": "圣诞节",
+      "englishThemeName": "Christmas"
+    },
+    {
+      "id": "xm-chirp-hat",
+      "name": "大号圣诞帽啾啾",
+      "englishName": "Big Hat Chirp",
+      "shape": "xm-chirp-hat",
+      "color": "yellow",
+      "face": "cute",
+      "theme": "christmas",
+      "themeName": "圣诞节",
+      "englishThemeName": "Christmas"
+    },
+    {
+      "id": "xm-waddle-scarf",
+      "name": "针织围巾摇摇",
+      "englishName": "Knit Scarf Waddle",
+      "shape": "xm-waddle-scarf",
+      "color": "night",
+      "face": "cute",
+      "theme": "christmas",
+      "themeName": "圣诞节",
+      "englishThemeName": "Christmas"
+    },
+    {
+      "id": "xm-miso-antlers",
+      "name": "鹿角发箍喵喵",
+      "englishName": "Antler Miso",
+      "shape": "xm-miso-antlers",
+      "color": "brown",
+      "face": "cute",
+      "theme": "christmas",
+      "themeName": "圣诞节",
+      "englishThemeName": "Christmas"
+    },
+    {
+      "id": "xm-kiki-muffs",
+      "name": "耳罩琪琪",
+      "englishName": "Earmuff Kiki",
+      "shape": "xm-kiki-muffs",
+      "color": "peach",
+      "face": "cute",
+      "theme": "christmas",
+      "themeName": "圣诞节",
+      "englishThemeName": "Christmas"
+    },
+    {
+      "id": "xm-pokey-mittens",
+      "name": "连指手套刺刺",
+      "englishName": "Mitten Pokey",
+      "shape": "xm-pokey-mittens",
+      "color": "pine",
+      "face": "cute",
+      "theme": "christmas",
+      "themeName": "圣诞节",
+      "englishThemeName": "Christmas"
+    },
+    {
+      "id": "xm-pud-holly",
+      "name": "冬青枝布布",
+      "englishName": "Holly Pud",
+      "shape": "xm-pud-holly",
+      "color": "cocoa",
+      "face": "cute",
+      "theme": "christmas",
+      "themeName": "圣诞节",
+      "englishThemeName": "Christmas"
+    },
+    {
+      "id": "xm-chime-holly",
+      "name": "冬青枝叮叮",
+      "englishName": "Holly Chime",
+      "shape": "xm-chime-holly",
+      "color": "yellow",
+      "face": "cute",
+      "theme": "christmas",
+      "themeName": "圣诞节",
+      "englishThemeName": "Christmas"
+    },
+    {
+      "id": "sf-tangyuan",
+      "name": "宵宵",
+      "englishName": "Dollop",
+      "shape": "sf-tangyuan",
+      "color": "cream",
+      "face": "cute",
+      "theme": "spring-festival",
+      "themeName": "春节",
+      "englishThemeName": "Spring Festival"
+    },
+    {
+      "id": "sf-hongbao",
+      "name": "红红",
+      "englishName": "Packet",
+      "shape": "sf-hongbao",
+      "color": "red",
+      "face": "cute",
+      "theme": "spring-festival",
+      "themeName": "春节",
+      "englishThemeName": "Spring Festival"
+    },
+    {
+      "id": "sf-firecracker",
+      "name": "噼噼",
+      "englishName": "Crackle",
+      "shape": "sf-firecracker",
+      "color": "red",
+      "face": "cute",
+      "theme": "spring-festival",
+      "themeName": "春节",
+      "englishThemeName": "Spring Festival"
+    },
+    {
+      "id": "sf-fu",
+      "name": "福福",
+      "englishName": "Bliss",
+      "shape": "sf-fu",
+      "color": "red",
+      "face": "cute",
+      "theme": "spring-festival",
+      "themeName": "春节",
+      "englishThemeName": "Spring Festival"
+    },
+    {
+      "id": "sf-nian",
+      "name": "年年",
+      "englishName": "Rumble",
+      "shape": "sf-nian",
+      "color": "night",
+      "face": "cute",
+      "theme": "spring-festival",
+      "themeName": "春节",
+      "englishThemeName": "Spring Festival"
+    },
+    {
+      "id": "sf-knot",
+      "name": "结结",
+      "englishName": "Tassel",
+      "shape": "sf-knot",
+      "color": "red",
+      "face": "cute",
+      "theme": "spring-festival",
+      "themeName": "春节",
+      "englishThemeName": "Spring Festival"
+    },
+    {
+      "id": "sf-orange",
+      "name": "吉吉",
+      "englishName": "Zest",
+      "shape": "sf-orange",
+      "color": "orange",
+      "face": "cute",
+      "theme": "spring-festival",
+      "themeName": "春节",
+      "englishThemeName": "Spring Festival"
+    },
+    {
+      "id": "sf-goat",
+      "name": "羊羊",
+      "englishName": "Baa",
+      "shape": "sf-goat",
+      "color": "cream",
+      "face": "cute",
+      "theme": "spring-festival",
+      "themeName": "春节",
+      "englishThemeName": "Spring Festival"
+    },
+    {
+      "id": "sf-koi",
+      "name": "锦锦",
+      "englishName": "Swish",
+      "shape": "sf-koi",
+      "color": "cream",
+      "face": "cute",
+      "theme": "spring-festival",
+      "themeName": "春节",
+      "englishThemeName": "Spring Festival"
+    },
+    {
+      "id": "sf-ingot",
+      "name": "元元",
+      "englishName": "Nugget",
+      "shape": "sf-ingot",
+      "color": "yellow",
+      "face": "cute",
+      "theme": "spring-festival",
+      "themeName": "春节",
+      "englishThemeName": "Spring Festival"
+    },
+    {
+      "id": "sf-kiki-tiger",
+      "name": "虎头帽琪琪",
+      "englishName": "Tiger Hat Kiki",
+      "shape": "sf-kiki-tiger",
+      "color": "brown",
+      "face": "cute",
+      "theme": "spring-festival",
+      "themeName": "春节",
+      "englishThemeName": "Spring Festival"
+    },
+    {
+      "id": "sf-waddle-scarf",
+      "name": "红围巾摇摇",
+      "englishName": "Red Scarf Waddle",
+      "shape": "sf-waddle-scarf",
+      "color": "night",
+      "face": "cute",
+      "theme": "spring-festival",
+      "themeName": "春节",
+      "englishThemeName": "Spring Festival"
+    },
+    {
+      "id": "sf-hop-lantern",
+      "name": "小灯笼跳跳",
+      "englishName": "Lantern Hop",
+      "shape": "sf-hop-lantern",
+      "color": "blush",
+      "face": "cute",
+      "theme": "spring-festival",
+      "themeName": "春节",
+      "englishThemeName": "Spring Festival"
+    },
+    {
+      "id": "sf-maru-collar",
+      "name": "唐装立领丸丸",
+      "englishName": "Mandarin Collar Maru",
+      "shape": "sf-maru-collar",
+      "color": "blush",
+      "face": "cute",
+      "theme": "spring-festival",
+      "themeName": "春节",
+      "englishThemeName": "Spring Festival"
+    },
+    {
+      "id": "sf-mochi-fu",
+      "name": "福字胸章糯糯",
+      "englishName": "Fortune Badge Mochi",
+      "shape": "sf-mochi-fu",
+      "color": "cream",
+      "face": "cute",
+      "theme": "spring-festival",
+      "themeName": "春节",
+      "englishThemeName": "Spring Festival"
+    },
+    {
+      "id": "sf-lulu-crackers",
+      "name": "鞭炮耳坠露露",
+      "englishName": "Firecracker Earrings Lulu",
+      "shape": "sf-lulu-crackers",
+      "color": "green",
+      "face": "cute",
+      "theme": "spring-festival",
+      "themeName": "春节",
+      "englishThemeName": "Spring Festival"
+    },
+    {
+      "id": "sf-nook-couplets",
+      "name": "春联窝窝",
+      "englishName": "Couplets Nook",
+      "shape": "sf-nook-couplets",
+      "color": "orange",
+      "face": "cute",
+      "theme": "spring-festival",
+      "themeName": "春节",
+      "englishThemeName": "Spring Festival"
+    },
+    {
+      "id": "sf-chirp-lion",
+      "name": "舞狮帽啾啾",
+      "englishName": "Lion Hat Chirp",
+      "shape": "sf-chirp-lion",
+      "color": "yellow",
+      "face": "cute",
+      "theme": "spring-festival",
+      "themeName": "春节",
+      "englishThemeName": "Spring Festival"
+    },
+    {
+      "id": "ma-mooncake",
+      "name": "饼饼",
+      "englishName": "Cakey",
+      "shape": "ma-mooncake",
+      "color": "crust",
+      "face": "cute",
+      "theme": "mid-autumn",
+      "themeName": "中秋节",
+      "englishThemeName": "Mid-Autumn"
+    },
+    {
+      "id": "ma-rabbit",
+      "name": "玉玉",
+      "englishName": "Jadey",
+      "shape": "ma-rabbit",
+      "color": "ivory",
+      "face": "cute",
+      "theme": "mid-autumn",
+      "themeName": "中秋节",
+      "englishThemeName": "Mid-Autumn"
+    },
+    {
+      "id": "ma-lantern",
+      "name": "拉拉",
+      "englishName": "Tuggy",
+      "shape": "ma-lantern",
+      "color": "red",
+      "face": "cute",
+      "theme": "mid-autumn",
+      "themeName": "中秋节",
+      "englishThemeName": "Mid-Autumn"
+    },
+    {
+      "id": "ma-osmanthus",
+      "name": "桂桂",
+      "englishName": "Sprig",
+      "shape": "ma-osmanthus",
+      "color": "yellow",
+      "face": "cute",
+      "theme": "mid-autumn",
+      "themeName": "中秋节",
+      "englishThemeName": "Mid-Autumn"
+    },
+    {
+      "id": "ma-moon",
+      "name": "皎皎",
+      "englishName": "Beamy",
+      "shape": "ma-moon",
+      "color": "cream",
+      "face": "cute",
+      "theme": "mid-autumn",
+      "themeName": "中秋节",
+      "englishThemeName": "Mid-Autumn"
+    },
+    {
+      "id": "ma-pomelo",
+      "name": "柚柚",
+      "englishName": "Zesty",
+      "shape": "ma-pomelo",
+      "color": "blush",
+      "face": "cute",
+      "theme": "mid-autumn",
+      "themeName": "中秋节",
+      "englishThemeName": "Mid-Autumn"
+    },
+    {
+      "id": "ma-skylantern",
+      "name": "祈祈",
+      "englishName": "Wishy",
+      "shape": "ma-skylantern",
+      "color": "orange",
+      "face": "cute",
+      "theme": "mid-autumn",
+      "themeName": "中秋节",
+      "englishThemeName": "Mid-Autumn"
+    },
+    {
+      "id": "ma-crab",
+      "name": "蟹蟹",
+      "englishName": "Pinchy",
+      "shape": "ma-crab",
+      "color": "indigo",
+      "face": "cute",
+      "theme": "mid-autumn",
+      "themeName": "中秋节",
+      "englishThemeName": "Mid-Autumn"
+    },
+    {
+      "id": "ma-mochi-ears",
+      "name": "兔耳朵糯糯",
+      "englishName": "Bunny Ears Mochi",
+      "shape": "ma-mochi-ears",
+      "color": "jade",
+      "face": "cute",
+      "theme": "mid-autumn",
+      "themeName": "中秋节",
+      "englishThemeName": "Mid-Autumn"
+    },
+    {
+      "id": "ma-hop-cake",
+      "name": "月饼跳跳",
+      "englishName": "Mooncake Hop",
+      "shape": "ma-hop-cake",
+      "color": "ivory",
+      "face": "cute",
+      "theme": "mid-autumn",
+      "themeName": "中秋节",
+      "englishThemeName": "Mid-Autumn"
+    },
+    {
+      "id": "ma-chirp-cake",
+      "name": "月饼啾啾",
+      "englishName": "Mooncake Chirp",
+      "shape": "ma-chirp-cake",
+      "color": "yellow",
+      "face": "cute",
+      "theme": "mid-autumn",
+      "themeName": "中秋节",
+      "englishThemeName": "Mid-Autumn"
+    },
+    {
+      "id": "ma-lulu-pin",
+      "name": "桂花簪露露",
+      "englishName": "Osmanthus Pin Lulu",
+      "shape": "ma-lulu-pin",
+      "color": "blush",
+      "face": "cute",
+      "theme": "mid-autumn",
+      "themeName": "中秋节",
+      "englishThemeName": "Mid-Autumn"
+    },
+    {
+      "id": "ma-kiki-pin",
+      "name": "桂花簪琪琪",
+      "englishName": "Osmanthus Pin Kiki",
+      "shape": "ma-kiki-pin",
+      "color": "cream",
+      "face": "cute",
+      "theme": "mid-autumn",
+      "themeName": "中秋节",
+      "englishThemeName": "Mid-Autumn"
+    },
+    {
+      "id": "ma-miso-lamp",
+      "name": "小灯笼喵喵",
+      "englishName": "Lantern Miso",
+      "shape": "ma-miso-lamp",
+      "color": "orange",
+      "face": "cute",
+      "theme": "mid-autumn",
+      "themeName": "中秋节",
+      "englishThemeName": "Mid-Autumn"
+    },
+    {
+      "id": "ma-waddle-lamp",
+      "name": "小灯笼摇摇",
+      "englishName": "Lantern Waddle",
+      "shape": "ma-waddle-lamp",
+      "color": "indigo",
+      "face": "cute",
+      "theme": "mid-autumn",
+      "themeName": "中秋节",
+      "englishThemeName": "Mid-Autumn"
+    },
+    {
+      "id": "ma-bao-hat",
+      "name": "柚子皮帽包包",
+      "englishName": "Peel Hat Bao",
+      "shape": "ma-bao-hat",
+      "color": "ivory",
+      "face": "cute",
+      "theme": "mid-autumn",
+      "themeName": "中秋节",
+      "englishThemeName": "Mid-Autumn"
+    },
+    {
+      "id": "ma-pip-hat",
+      "name": "柚子皮帽团团",
+      "englishName": "Peel Hat Pip",
+      "shape": "ma-pip-hat",
+      "color": "yellow",
+      "face": "cute",
+      "theme": "mid-autumn",
+      "themeName": "中秋节",
+      "englishThemeName": "Mid-Autumn"
+    },
+    {
+      "id": "ea-dapple",
+      "name": "绘绘",
+      "englishName": "Dapple",
+      "shape": "ea-dapple",
+      "color": "sky",
+      "face": "cute",
+      "theme": "easter",
+      "themeName": "复活节",
+      "englishThemeName": "Easter"
+    },
+    {
+      "id": "ea-wicker",
+      "name": "筐筐",
+      "englishName": "Wicker",
+      "shape": "ea-wicker",
+      "color": "butter",
+      "face": "cute",
+      "theme": "easter",
+      "themeName": "复活节",
+      "englishThemeName": "Easter"
+    },
+    {
+      "id": "ea-cocoa",
+      "name": "啃啃",
+      "englishName": "Cocoa",
+      "shape": "ea-cocoa",
+      "color": "cocoa",
+      "face": "cute",
+      "theme": "easter",
+      "themeName": "复活节",
+      "englishThemeName": "Easter"
+    },
+    {
+      "id": "ea-crunchy",
+      "name": "卜卜",
+      "englishName": "Crunchy",
+      "shape": "ea-crunchy",
+      "color": "carrot",
+      "face": "cute",
+      "theme": "easter",
+      "themeName": "复活节",
+      "englishThemeName": "Easter"
+    },
+    {
+      "id": "ea-posy",
+      "name": "菊菊",
+      "englishName": "Posy",
+      "shape": "ea-posy",
+      "color": "ivory",
+      "face": "cute",
+      "theme": "easter",
+      "themeName": "复活节",
+      "englishThemeName": "Easter"
+    },
+    {
+      "id": "ea-breezy",
+      "name": "蝶蝶",
+      "englishName": "Breezy",
+      "shape": "ea-breezy",
+      "color": "lilac",
+      "face": "cute",
+      "theme": "easter",
+      "themeName": "复活节",
+      "englishThemeName": "Easter"
+    },
+    {
+      "id": "ea-peeky",
+      "name": "叽叽",
+      "englishName": "Peeky",
+      "shape": "ea-peeky",
+      "color": "butter",
+      "face": "cute",
+      "theme": "easter",
+      "themeName": "复活节",
+      "englishThemeName": "Easter"
+    },
+    {
+      "id": "ea-hop-crown",
+      "name": "花环跳跳",
+      "englishName": "Flower Crown Hop",
+      "shape": "ea-hop-crown",
+      "color": "ivory",
+      "face": "cute",
+      "theme": "easter",
+      "themeName": "复活节",
+      "englishThemeName": "Easter"
+    },
+    {
+      "id": "ea-chirp-shell",
+      "name": "蛋壳帽啾啾",
+      "englishName": "Shell Cap Chirp",
+      "shape": "ea-chirp-shell",
+      "color": "butter",
+      "face": "cute",
+      "theme": "easter",
+      "themeName": "复活节",
+      "englishThemeName": "Easter"
+    },
+    {
+      "id": "ea-mochi-ears",
+      "name": "兔耳发箍糯糯",
+      "englishName": "Bunny Ears Mochi",
+      "shape": "ea-mochi-ears",
+      "color": "sky",
+      "face": "cute",
+      "theme": "easter",
+      "themeName": "复活节",
+      "englishThemeName": "Easter"
+    },
+    {
+      "id": "ea-momo-ears",
+      "name": "兔耳发箍桃桃",
+      "englishName": "Bunny Ears Momo",
+      "shape": "ea-momo-ears",
+      "color": "blush",
+      "face": "cute",
+      "theme": "easter",
+      "themeName": "复活节",
+      "englishThemeName": "Easter"
+    },
+    {
+      "id": "ea-waddle-shell",
+      "name": "蛋壳帽摇摇",
+      "englishName": "Shell Cap Waddle",
+      "shape": "ea-waddle-shell",
+      "color": "sky",
+      "face": "cute",
+      "theme": "easter",
+      "themeName": "复活节",
+      "englishThemeName": "Easter"
+    },
+    {
+      "id": "ea-kiki-crown",
+      "name": "花环琪琪",
+      "englishName": "Flower Crown Kiki",
+      "shape": "ea-kiki-crown",
+      "color": "butter",
+      "face": "cute",
+      "theme": "easter",
+      "themeName": "复活节",
+      "englishThemeName": "Easter"
+    },
+    {
+      "id": "ea-lulu-bow",
+      "name": "粉彩蝴蝶结露露",
+      "englishName": "Pastel Bow Lulu",
+      "shape": "ea-lulu-bow",
+      "color": "lilac",
+      "face": "cute",
+      "theme": "easter",
+      "themeName": "复活节",
+      "englishThemeName": "Easter"
+    },
+    {
+      "id": "ea-hammy-basket",
+      "name": "提篮囤囤",
+      "englishName": "Basket Hammy",
+      "shape": "ea-hammy-basket",
+      "color": "carrot",
+      "face": "cute",
+      "theme": "easter",
+      "themeName": "复活节",
+      "englishThemeName": "Easter"
+    },
+    {
+      "id": "sm-popsicle",
+      "name": "棒棒",
+      "englishName": "Popsy",
+      "shape": "sm-popsicle",
+      "color": "pink",
+      "face": "cute",
+      "theme": "summer",
+      "themeName": "夏日",
+      "englishThemeName": "Summer"
+    },
+    {
+      "id": "sm-coconut",
+      "name": "椰椰",
+      "englishName": "Nutty",
+      "shape": "sm-coconut",
+      "color": "grass",
+      "face": "cute",
+      "theme": "summer",
+      "themeName": "夏日",
+      "englishThemeName": "Summer"
+    },
+    {
+      "id": "sm-ring",
+      "name": "泳泳",
+      "englishName": "Bobber",
+      "shape": "sm-ring",
+      "color": "ivory",
+      "face": "cute",
+      "theme": "summer",
+      "themeName": "夏日",
+      "englishThemeName": "Summer"
+    },
+    {
+      "id": "sm-castle",
+      "name": "筑筑",
+      "englishName": "Turret",
+      "shape": "sm-castle",
+      "color": "sand",
+      "face": "cute",
+      "theme": "summer",
+      "themeName": "夏日",
+      "englishThemeName": "Summer"
+    },
+    {
+      "id": "sm-fan",
+      "name": "扇扇",
+      "englishName": "Whirly",
+      "shape": "sm-fan",
+      "color": "sky",
+      "face": "cute",
+      "theme": "summer",
+      "themeName": "夏日",
+      "englishThemeName": "Summer"
+    },
+    {
+      "id": "sm-ice",
+      "name": "凉凉",
+      "englishName": "Cubey",
+      "shape": "sm-ice",
+      "color": "sky",
+      "face": "cute",
+      "theme": "summer",
+      "themeName": "夏日",
+      "englishThemeName": "Summer"
+    },
+    {
+      "id": "sm-pineapple",
+      "name": "菠菠",
+      "englishName": "Pina",
+      "shape": "sm-pineapple",
+      "color": "lemon",
+      "face": "cute",
+      "theme": "summer",
+      "themeName": "夏日",
+      "englishThemeName": "Summer"
+    },
+    {
+      "id": "sm-shell",
+      "name": "珠珠",
+      "englishName": "Pearly",
+      "shape": "sm-shell",
+      "color": "orange",
+      "face": "cute",
+      "theme": "summer",
+      "themeName": "夏日",
+      "englishThemeName": "Summer"
+    },
+    {
+      "id": "sm-cicada",
+      "name": "知知",
+      "englishName": "Chirr",
+      "shape": "sm-cicada",
+      "color": "lagoon",
+      "face": "cute",
+      "theme": "summer",
+      "themeName": "夏日",
+      "englishThemeName": "Summer"
+    },
+    {
+      "id": "sm-miso-shades",
+      "name": "墨镜喵喵",
+      "englishName": "Shades Miso",
+      "shape": "sm-miso-shades",
+      "color": "lemon",
+      "face": "cute",
+      "theme": "summer",
+      "themeName": "夏日",
+      "englishThemeName": "Summer"
+    },
+    {
+      "id": "sm-waddle-goggles",
+      "name": "泳镜摇摇",
+      "englishName": "Goggles Waddle",
+      "shape": "sm-waddle-goggles",
+      "color": "aqua",
+      "face": "cute",
+      "theme": "summer",
+      "themeName": "夏日",
+      "englishThemeName": "Summer"
+    },
+    {
+      "id": "sm-chirp-hat",
+      "name": "草帽啾啾",
+      "englishName": "Straw Hat Chirp",
+      "shape": "sm-chirp-hat",
+      "color": "lemon",
+      "face": "cute",
+      "theme": "summer",
+      "themeName": "夏日",
+      "englishThemeName": "Summer"
+    },
+    {
+      "id": "sm-hop-hat",
+      "name": "草帽跳跳",
+      "englishName": "Straw Hat Hop",
+      "shape": "sm-hop-hat",
+      "color": "pink",
+      "face": "cute",
+      "theme": "summer",
+      "themeName": "夏日",
+      "englishThemeName": "Summer"
+    },
+    {
+      "id": "sm-bruno-melon",
+      "name": "西瓜熊熊",
+      "englishName": "Watermelon Bruno",
+      "shape": "sm-bruno-melon",
+      "color": "sand",
+      "face": "cute",
+      "theme": "summer",
+      "themeName": "夏日",
+      "englishThemeName": "Summer"
+    },
+    {
+      "id": "sm-koko-lei",
+      "name": "花环抱抱",
+      "englishName": "Lei Koko",
+      "shape": "sm-koko-lei",
+      "color": "sky",
+      "face": "cute",
+      "theme": "summer",
+      "themeName": "夏日",
+      "englishThemeName": "Summer"
+    },
+    {
+      "id": "sm-leo-sunscreen",
+      "name": "防晒霜狮狮",
+      "englishName": "Sunscreen Leo",
+      "shape": "sm-leo-sunscreen",
+      "color": "orange",
+      "face": "cute",
+      "theme": "summer",
+      "themeName": "夏日",
+      "englishThemeName": "Summer"
+    },
+    {
+      "id": "sm-scoop-shades",
+      "name": "墨镜冰冰",
+      "englishName": "Shades Scoop",
+      "shape": "sm-scoop-shades",
+      "color": "pink",
+      "face": "cute",
+      "theme": "summer",
+      "themeName": "夏日",
+      "englishThemeName": "Summer"
+    },
+    {
+      "id": "vl-bonbon",
+      "name": "巧巧",
+      "englishName": "Bonbon",
+      "shape": "vl-bonbon",
+      "color": "blush",
+      "face": "cute",
+      "theme": "valentine",
+      "themeName": "情人节",
+      "englishThemeName": "Valentine's Day"
+    },
+    {
+      "id": "vl-rose",
+      "name": "瑰瑰",
+      "englishName": "Rosy",
+      "shape": "vl-rose",
+      "color": "red",
+      "face": "cute",
+      "theme": "valentine",
+      "themeName": "情人节",
+      "englishThemeName": "Valentine's Day"
+    },
+    {
+      "id": "vl-cherub",
+      "name": "丘丘",
+      "englishName": "Dimple",
+      "shape": "vl-cherub",
+      "color": "ivory",
+      "face": "cute",
+      "theme": "valentine",
+      "themeName": "情人节",
+      "englishThemeName": "Valentine's Day"
+    },
+    {
+      "id": "vl-ring",
+      "name": "戒戒",
+      "englishName": "Vow",
+      "shape": "vl-ring",
+      "color": "lilac",
+      "face": "cute",
+      "theme": "valentine",
+      "themeName": "情人节",
+      "englishThemeName": "Valentine's Day"
+    },
+    {
+      "id": "vl-dove",
+      "name": "鸽鸽",
+      "englishName": "Coo",
+      "shape": "vl-dove",
+      "color": "ivory",
+      "face": "cute",
+      "theme": "valentine",
+      "themeName": "情人节",
+      "englishThemeName": "Valentine's Day"
+    },
+    {
+      "id": "vl-dipped",
+      "name": "蘸蘸",
+      "englishName": "Drizzle",
+      "shape": "vl-dipped",
+      "color": "red",
+      "face": "cute",
+      "theme": "valentine",
+      "themeName": "情人节",
+      "englishThemeName": "Valentine's Day"
+    },
+    {
+      "id": "vl-mochi-stickers",
+      "name": "脸颊爱心贴糯糯",
+      "englishName": "Heart Stickers Mochi",
+      "shape": "vl-mochi-stickers",
+      "color": "lilac",
+      "face": "cute",
+      "theme": "valentine",
+      "themeName": "情人节",
+      "englishThemeName": "Valentine's Day"
+    },
+    {
+      "id": "vl-miso-bowtie",
+      "name": "领结喵喵",
+      "englishName": "Bow Tie Miso",
+      "shape": "vl-miso-bowtie",
+      "color": "yellow",
+      "face": "cute",
+      "theme": "valentine",
+      "themeName": "情人节",
+      "englishThemeName": "Valentine's Day"
+    },
+    {
+      "id": "vl-waddle-bowtie",
+      "name": "领结摇摇",
+      "englishName": "Bow Tie Waddle",
+      "shape": "vl-waddle-bowtie",
+      "color": "plum",
+      "face": "cute",
+      "theme": "valentine",
+      "themeName": "情人节",
+      "englishThemeName": "Valentine's Day"
+    },
+    {
+      "id": "vl-bruno-rose",
+      "name": "玫瑰熊熊",
+      "englishName": "Rose Bruno",
+      "shape": "vl-bruno-rose",
+      "color": "cocoa",
+      "face": "cute",
+      "theme": "valentine",
+      "themeName": "情人节",
+      "englishThemeName": "Valentine's Day"
+    },
+    {
+      "id": "vl-hop-glasses",
+      "name": "爱心眼镜跳跳",
+      "englishName": "Heart Glasses Hop",
+      "shape": "vl-hop-glasses",
+      "color": "blush",
+      "face": "cute",
+      "theme": "valentine",
+      "themeName": "情人节",
+      "englishThemeName": "Valentine's Day"
+    },
+    {
+      "id": "vl-oink-stickers",
+      "name": "脸颊爱心贴哼哼",
+      "englishName": "Heart Stickers Oink",
+      "shape": "vl-oink-stickers",
+      "color": "blush",
+      "face": "cute",
+      "theme": "valentine",
+      "themeName": "情人节",
+      "englishThemeName": "Valentine's Day"
+    },
+    {
+      "id": "vl-kiki-letter",
+      "name": "情书琪琪",
+      "englishName": "Love Letter Kiki",
+      "shape": "vl-kiki-letter",
+      "color": "blush",
+      "face": "cute",
+      "theme": "valentine",
+      "themeName": "情人节",
+      "englishThemeName": "Valentine's Day"
+    },
+    {
+      "id": "vl-chirp-headband",
+      "name": "爱心发箍啾啾",
+      "englishName": "Heart Headband Chirp",
+      "shape": "vl-chirp-headband",
+      "color": "yellow",
+      "face": "cute",
+      "theme": "valentine",
+      "themeName": "情人节",
+      "englishThemeName": "Valentine's Day"
+    }
+  ],
+  "faces": [
+    {
+      "id": "capsule",
+      "name": "胶囊",
+      "englishName": "Capsule"
+    },
+    {
+      "id": "cute",
+      "name": "可爱",
+      "englishName": "Cute"
+    },
+    {
+      "id": "eyes",
+      "name": "眼睛",
+      "englishName": "Eyes"
+    },
+    {
+      "id": "line",
+      "name": "线条",
+      "englishName": "Line"
+    },
+    {
+      "id": "brow",
+      "name": "眉毛",
+      "englishName": "Brow"
+    },
+    {
+      "id": "glossy",
+      "name": "水润",
+      "englishName": "Glossy"
+    },
+    {
+      "id": "sparkle",
+      "name": "闪亮",
+      "englishName": "Sparkle"
+    },
+    {
+      "id": "button",
+      "name": "纽扣",
+      "englishName": "Button"
+    },
+    {
+      "id": "shades",
+      "name": "墨镜",
+      "englishName": "Shades"
+    },
+    {
+      "id": "droopy",
+      "name": "慵懒",
+      "englishName": "Droopy"
+    },
+    {
+      "id": "bigmouth",
+      "name": "大嘴",
+      "englishName": "Big mouth"
+    },
+    {
+      "id": "pie",
+      "name": "派眼",
+      "englishName": "Pie"
+    },
+    {
+      "id": "screen",
+      "name": "屏幕",
+      "englishName": "Screen"
+    },
+    {
+      "id": "symbol",
+      "name": "符号",
+      "englishName": "Symbol"
+    },
+    {
+      "id": "teardrop",
+      "name": "泪滴",
+      "englishName": "Teardrop"
+    },
+    {
+      "id": "specs",
+      "name": "眼镜",
+      "englishName": "Specs"
+    }
+  ],
+  "states": [
+    {
+      "id": "idle",
+      "name": "待机",
+      "englishName": "Idle"
+    },
+    {
+      "id": "sleeping",
+      "name": "睡眠",
+      "englishName": "Sleeping"
+    },
+    {
+      "id": "drowsy",
+      "name": "休眠",
+      "englishName": "Dormant"
+    },
+    {
+      "id": "bored",
+      "name": "发呆",
+      "englishName": "Spacing out"
+    },
+    {
+      "id": "waking",
+      "name": "唤醒",
+      "englishName": "Waking"
+    },
+    {
+      "id": "powering-down",
+      "name": "停止终止",
+      "englishName": "Powering off"
+    },
+    {
+      "id": "listening",
+      "name": "等待输入",
+      "englishName": "Listening"
+    },
+    {
+      "id": "thinking",
+      "name": "思考中",
+      "englishName": "Thinking"
+    },
+    {
+      "id": "searching",
+      "name": "检索资料",
+      "englishName": "Searching"
+    },
+    {
+      "id": "reading",
+      "name": "阅读",
+      "englishName": "Reading"
+    },
+    {
+      "id": "writing",
+      "name": "写入",
+      "englishName": "Writing"
+    },
+    {
+      "id": "working",
+      "name": "专注",
+      "englishName": "Focused"
+    },
+    {
+      "id": "loading",
+      "name": "加载苏醒",
+      "englishName": "Booting"
+    },
+    {
+      "id": "progress",
+      "name": "进度",
+      "englishName": "Progress"
+    },
+    {
+      "id": "radar",
+      "name": "扫描",
+      "englishName": "Scanning"
+    },
+    {
+      "id": "orbit",
+      "name": "环绕",
+      "englishName": "Orbiting"
+    },
+    {
+      "id": "dictating",
+      "name": "语音输入",
+      "englishName": "Dictating"
+    },
+    {
+      "id": "uploading",
+      "name": "上传",
+      "englishName": "Uploading"
+    },
+    {
+      "id": "sending",
+      "name": "发送",
+      "englishName": "Sending"
+    },
+    {
+      "id": "receiving",
+      "name": "接收任务",
+      "englishName": "Receiving"
+    },
+    {
+      "id": "messaging",
+      "name": "消息",
+      "englishName": "Messaging"
+    },
+    {
+      "id": "waiting",
+      "name": "等待",
+      "englishName": "Waiting"
+    },
+    {
+      "id": "spawning",
+      "name": "登场",
+      "englishName": "Spawning"
+    },
+    {
+      "id": "composing",
+      "name": "输出回复",
+      "englishName": "Replying"
+    },
+    {
+      "id": "dragging",
+      "name": "拖拽",
+      "englishName": "Dragging"
+    },
+    {
+      "id": "happy",
+      "name": "开心",
+      "englishName": "Happy"
+    },
+    {
+      "id": "excited",
+      "name": "兴奋",
+      "englishName": "Excited"
+    },
+    {
+      "id": "laughing",
+      "name": "大笑",
+      "englishName": "Laughing"
+    },
+    {
+      "id": "playful",
+      "name": "调皮",
+      "englishName": "Playful"
+    },
+    {
+      "id": "proud",
+      "name": "满意",
+      "englishName": "Satisfied"
+    },
+    {
+      "id": "celebrate",
+      "name": "庆祝",
+      "englishName": "Celebrating"
+    },
+    {
+      "id": "bouncing",
+      "name": "弹跳",
+      "englishName": "Bouncing"
+    },
+    {
+      "id": "shy",
+      "name": "害羞",
+      "englishName": "Shy"
+    },
+    {
+      "id": "sad",
+      "name": "失落",
+      "englishName": "Down"
+    },
+    {
+      "id": "angry",
+      "name": "生气",
+      "englishName": "Angry"
+    },
+    {
+      "id": "confused",
+      "name": "疑惑",
+      "englishName": "Puzzled"
+    },
+    {
+      "id": "suspicious",
+      "name": "无奈",
+      "englishName": "Resigned"
+    },
+    {
+      "id": "surprised",
+      "name": "惊讶",
+      "englishName": "Surprised"
+    },
+    {
+      "id": "scared",
+      "name": "慌张",
+      "englishName": "Panicked"
+    },
+    {
+      "id": "curious",
+      "name": "好奇",
+      "englishName": "Curious"
+    },
+    {
+      "id": "humming",
+      "name": "哼歌",
+      "englishName": "Humming"
+    },
+    {
+      "id": "alerting",
+      "name": "出错",
+      "englishName": "Error"
+    },
+    {
+      "id": "notifying",
+      "name": "通知",
+      "englishName": "Notifying"
+    },
+    {
+      "id": "refusing",
+      "name": "拒绝/受限",
+      "englishName": "Refusing"
+    }
+  ],
+  "colors": [
+    {
+      "id": "cream",
+      "name": "cream",
+      "hex": "#E9D9B6"
+    },
+    {
+      "id": "ivory",
+      "name": "ivory",
+      "hex": "#F7EFDF"
+    },
+    {
+      "id": "black",
+      "name": "black",
+      "hex": "#1A1A1A"
+    },
+    {
+      "id": "brown",
+      "name": "brown",
+      "hex": "#C46A32"
+    },
+    {
+      "id": "red",
+      "name": "red",
+      "hex": "#E0363A"
+    },
+    {
+      "id": "orange",
+      "name": "orange",
+      "hex": "#F25C0F"
+    },
+    {
+      "id": "yellow",
+      "name": "yellow",
+      "hex": "#E9A20C"
+    },
+    {
+      "id": "green",
+      "name": "green",
+      "hex": "#1B9A5C"
+    },
+    {
+      "id": "cyan",
+      "name": "cyan",
+      "hex": "#0899B8"
+    },
+    {
+      "id": "blue",
+      "name": "blue",
+      "hex": "#0D7EFF"
+    },
+    {
+      "id": "violet",
+      "name": "violet",
+      "hex": "#6F55E0"
+    },
+    {
+      "id": "magenta",
+      "name": "magenta",
+      "hex": "#D12D8C"
+    },
+    {
+      "id": "pink",
+      "name": "pink",
+      "hex": "#E8628F"
+    },
+    {
+      "id": "gray",
+      "name": "gray",
+      "hex": "#6E7382"
+    },
+    {
+      "id": "sage",
+      "name": "sage",
+      "hex": "#87A383"
+    },
+    {
+      "id": "clay",
+      "name": "clay",
+      "hex": "#B9633F"
+    },
+    {
+      "id": "navy",
+      "name": "navy",
+      "hex": "#2A4373"
+    },
+    {
+      "id": "mauve",
+      "name": "mauve",
+      "hex": "#9C7898"
+    },
+    {
+      "id": "night",
+      "name": "night",
+      "hex": "#2A2433"
+    },
+    {
+      "id": "cocoa",
+      "name": "cocoa",
+      "hex": "#6C4330"
+    },
+    {
+      "id": "sky",
+      "name": "sky",
+      "hex": "#9CCDE6"
+    },
+    {
+      "id": "blush",
+      "name": "blush",
+      "hex": "#F7AEC1"
+    },
+    {
+      "id": "lilac",
+      "name": "lilac",
+      "hex": "#C2ABEA"
+    },
+    {
+      "id": "butter",
+      "name": "butter",
+      "hex": "#F7D883"
+    },
+    {
+      "id": "meadow",
+      "name": "meadow",
+      "hex": "#74C288"
+    },
+    {
+      "id": "peach",
+      "name": "peach",
+      "hex": "#F0BF99"
+    },
+    {
+      "id": "pine",
+      "name": "pine",
+      "hex": "#2A6E4A"
+    },
+    {
+      "id": "crimson",
+      "name": "crimson",
+      "hex": "#C8353A"
+    },
+    {
+      "id": "snow",
+      "name": "snow",
+      "hex": "#F3E6CA"
+    },
+    {
+      "id": "indigo",
+      "name": "indigo",
+      "hex": "#2A2F74"
+    },
+    {
+      "id": "crust",
+      "name": "crust",
+      "hex": "#C98A45"
+    },
+    {
+      "id": "jade",
+      "name": "jade",
+      "hex": "#3DB98C"
+    },
+    {
+      "id": "peel",
+      "name": "peel",
+      "hex": "#A6CC45"
+    },
+    {
+      "id": "mint",
+      "name": "mint",
+      "hex": "#9FDDBF"
+    },
+    {
+      "id": "carrot",
+      "name": "carrot",
+      "hex": "#F7944C"
+    },
+    {
+      "id": "caramel",
+      "name": "caramel",
+      "hex": "#C4A065"
+    },
+    {
+      "id": "lagoon",
+      "name": "lagoon",
+      "hex": "#1F5E6C"
+    },
+    {
+      "id": "lemon",
+      "name": "lemon",
+      "hex": "#F7CC33"
+    },
+    {
+      "id": "aqua",
+      "name": "aqua",
+      "hex": "#14B0A6"
+    },
+    {
+      "id": "sand",
+      "name": "sand",
+      "hex": "#E8C68A"
+    },
+    {
+      "id": "grass",
+      "name": "grass",
+      "hex": "#3FB24B"
+    },
+    {
+      "id": "wine",
+      "name": "wine",
+      "hex": "#A3203D"
+    },
+    {
+      "id": "plum",
+      "name": "plum",
+      "hex": "#8A62C4"
+    }
+  ]
+}

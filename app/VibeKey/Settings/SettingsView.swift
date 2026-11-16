@@ -7,11 +7,16 @@ struct SettingsView: View {
     @Bindable var navigation: SettingsNavigation
 
     enum Pane: String, CaseIterable, Identifiable {
-        case general, dictation, subtitles, models, translation, ai, shortcuts, vocabulary, passport, vibe
+        case assistant, integrations, pet, general, dictation, subtitles, models, translation, ai, shortcuts, vocabulary, passport, vibe
+        // 保留integrations旧深链，但侧栏仅有统一的智能体入口。
+        static var allCases: [Pane] { [.assistant, .vibe, .pet, .general, .dictation, .subtitles, .models, .translation, .ai, .shortcuts, .vocabulary, .passport] }
         var id: String { rawValue }
 
         var title: String {
             switch self {
+            case .assistant: String(localized: "AI 助理", bundle: .l10n)
+            case .integrations: String(localized: "智能体", bundle: .l10n)
+            case .pet: String(localized: "宠物", bundle: .l10n)
             case .general: String(localized: "通用", bundle: .l10n)
             case .dictation: String(localized: "听写", bundle: .l10n)
             case .models: String(localized: "识别模型", bundle: .l10n)
@@ -27,6 +32,9 @@ struct SettingsView: View {
 
         var symbol: String {
             switch self {
+            case .assistant: "bubble.left.and.bubble.right.fill"
+            case .integrations: "app.connected.to.app.below.fill"
+            case .pet: "face.smiling.fill"
             case .general: "gearshape.fill"
             case .dictation: "mic.fill"
             case .models: "waveform"
@@ -81,6 +89,9 @@ struct SettingsView: View {
     @ViewBuilder
     private var detail: some View {
         switch pane {
+        case .assistant: AssistantPane(app: app)
+        case .integrations: VibePane(app: app)
+        case .pet: PetSettingsView(controller: app.pet)
         case .general: GeneralPane(app: app)
         case .dictation: DictationPane(app: app, navigation: navigation)
         case .models: ModelsPane(app: app)
@@ -141,7 +152,9 @@ struct SettingRow<Control: View>: View {
 /// 设置窗口当前显示的分类。
 @MainActor @Observable
 final class SettingsNavigation {
-    var pane: SettingsView.Pane = SettingsNavigation.initialPane
+    var pane: SettingsView.Pane = SettingsNavigation.initialPane {
+        didSet { if pane == .integrations { pane = .vibe } }
+    }
     /// 正在配置的在线翻译服务(翻译页弹出配置表单;字幕条「添加在线翻译服务」会直接设置它)。
     var configuringProvider: TranslationProvider? = SettingsNavigation.initialProvider
     /// 从哪个场景的方式菜单进来配置(配置表单里「使用此服务」默认勾上这个场景)。
@@ -165,9 +178,9 @@ final class SettingsNavigation {
     /// 调试用:环境变量 IB_SETTINGS_PANE=<rawValue> 打开指定分类。
     private static var initialPane: SettingsView.Pane {
         #if DEBUG
-        if let raw = ProcessInfo.processInfo.environment["IB_SETTINGS_PANE"], let p = SettingsView.Pane(rawValue: raw) { return p }
+        if let raw = ProcessInfo.processInfo.environment["IB_SETTINGS_PANE"], let p = SettingsView.Pane(rawValue: raw) { return p == .integrations ? .vibe : p }
         #endif
-        return .general
+        return .assistant
     }
 
     /// 调试用:IB_TRANSLATE_CONFIG=<TranslationProvider.rawValue>(配合 IB_SETTINGS_PANE=translation)直接弹出配置表单。

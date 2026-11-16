@@ -1,12 +1,10 @@
 // main/ib_ui_offline.c: OFFLINE 页:Mac 未连接时的点阵时钟(docs/device-ui.md「OFFLINE」;全宽,无提示列)。
 //
-// 猫咪像素背景从 Flash 直接绘制，时钟和日期覆盖在底部深色区域。
+// 当前所选宠物由ib_ui.c在上半屏绘制，本页保留底部时钟、日期与连接提示。
 // 只有冒号逐帧变化:每帧只 invalidate 冒号那一小块;时间文字每分钟由 ib_app 更新一次。
 #include "ib_ui_dots.h"
 #include "ib_ui_gfx.h"
 #include "ib_ui_page.h"
-#include "ib_protocol.h"
-#include "ib_wallpaper.h"
 
 #define CLOCK_PITCH 6
 #define CLOCK_X0    ((IB_UI_W - 24 * CLOCK_PITCH) / 2)
@@ -16,18 +14,6 @@
 #define DATE_CY     301
 #define WAIT_CY     313
 #define BLINK_MS    1000
-
-static const _Alignas(4) uint8_t OFFLINE_ART[] = {
-#include "ib_offline_art.inc"
-};
-_Static_assert(sizeof(OFFLINE_ART) == IB_UI_W * IB_UI_H * 2, "Offline artwork size mismatch");
-static const lv_image_dsc_t OFFLINE_IMAGE = {
-    .header = { .magic = LV_IMAGE_HEADER_MAGIC, .cf = LV_COLOR_FORMAT_RGB565,
-                .w = IB_UI_W, .h = IB_UI_H, .stride = IB_UI_W * 2 },
-    .data_size = sizeof(OFFLINE_ART),
-    .data = OFFLINE_ART,
-};
-static lv_image_dsc_t s_wallpaper_image;
 
 // 5x7 数字字模(每行 5 位,高位在左)。
 static const uint8_t DIGITS[10][7] = {
@@ -87,20 +73,7 @@ static lv_obj_t *create(lv_obj_t *parent, const ib_ui_ctx_t *ctx)
 {
     (void)ctx;
     lv_obj_t *root = ib_box_create(parent, 0, 0, IB_UI_W, IB_UI_H);
-    lv_obj_t *background = lv_image_create(root);
-    const uint8_t *pixels = ib_wallpaper_pixels();
-    if (pixels) {
-        s_wallpaper_image = OFFLINE_IMAGE;
-        s_wallpaper_image.data_size = IB_WALLPAPER_MAX_BYTES;
-        s_wallpaper_image.data = pixels;
-        lv_image_set_src(background, &s_wallpaper_image);
-    } else {
-        lv_image_set_src(background, &OFFLINE_IMAGE);
-    }
-    lv_obj_t *title = ib_label_create(root, &ib_terminal_font_14, IB_COLOR_MATRIX_SOFT, 0, IB_UI_W - 20);
-    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_LEFT, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 10, IB_UI_BAR_H + 2);
-    lv_label_set_text_static(title, "> OFFLINE_");
+    lv_obj_set_style_bg_color(root,lv_color_hex(0x17181D),0);
     s_clock = ib_fx_create(root, 0, CLOCK_Y, IB_UI_W, CLOCK_H, clock_draw, NULL);
     s_date = ib_caption_create(root, IB_COLOR_TEXT_MID, ib_font_top(&lv_font_montserrat_12, DATE_CY), IB_UI_W, 2);
     s_hint = ib_caption_create(root, IB_COLOR_TEXT_MID, ib_font_top(&lv_font_montserrat_12, WAIT_CY), IB_UI_W, 1);

@@ -13,9 +13,13 @@ final class MenuBuilder {
     func build() -> NSMenu {
         let menu = NSMenu()
         let settings = app.settings
+        menu.addItem(ActionItem(String(localized: "AI 助理…", bundle: .l10n)) { [app] in app.windows.showSettings(.assistant) })
+        menu.addItem(ActionItem(String(localized: "智能体…", bundle: .l10n)) { [app] in app.windows.showSettings(.vibe) })
+        menu.addItem(ActionItem(String(localized: "显示桌面球球", bundle: .l10n), checked: app.pet.settings.enabled) { [app] in app.pet.settings.enabled.toggle() })
+        menu.addItem(.separator())
 
         let model = ModelCatalog.model(settings.dictationModelID)
-        menu.addItem(.header("FoloVibe Key · " + (model?.name ?? String(localized: "未选择模型", bundle: .l10n))))
+        menu.addItem(.header("AI 助理 · " + (model?.name ?? String(localized: "未选择模型", bundle: .l10n))))
 
         let dictating = app.dictation.phase.isBusy
         menu.addItem(ActionItem(dictating ? String(localized: "结束听写", bundle: .l10n) : String(localized: "开始听写", bundle: .l10n), key: app.hotkeys.dictateDescription) { [app] in
@@ -62,7 +66,7 @@ final class MenuBuilder {
         if let updates = app.updates {
             menu.addItem(ActionItem(String(localized: "检查更新…", bundle: .l10n)) { updates.checkNow() })
         }
-        menu.addItem(ActionItem(String(localized: "退出 FoloVibe Key", bundle: .l10n), key: "⌘Q") { NSApp.terminate(nil) })
+        menu.addItem(ActionItem(String(localized: "退出 AI 助理", bundle: .l10n), key: "⌘Q") { NSApp.terminate(nil) })
         return menu
     }
 

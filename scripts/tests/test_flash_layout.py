@@ -36,6 +36,8 @@ class FlashLayoutTests(unittest.TestCase):
             entry("factory", 0, 0, 0x10000, 0x300000),
             entry("wallpaper", 1, 0x40, 0x310000, 0x30000),
             entry("cardid", 1, 2, 0x356000, 0x4000),
+            entry("assistant", 1, 0x41, 0x360000, 0x80000),
+            entry("audio_scratch", 1, 0x42, 0x400000, 0x200000),
         ])))
         self.args = self.build / "flash_args"
         self.valid_args = "--flash_mode dio --flash_freq 80m --flash_size 8MB\n0x0 bootloader/bootloader.bin\n0x10000 VibeKey-Passport.bin\n0x8000 partition_table/partition-table.bin\n"

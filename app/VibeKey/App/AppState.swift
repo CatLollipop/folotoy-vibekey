@@ -22,6 +22,12 @@ final class AppState {
     /// LLM 服务的模型列表(翻译方式、总结里快速选模型)。
     let llmModels: LLMModelCatalog
     let deviceLink: DeviceLink
+    let assistantStore: AssistantStore
+    let assistant: AssistantController
+    let assistantSync: AssistantDeviceSync
+    let agentHub: AgentHub
+    let pet: PetController
+    @ObservationIgnored private var assistantCoordinator: AssistantCoordinator?
     let dictation: DictationController
     let subtitles: SubtitleController
     /// 字幕记录的分段总结(字幕记录窗口「总结」页)。
@@ -60,6 +66,9 @@ final class AppState {
         // 本机凭据文件只有这一个实例,注入给所有需要 API Key 的模块(各自缓存会互相覆盖)。
         let credentials = CredentialStore()
         let settings = AppSettings(credentials: credentials)
+        assistantStore = AssistantStore(credentials: credentials)
+        agentHub = AgentHub()
+        pet = PetController()
         self.settings = settings
         permissions = Permissions()
         inputDevices = InputDevices()
@@ -71,6 +80,7 @@ final class AppState {
         translation = TranslationService(settings: settings, processor: processor, providers: translationProviders)
         llmModels = LLMModelCatalog(settings: settings)
         deviceLink = DeviceLink(credentials: credentials)
+        assistantSync = AssistantDeviceSync(link: deviceLink)
         agent = AgentNotifier()
         codex = CodexActionCoordinator(adapter: AccessibilityCodexDesktopAdapter())
         firmware = FirmwareFlasher(link: deviceLink, downloader: FirmwareDownloader(manifestURL: Self.firmwareManifestURL))
@@ -101,6 +111,12 @@ final class AppState {
                 let exists = !uid.isEmpty && uid != AppSettings.passportMicID && inputDevices.device(uid: uid) != nil
                 return MicSource(deviceUID: exists ? uid : nil)
             })
+        assistant = AssistantController(store: assistantStore, makeSource: {
+            if settings.micID == AppSettings.passportMicID, link.connection != .disconnected {
+                return PassportMicSource(link: link)
+            }
+            return MicSource(deviceUID: settings.micID.isEmpty || settings.micID == AppSettings.passportMicID ? nil : settings.micID)
+        })
     }
 
     /// 启动:创建窗口与菜单、挂快捷键、连接设备、预加载模型。
@@ -122,6 +138,13 @@ final class AppState {
                               stopCaptions: { [unowned self] in stopCaptions(from: .device) },
                               canTranslate: { [unowned self] in translation.isAvailable }))
         bridge.start()
+        bridge.assistantDisplay = { [weak self] in
+            self?.assistantCoordinator?.deviceDisplay()
+        }
+        assistant.willRecord = { [weak self] in self?.dictation.cancel() }
+        assistantCoordinator = AssistantCoordinator(assistant: assistant, store: assistantStore,
+            hub: agentHub, pet: pet, link: deviceLink, sync: assistantSync)
+        assistantCoordinator?.start()
         // 引导走到 Passport 一步之前不打开蓝牙,避免一启动就弹出蓝牙权限框。
         updateBluetooth()
         activityToken = ProcessInfo.processInfo.beginActivity(
@@ -131,8 +154,14 @@ final class AppState {
         deviceLink.start()
 
         hotkeys.start(.init(
-            dictateDown: { [unowned self] in dictation.pressDown(mode: .dictate) },
-            dictateUp: { [unowned self] in dictation.pressUp() },
+            dictateDown: { [unowned self] in
+                if assistantStore.useGlobalShortcut { assistant.beginRecording() }
+                else { dictation.pressDown(mode: .dictate) }
+            },
+            dictateUp: { [unowned self] in
+                if assistant.isRecording { assistant.endRecording() }
+                else { dictation.pressUp() }
+            },
             translateDown: { [unowned self] in dictation.pressDown(mode: .translate) },
             translateUp: { [unowned self] in dictation.pressUp() },
             toggleSubtitles: { [unowned self] in toggleCaptionsFromShortcut() },
@@ -159,7 +188,8 @@ final class AppState {
             pill.show()
             engines.preload(settings.dictationModelID)
         } else {
-            windows.showOnboarding()
+            // 云端助手无需先下载本地模型；旧听写引导仍可从通用设置手动进入。
+            windows.showSettings(.assistant)
         }
     }
 
@@ -187,6 +217,7 @@ final class AppState {
     }
 
     func shutdown() {
+        assistantCoordinator?.stop()
         if let activityToken {
             ProcessInfo.processInfo.endActivity(activityToken)
             self.activityToken = nil

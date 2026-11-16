@@ -11,6 +11,7 @@
 #include "preview_host.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static const char *s_out_dir;
@@ -374,6 +375,47 @@ int preview_run_scenarios(const char *out_dir, int scale, const char *filter)
     ib_ui_set_link(IB_UI_LINK_USB, true);
     ib_ui_set_battery(87, false);
 
+    // ---- Aora Dot：调用真机同一C运行时，非图片或手绘预览 ----
+    ib_ui_agent_hide();
+    ib_ui_pet_config(true,12,80,0xEADBB9);
+    ib_ui_set_engine("CLOUD DIRECT");
+    ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");
+    keys(IB_ICON_NONE,IB_ICON_NONE,IB_ICON_MIC);
+    static const char *const pet_states[]={"idle","listening","thinking","composing","celebrate","alerting","sleeping"};
+    static const char *const pet_labels[]={"Hold OK to talk","Listening...","Thinking...","Replying...","Done","Cloud connection failed","Sleeping"};
+    for(unsigned i=0;i<sizeof(pet_states)/sizeof(pet_states[0]);i++){
+        ib_ui_pet_state(pet_states[i],pet_labels[i],true);
+        preview_advance(i==4?170:1200);
+        char name[80];snprintf(name,sizeof(name),"aora_standalone_%s",pet_states[i]);shot(name);
+    }
+    ib_ui_pet_state("idle","Hold OK to talk",true);
+    preview_advance(900);
+    ib_ui_show(IB_UI_LIST,IB_UI_MODE_DICT,"");
+    preview_advance(300);
+    shot("aora_standalone_navigation_overlay");
+    ib_ui_pet_state("idle","Desktop connected",false);
+    preview_advance(300);
+    shot("aora_desktop_navigation_keeps_list");
+
+    // 真正加载Mac导出包：主题/脸型换入同一C内核，随后离线也不需要Mac帧流。
+    static const char *const assets[]={"miso-shades","xm-tree-capsule","sf-goat-screen","vl-kiki-letter-cute","beep-symbol"};
+    for(unsigned i=0;i<sizeof(assets)/sizeof(assets[0]);i++){
+        char path[512];snprintf(path,sizeof(path),"%s/%s.aorapet",PREVIEW_PET_ASSETS,assets[i]);
+        FILE *f=fopen(path,"rb");
+        if(!f){fprintf(stderr,"缺少宠物fixture，先运行 tools/test-pet.sh: %s\n",path);s_failures++;continue;}
+        fseek(f,0,SEEK_END);long n=ftell(f);rewind(f);uint8_t *bundle=malloc(n>0?(size_t)n:1);
+        if(n<=0||!bundle||fread(bundle,1,(size_t)n,f)!=(size_t)n||!ib_ui_pet_load(bundle,(size_t)n)){
+            fclose(f);free(bundle);s_failures++;continue;
+        }
+        fclose(f);
+        ib_ui_show(IB_UI_IDLE,IB_UI_MODE_DICT,"");ib_ui_pet_state("happy","Selected pet · offline ready",true);preview_advance(900);
+        char name[96];snprintf(name,sizeof(name),"aora_selected_%s",assets[i]);shot(name);
+        ib_ui_show(IB_UI_OFFLINE,IB_UI_MODE_DICT,"");preview_advance(1100);
+        snprintf(name,sizeof(name),"aora_offline_%s",assets[i]);shot(name);
+        // 模拟Flash解映射之前，必须成功把运行时切回内置数据。
+        if(!ib_ui_pet_load(NULL,0))s_failures++;
+        free(bundle);
+    }
 
     return s_failures;
 }

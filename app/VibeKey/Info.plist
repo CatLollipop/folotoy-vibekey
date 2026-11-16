@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>FoloVibe Key</string>
+	<string>AI 助理</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -18,7 +18,7 @@
 		<string>en</string>
 	</array>
 	<key>CFBundleName</key>
-	<string>FoloVibe Key</string>
+	<string>AI 助理</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -48,10 +48,12 @@
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>AI 助理需要控制你选中的终端会话，用于向 Claude Code 输入语音指令。</string>
 	<key>NSAudioCaptureUsageDescription</key>
-	<string>FoloVibe Key 需要录制所选应用播放的声音，用于生成实时字幕。</string>
+	<string>AI 助理 需要录制所选应用播放的声音，用于生成实时字幕。</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>FoloVibe Key 通过蓝牙连接 Passport，接收按键并显示状态。</string>
+	<string>AI 助理 通过蓝牙连接 Passport，接收按键并显示状态。</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_folobutton._tcp</string>
@@ -59,7 +61,7 @@
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>通过同一 Wi-Fi 连接 Passport，传输按键、录音和设备状态。</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>FoloVibe Key 需要使用麦克风，把你说的话转成文字输入。</string>
+	<string>AI 助理 需要使用麦克风，把你说的话转成文字输入。</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>使用 Apple 语音识别引擎在本机转录语音。</string>
 	<key>SUEnableAutomaticChecks</key>

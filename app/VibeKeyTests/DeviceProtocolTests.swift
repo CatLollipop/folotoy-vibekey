@@ -6,6 +6,46 @@ import XCTest
 // 被测类型都是 nonisolated;测试类也标 nonisolated,避免默认 MainActor 隔离与 XCTestCase 的初始化器冲突。
 nonisolated final class DeviceProtocolTests: XCTestCase {
 
+    func testAssistantParsingRequiresBoundedRequestIDAndExplicitAcknowledgement() throws {
+        guard case .assistant(let status)? = DeviceMessage.parse(#"{"t":"assistant","op":"status","ok":1,"rid":4294967295,"rev":7,"configured":1,"mode":"standalone"}"#) else { return XCTFail("expected assistant status") }
+        XCTAssertEqual(status.requestID, UInt32.max)
+        XCTAssertEqual(status.revision, 7)
+        XCTAssertTrue(status.configured)
+        XCTAssertEqual(status.mode, "standalone")
+        for rid in ["true", "-1", "4294967296", "1.5", "\"12\""] {
+            XCTAssertNil(DeviceMessage.parse("{\"t\":\"assistant\",\"op\":\"status\",\"ok\":1,\"rid\":\(rid)}"))
+        }
+        XCTAssertNil(DeviceMessage.parse(#"{"t":"assistant","op":"commit","rid":1}"#), "missing ok cannot mean success")
+        guard case .assistant(let state)? = DeviceMessage.parse(#"{"t":"assistant","op":"state","state":"thinking"}"#) else { return XCTFail("expected unsolicited state") }
+        XCTAssertTrue(DeviceAssistantProtocol.acceptsUnsolicited(state))
+        XCTAssertFalse(DeviceAssistantProtocol.acceptsUnsolicited(status))
+    }
+
+    func testAssistantAcknowledgementCannotAdvanceAnotherTransaction() throws {
+        func reply(_ rid: UInt32, ok: Bool = true, rev: UInt32 = 7, off: Int = 576) throws -> DeviceAssistantMessage {
+            guard case .assistant(let value)? = DeviceMessage.parse("{\"t\":\"assistant\",\"op\":\"chunk\",\"ok\":\(ok ? 1 : 0),\"rid\":\(rid),\"rev\":\(rev),\"off\":\(off),\"error\":\"invalid_offset\"}") else { throw AgentAdapterError.invalidResponse }
+            return value
+        }
+        XCTAssertTrue(DeviceAssistantProtocol.matches(try reply(42), requestID: 42, op: "chunk", revision: 7, offset: 576))
+        XCTAssertFalse(DeviceAssistantProtocol.matches(try reply(41, ok: false), requestID: 42, op: "chunk", revision: 7, offset: 576), "late failure cannot fail new transaction")
+        XCTAssertFalse(DeviceAssistantProtocol.matches(try reply(42, rev: 6), requestID: 42, op: "chunk", revision: 7, offset: 576))
+        XCTAssertFalse(DeviceAssistantProtocol.matches(try reply(42, off: 288), requestID: 42, op: "chunk", revision: 7, offset: 576))
+        XCTAssertFalse(DeviceAssistantProtocol.matches(try reply(42), requestID: 42, op: "commit", revision: 7, offset: nil))
+        XCTAssertTrue(DeviceAssistantProtocol.matches(try reply(42, ok: false, off: 288), requestID: 42, op: "chunk", revision: 7, offset: 576), "matching failure reports actual offset rather than promised next offset")
+    }
+
+    func testAssistantLineLimitCountsUTF8AndRequestID() throws {
+        let empty = try DeviceAssistantProtocol.encode([("d", .string(""))], op: "chunk", requestID: UInt32.max)
+        let padding = 512 - empty.count // encoded data includes one newline; JSON itself has a511-byte limit.
+        let boundary = try DeviceAssistantProtocol.encode([("d", .string(String(repeating: "a", count: padding)))], op: "chunk", requestID: UInt32.max)
+        XCTAssertEqual(boundary.count, 512)
+        XCTAssertThrowsError(try DeviceAssistantProtocol.encode([("d", .string(String(repeating: "a", count: padding + 1)))], op: "chunk", requestID: UInt32.max))
+        XCTAssertThrowsError(try DeviceAssistantProtocol.encode([("d", .string(String(repeating: "中", count: padding)))], op: "chunk", requestID: UInt32.max))
+        XCTAssertThrowsError(try DeviceAssistantProtocol.encode([("rid", .int(1))], op: "status", requestID: 42))
+        let chunk = try DeviceAssistantProtocol.encode([("off", .int(16_384)), ("d", .string(Data(repeating: 0xFE, count: 288).base64EncodedString()))], op: "chunk", requestID: UInt32.max)
+        XCTAssertLessThanOrEqual(chunk.count, 512)
+    }
+
     // MARK: - 设备 → Mac 消息解析
 
     func testWiFiStatusAndProvisioningUTF8Limits() throws {

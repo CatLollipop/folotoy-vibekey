@@ -1,0 +1,8 @@
+{
+  "name": "Aora Bot",
+  "version": "0.2.0",
+  "source": "https://github.com/sam70361/aora-bot",
+  "sourceCommit": "164ffa38b3c27a8512e7c09cfceb7cf0c98f5144",
+  "npmIntegrity": "sha512-YyFThF8C2al4MBuXWDaFs23IYerv286vZkhznWKdVYKoQxryFHapttVmmEXPcFsgPdorxJrD1hCqJ43yO/TaQA==",
+  "transformation": "Engine and all built-in theme ESM exports wrapped in local globals for file WKWebView; palette helpers exposed for the compact geometry exporter; no upstream algorithm changes."
+}

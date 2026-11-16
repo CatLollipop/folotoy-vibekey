@@ -33,3 +33,7 @@ size_t ib_wifi_active_network(void);
 bool ib_wifi_network_name(size_t index, char *out, size_t cap);
 // 写入 active 后由调用方延迟重启；返回 false 表示下标非法或 NVS 写入失败。
 bool ib_wifi_select_network(size_t index);
+
+// 独立模式保留STA，释放Mac局域网TLS任务/队列；恢复伴随模式时重新创建。
+void ib_wifi_set_companion_enabled(bool enabled);
+bool ib_wifi_companion_released(void);

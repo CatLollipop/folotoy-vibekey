@@ -99,7 +99,7 @@ struct OnboardingView: View {
             ScrollView {
                 // 只列本地模型:这一步的说明是"所有识别都在本机完成",云端识别留到 设置 › 识别模型 里再配置。
                 ModelList(models: app.models, cloud: app.cloudASR, selection: Bindable(app.settings).dictationModelID,
-                          items: ModelCatalog.all.filter { $0.cloudProvider == nil })
+                          items: ModelCatalog.all.filter { $0.cloudProvider == nil }, assistant: app.assistantStore)
                     .padding(.horizontal, DS.Space.xl)
                     .padding(.bottom, DS.Space.m)
             }

@@ -26,10 +26,9 @@ lv_display_t *bsp_lvgl_init(void) {
         .panel_handle = bsp_display_panel(),
         .io_handle    = bsp_display_io(),
         // ⚠ C3 无 PSRAM,DMA 只能用内部 RAM。
-        // VibeKey 改动:双缓冲保留,但每块用 10 行(2 x 4.8KB)。C3 无 PSRAM,
-        // 20 行双缓冲会占掉 19.2KB,Wi-Fi TLS 握手时没有足够连续堆分配 AES / mbedTLS 上下文。
-        // 10 行仍有双缓冲,同时给局域网加密连接留出约 9.6KB。
-        .buffer_size   = (uint32_t)BSP_LCD_W * 10,
+        // 每块4行、双缓冲共3840字节，颜色/分辨率不变；增加小批次SPI传输换取连续TLS堆。
+        // C3无PSRAM，公网TLS需接收16KiB记录，不能让显示缓冲占满内部DMA内存。
+        .buffer_size   = (uint32_t)BSP_LCD_W * 4,
         .double_buffer = true,
         .hres = BSP_LCD_W, .vres = BSP_LCD_H,
         // 旋转/镜像必须在这里配:esp_lvgl_port 注册显示时会重新下发 MADCTL,

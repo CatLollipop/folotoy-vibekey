@@ -81,6 +81,8 @@ def verify(build: Path) -> None:
         "factory": (0, 0, 0x10000, 0x300000, 0),
         "wallpaper": (1, 0x40, 0x310000, 0x30000, 0),
         "cardid": (1, 2, CARDID, CARDID_SIZE, 0),
+        "assistant": (1, 0x41, 0x360000, 0x80000, 0),
+        "audio_scratch": (1, 0x42, 0x400000, 0x200000, 0),
     }
     if entries != expected_partitions:
         raise ValueError("分区表与受保护布局不匹配")

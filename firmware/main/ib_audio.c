@@ -41,6 +41,7 @@ static SemaphoreHandle_t s_lock;
 static EventGroupHandle_t s_events;
 static QueueHandle_t s_tone_queue;
 static int s_codec_users;
+static bool s_external_pcm;
 
 static volatile bool s_mic_on;
 static ib_link_t s_mic_link;
@@ -59,6 +60,7 @@ static esp_err_t codec_acquire(void)
 {
     esp_err_t err = ESP_OK;
     xSemaphoreTake(s_lock, portMAX_DELAY);
+    if (s_external_pcm) { xSemaphoreGive(s_lock); return ESP_ERR_INVALID_STATE; }
     if (s_codec_users == 0) {
         err = bsp_audio_set_format(SAMPLE_RATE, 16, 1);
         if (err == ESP_OK) {
@@ -119,7 +121,7 @@ static void mic_task(void *arg)
 
 esp_err_t ib_audio_mic_start(ib_link_t link)
 {
-    if (!s_ready) return ESP_ERR_INVALID_STATE;
+    if (!s_ready||!s_mic_task) return ESP_ERR_INVALID_STATE;
     if (s_mic_on && s_mic_link == link) return ESP_OK;
     if (s_mic_on) ib_audio_mic_stop();
     ESP_RETURN_ON_ERROR(codec_acquire(), TAG, "codec open failed");
@@ -232,17 +234,47 @@ static void tone_task(void *arg)
 
 void ib_audio_play(ib_sound_t sound)
 {
-    if (!s_ready) return;
+    if (!s_ready || s_external_pcm || !s_tone_queue) return;
     xQueueOverwrite(s_tone_queue, &sound);
 }
 
-esp_err_t ib_audio_init(ib_audio_tx_cb_t tx)
+esp_err_t ib_audio_pcm_begin(void)
+{
+    if (!s_ready) return ESP_ERR_INVALID_STATE;
+    ib_audio_mic_stop();
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    if (s_codec_users || s_external_pcm) { xSemaphoreGive(s_lock); return ESP_ERR_INVALID_STATE; }
+    esp_err_t e = bsp_audio_set_format(SAMPLE_RATE, 16, 1);
+    if (e == ESP_OK) { s_external_pcm = true; s_codec_users = 1; bsp_audio_set_volume(OUT_VOLUME); bsp_audio_mute(false); }
+    xSemaphoreGive(s_lock); return e;
+}
+
+void ib_audio_pcm_end(void)
+{
+    if (!s_ready) return;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    if (s_external_pcm) { bsp_audio_mute(true); bsp_audio_close(); s_codec_users = 0; s_external_pcm = false; }
+    xSemaphoreGive(s_lock);
+}
+
+void ib_audio_pcm_interrupt(void)
+{
+    if(!s_ready)return;
+    xSemaphoreTake(s_lock,portMAX_DELAY);
+    if(s_external_pcm)bsp_audio_mute(true);
+    xSemaphoreGive(s_lock);
+}
+
+esp_err_t ib_audio_init_mode(ib_audio_tx_cb_t tx,bool companion)
 {
     s_tx = tx;
     ESP_RETURN_ON_ERROR(bsp_audio_init(), TAG, "bsp_audio_init failed");
     for (int i = 0; i < 256; i++) s_sine[i] = (int16_t)(32767.0f * sinf((float)i * 6.2831853f / 256.0f));
 
     s_lock = xSemaphoreCreateMutex();
+    ESP_RETURN_ON_FALSE(s_lock,ESP_ERR_NO_MEM,TAG,"audio lock alloc failed");
+    // 独立模式直接使用PCM所有者，不常驻相伴ADPCM/提示音两个任务（约6KiB）。
+    if(!companion){bsp_audio_mute(true);s_ready=true;return ESP_OK;}
     s_events = xEventGroupCreate();
     s_tone_queue = xQueueCreate(1, sizeof(ib_sound_t));
     ESP_RETURN_ON_FALSE(s_lock && s_events && s_tone_queue, ESP_ERR_NO_MEM, TAG, "alloc failed");
@@ -254,3 +286,5 @@ esp_err_t ib_audio_init(ib_audio_tx_cb_t tx)
     s_ready = true;
     return ESP_OK;
 }
+
+esp_err_t ib_audio_init(ib_audio_tx_cb_t tx){return ib_audio_init_mode(tx,true);}

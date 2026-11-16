@@ -15,9 +15,31 @@ struct PassportPane: View {
 
             PassportWiFiSection(link: app.deviceLink)
 
-            WallpaperSection(link: app.deviceLink)
+            SettingsSection(title: "离线显示", footer: "设备断开电脑后直接显示当前宠物的点阵画，不再使用独立背景图片。") {
+                Card {
+                    HStack {
+                        Text("离线页使用所选宠物")
+                        Spacer()
+                        Button("选择宠物…") { app.windows.showSettings(.pet) }
+                    }
+                }
+            }
 
-            AgentHealthSection()
+            if app.assistantStore.usePassportForAssistant {
+                SettingsSection(title: "AI 助理按键", footer: "独立云对话模式由设备执行按键；模式与配置同步在 AI 助理页管理。") {
+                    Card {
+                        VStack(alignment: .leading, spacing: DS.Space.s) {
+                            Text("按住 OK 说话，松开发送；上键提交助手草稿，下键停止，长按下键选择云对话或应用会话。")
+                                .font(.system(size: 12.5))
+                            HStack {
+                                Button("选择智能体会话…") { app.windows.showSettings(.vibe) }
+                                Button("管理助手与同步…") { app.windows.showSettings(.assistant) }
+                            }.buttonStyle(SecondaryButtonStyle())
+                        }
+                    }
+                }
+            } else {
+                AgentHealthSection()
 
             SettingsSection(title: "语音输入目标", footer: "长按设备下键选择应用；Agent 应用还可以继续选项目和会话。按住 OK 时会自动切换到所选应用和输入框，同时开始收音。") {
                 Card { HStack { Text(settings.deviceTargetName); Spacer(); Image(systemName: "scope").foregroundStyle(.secondary) } }
@@ -33,6 +55,7 @@ struct PassportPane: View {
                         keyRow("▼ 长按下键", $settings.deviceDownLongAction)
                     }
                 }
+            }
             }
 
             SettingsSection(title: "屏幕") {

@@ -17,6 +17,27 @@ nonisolated struct DeviceWiFiNetwork: Equatable, Sendable {
     var active: Bool
 }
 
+/// 助手应答只接受公开状态；设备绝不回传云服务凭据。
+nonisolated struct DeviceAssistantMessage: Equatable, Sendable {
+    var op: String
+    var ok: Bool
+    var revision: UInt32
+    var offset: Int
+    var schema: Int
+    var maximum: Int
+    var chunk: Int
+    var configured: Bool
+    var mode: String
+    var state: String
+    var error: String
+    /// 每个有确认的请求必须原样回显；nil仅用于state异步上报和识别旧固件。
+    var requestID: UInt32? = nil
+    var petMaximum: Int = 4_096
+    var petFormat: String = ""
+    var petRevision: UInt32 = 0
+    var restarting: Bool = false
+}
+
 // MARK: - 设备 → Mac
 
 /// `hello` 回复:固件名、协议版本、固件版本、本次上电的随机 boot ID。
@@ -60,6 +81,7 @@ nonisolated enum DeviceMessage: Equatable, Sendable {
     case wifi(DeviceWiFiStatus)
     /// 离线页背景上传结果。`phase` 为 `start`（擦除完成）/ `done` / `clear`。
     case wallpaper(ok: Bool, phase: String)
+    case assistant(DeviceAssistantMessage)
 
     static let firmwareName = "vibekey"
     /// 0.1.7 及更早的固件沿用了上游 `inputbetter` 标识;新 app 继续接受,避免必须先刷机才能连上。
@@ -95,6 +117,34 @@ nonisolated enum DeviceMessage: Equatable, Sendable {
         }
 
         switch type {
+        case "assistant":
+            guard let op = string("op"), !op.isEmpty, op.utf8.count <= 24 else { return nil }
+            var requestID: UInt32?
+            if let raw = object["rid"] {
+                guard let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+                      number.doubleValue >= 0, number.doubleValue <= Double(UInt32.max),
+                      number.doubleValue.rounded(.towardZero) == number.doubleValue else { return nil }
+                requestID = number.uint32Value
+            }
+            guard op == "state" || int("ok") == 0 || int("ok") == 1 else { return nil }
+            var assistant = DeviceAssistantMessage(op: op, ok: true, revision: 0, offset: 0,
+                schema: 0, maximum: 0, chunk: 288, configured: false, mode: "", state: "", error: "")
+            assistant.ok = (int("ok") ?? 1) != 0
+            assistant.revision = UInt32(clamping: int("rev") ?? 0)
+            assistant.offset = int("off") ?? 0
+            assistant.schema = int("schema") ?? 0
+            assistant.maximum = int("max") ?? 0
+            assistant.chunk = int("chunk") ?? 288
+            assistant.configured = (int("configured") ?? 0) != 0
+            assistant.mode = string("mode") ?? ""
+            assistant.state = string("state") ?? ""
+            assistant.error = string("error") ?? ""
+            assistant.requestID = requestID
+            assistant.petMaximum = int("pet_max") ?? 4_096
+            assistant.petFormat = string("pet_format") ?? ""
+            assistant.petRevision = UInt32(clamping: int("pet_rev") ?? 0)
+            assistant.restarting = (int("restarting") ?? 0) != 0
+            return .assistant(assistant)
         case "wifi":
             guard let stage = string("stage") else { return nil }
             var networks: [DeviceWiFiNetwork] = []

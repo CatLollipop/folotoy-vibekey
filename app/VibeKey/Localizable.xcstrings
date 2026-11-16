@@ -24,6 +24,9 @@
     "%@ tokens": {
       "shouldTranslate": false
     },
+    "%@ · %@": {
+      "shouldTranslate": false
+    },
     "%@ · %lld 句。结束后可以在字幕记录窗口里查看、总结和保存。": {
       "localizations": {
         "en": {
@@ -197,6 +200,16 @@
         }
       }
     },
+    "%lld 种外观 · %lld 种脸型 · %lld 种表情": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld appearances · %2$lld face styles · %3$lld expressions"
+          }
+        }
+      }
+    },
     "%lld 秒前": {
       "localizations": {
         "en": {
@@ -275,6 +288,56 @@
     },
     "> OFFLINE_": {
       "shouldTranslate": false
+    },
+    "AI 助理": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Assistant"
+          }
+        }
+      }
+    },
+    "AI 助理 %@ 是目前的最新版本。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Assistant %@ is the latest version."
+          }
+        }
+      }
+    },
+    "AI 助理…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Assistant…"
+          }
+        }
+      }
+    },
+    "AI 助理按键": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Assistant buttons"
+          }
+        }
+      }
+    },
+    "AI 助理设置": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Assistant Settings"
+          }
+        }
+      }
     },
     "AI 大模型": {
       "localizations": {
@@ -369,6 +432,16 @@
     "API Key": {
       "shouldTranslate": false
     },
+    "API Key 仅保存在本机私有凭据文件中；点击同步后会复制到你的 Passport。测试和对话会产生供应商 API 用量。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API keys stay in your private local credentials file and are copied to your Passport only when you sync. Tests and conversations incur provider API usage."
+          }
+        }
+      }
+    },
     "API Key 只保存在本机。使用云端识别时，录音会发送到该服务商的服务器。": {
       "localizations": {
         "en": {
@@ -389,12 +462,12 @@
         }
       }
     },
-    "Agent 完成或请求确认时，Passport 响铃并亮屏，状态条也会提醒": {
+    "ASR 与 TTS 共用一个密钥；用于听写、字幕和 AI 助理语音对话。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "When the agent finishes or asks for approval, Passport chimes and lights up, and the floating pill shows a notice too"
+            "value": "ASR and TTS share one key for dictation, captions, and AI assistant voice conversations."
           }
         }
       }
@@ -405,16 +478,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Agent navigation"
-          }
-        }
-      }
-    },
-    "Agent 通知": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Agent Notifications"
           }
         }
       }
@@ -459,6 +522,16 @@
         }
       }
     },
+    "Claude Code 正在工作或等待确认，请先在原终端处理": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code is working or waiting for confirmation. Handle it in the original terminal first."
+          }
+        }
+      }
+    },
     "Codex / 待命中": {
       "localizations": {
         "en": {
@@ -485,6 +558,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Codex / Loading"
+          }
+        }
+      }
+    },
+    "Codex 兼容通知": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex Compatibility Notifications"
           }
         }
       }
@@ -549,6 +632,29 @@
         }
       }
     },
+    "DeepSeek API Key": {
+      "shouldTranslate": false
+    },
+    "DeepSeek 地址": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DeepSeek endpoint"
+          }
+        }
+      }
+    },
+    "DeepSeek 对话": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DeepSeek Conversations"
+          }
+        }
+      }
+    },
     "Esc（打断）": {
       "localizations": {
         "en": {
@@ -582,16 +688,6 @@
     "FoloVibe Key": {
       "shouldTranslate": false
     },
-    "FoloVibe Key %@ 是目前的最新版本。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "FoloVibe Key %@ is the latest version."
-          }
-        }
-      }
-    },
     "FoloVibe Key 不保存字幕历史：记录只在内存中，下次开始字幕或退出后清除。结束字幕后会打开字幕记录窗口，可以在那里查看、翻译、总结和保存；字幕进行中可以点字幕条上的 %@ 打开。": {
       "localizations": {
         "en": {
@@ -608,16 +704,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "A new version of FoloVibe Key is available"
-          }
-        }
-      }
-    },
-    "FoloVibe Key 设置": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "FoloVibe Key Settings"
           }
         }
       }
@@ -652,12 +738,112 @@
         }
       }
     },
+    "Hook 已合并并备份；在原 Claude Code 会话重新加载配置后检测": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hooks merged and backed up. Reload configuration in the original Claude Code session, then check again."
+          }
+        }
+      }
+    },
+    "Hook 已合并并备份；在原 WorkBuddy 加载配置后重新检测": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hooks merged and backed up. Load the configuration in the original WorkBuddy app, then check again."
+          }
+        }
+      }
+    },
+    "Hook 已连接，但未能核对原 Terminal tty；输入保持阻塞": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hooks connected, but the original Terminal tty could not be verified. Input remains blocked."
+          }
+        }
+      }
+    },
+    "Kimi Code 本机服务": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local Kimi Code server"
+          }
+        }
+      }
+    },
+    "Kimi Server API 不提供原应用草稿写入，请使用直接发送": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Kimi Server API cannot insert a draft into the original app. Use direct send."
+          }
+        }
+      }
+    },
+    "Kimi Server API 不读取原应用未发送草稿，请使用直接发送": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Kimi Server API cannot read an unsent draft from the original app. Use direct send."
+          }
+        }
+      }
+    },
+    "Kimi 地址必须是本机 HTTP 服务，且不包含用户名、查询或路径": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kimi must use a local HTTP server address without a username, query or path."
+          }
+        }
+      }
+    },
+    "Kimi 未接受消息；请检查原会话": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kimi did not accept the message. Check the original session."
+          }
+        }
+      }
+    },
+    "Kimi 未能附着原会话；可能被其他进程占用，不会自动夺取": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to attach to the original Kimi session. It may be in use by another process; it will not be taken over automatically."
+          }
+        }
+      }
+    },
     "Mac 已锁屏，解锁后再使用 Codex 语音输入": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "The Mac is locked. Unlock it before using Codex voice input."
+          }
+        }
+      }
+    },
+    "MiniMax · 语音识别与朗读": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MiniMax · Speech Recognition and Read Aloud"
           }
         }
       }
@@ -715,6 +901,16 @@
         }
       }
     },
+    "Passport 按住说话用于 AI 助理": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use Passport push-to-talk for AI Assistant"
+          }
+        }
+      }
+    },
     "Passport 未连接": {
       "localizations": {
         "en": {
@@ -754,6 +950,9 @@
           }
         }
       }
+    },
+    "Powered by Aora Bot": {
+      "shouldTranslate": false
     },
     "Soniox · 实时识别": {
       "localizations": {
@@ -924,6 +1123,12 @@
         }
       }
     },
+    "asr-1.0": {
+      "shouldTranslate": false
+    },
+    "https://api.minimax.cn": {
+      "shouldTranslate": false
+    },
     "https://api.openai.com/v1": {
       "shouldTranslate": false
     },
@@ -937,6 +1142,9 @@
         }
       }
     },
+    "male-qn-qingse": {
+      "shouldTranslate": false
+    },
     "sk-…（本地模型可留空）": {
       "localizations": {
         "en": {
@@ -946,6 +1154,9 @@
           }
         }
       }
+    },
+    "speech-2.8-turbo": {
+      "shouldTranslate": false
     },
     "· 下次总结 %lld:%@": {
       "localizations": {
@@ -1117,6 +1328,16 @@
         }
       }
     },
+    "一处配置，供听写、字幕、AI 助理和 Passport 独立对话共用。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One configuration for dictation, captions, the AI assistant, and standalone conversations on Passport."
+          }
+        }
+      }
+    },
     "一键配置": {
       "localizations": {
         "en": {
@@ -1127,12 +1348,12 @@
         }
       }
     },
-    "一键配置会写入各自的 hook 配置，只追加本开发版自己的条目；原文件会先备份为 .folobutton-dev.bak。": {
+    "上一条消息尚未取得投递回执": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Set Up adds only this development build’s hooks to each tool’s configuration. The original file is backed up first as .folobutton-dev.bak."
+            "value": "The previous message is still waiting for a delivery receipt."
           }
         }
       }
@@ -1193,6 +1414,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Last checked: %@"
+          }
+        }
+      }
+    },
+    "上游项目": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upstream project"
           }
         }
       }
@@ -1457,12 +1688,42 @@
         }
       }
     },
+    "云服务请求失败（HTTP %lld），请检查密钥、余额和网络。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cloud request failed (HTTP %lld). Check your API key, balance and network."
+          }
+        }
+      }
+    },
+    "云服务返回错误（%lld），请检查账户与配置。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The cloud service returned error %lld. Check your account and configuration."
+          }
+        }
+      }
+    },
     "云端": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Cloud"
+          }
+        }
+      }
+    },
+    "云端 AI 对话": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cloud AI conversation"
           }
         }
       }
@@ -1493,6 +1754,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connection to the cloud recognition service was lost"
+          }
+        }
+      }
+    },
+    "仅保留原 Codex 通知配置；Claude Code 的完整状态与回复 Hook 统一在上方安装。关闭 AI 助理硬件接管后，Passport 恢复原 Codex 操作。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The original Codex notification setup is retained here. Install the full Claude Code status and reply hooks above. Turn off AI assistant hardware control to restore the original Codex actions on Passport."
+          }
+        }
+      }
+    },
+    "仅当前可见会话；状态需可见生成控件，朗读需明确 assistant 消息容器": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current visible session only. Status requires a visible generation control; playback requires an explicit assistant message container."
           }
         }
       }
@@ -1587,6 +1868,16 @@
         }
       }
     },
+    "使用原 kimi web 服务；不会新建、夺取会话或修改模型与批准设置。Kimi Work 的界面不等同于 Kimi Code API。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uses the existing kimi web server without creating or taking over sessions, or changing model or approval settings. Kimi Work is a separate product from the Kimi Code API."
+          }
+        }
+      }
+    },
     "使用国内镜像下载": {
       "localizations": {
         "en": {
@@ -1637,6 +1928,26 @@
         }
       }
     },
+    "保存并检测 Kimi": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save and check Kimi"
+          }
+        }
+      }
+    },
+    "保存配置": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save configuration"
+          }
+        }
+      }
+    },
     "保持 USB 连接，重新输入 Wi-Fi 密码并点「添加并切换」；或点「改用蓝牙」跳过 Wi-Fi。": {
       "localizations": {
         "en": {
@@ -1677,6 +1988,26 @@
         }
       }
     },
+    "停止所选任务": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop selected task"
+          }
+        }
+      }
+    },
+    "停止测试": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop Test"
+          }
+        }
+      }
+    },
     "允许蓝牙连接": {
       "localizations": {
         "en": {
@@ -1713,6 +2044,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Free plan: 500K characters per month (key ends with :fx)"
+          }
+        }
+      }
+    },
+    "全局听写快捷键用于 AI 助理": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use the global dictation shortcut for AI Assistant"
           }
         }
       }
@@ -1823,6 +2164,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Write failed: %@"
+          }
+        }
+      }
+    },
+    "减少动画": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reduce motion"
+          }
+        }
+      }
+    },
+    "出错": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Error"
           }
         }
       }
@@ -1997,12 +2358,32 @@
         }
       }
     },
+    "前往语音设置…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Voice Settings…"
+          }
+        }
+      }
+    },
     "剩余 %lld%%": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Remaining %lld%%"
+          }
+        }
+      }
+    },
+    "加载宠物目录…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading pet catalog…"
           }
         }
       }
@@ -2017,12 +2398,42 @@
         }
       }
     },
+    "动画帧率：%lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Animation frame rate: %lld"
+          }
+        }
+      }
+    },
+    "助手配置超出设备支持范围，请检查模型、音色和长度限制。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The assistant configuration exceeds device limits. Check the model, voice and length limits."
+          }
+        }
+      }
+    },
     "区域": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Region"
+          }
+        }
+      }
+    },
+    "单句录音上限：%lld 秒": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recording limit: %lld seconds"
           }
         }
       }
@@ -2037,12 +2448,72 @@
         }
       }
     },
+    "原 Kimi Code 服务访问令牌": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Access token for the original Kimi Code server"
+          }
+        }
+      }
+    },
     "原固件已备份到 %@": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Original firmware backed up to %@"
+          }
+        }
+      }
+    },
+    "原应用任务失败，请在原会话查看详情。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The task failed in the original app. Check that session for details."
+          }
+        }
+      }
+    },
+    "原应用会话": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original app session"
+          }
+        }
+      }
+    },
+    "原应用会话已变化，请重新选择会话": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The original app session changed. Select it again."
+          }
+        }
+      }
+    },
+    "原应用发送按钮拒绝操作": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The original application send button rejected the action."
+          }
+        }
+      }
+    },
+    "原应用桥接未连接，请安装桥接并在原会话加载": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The original application bridge is disconnected. Install it and load it in the original session."
           }
         }
       }
@@ -2063,6 +2534,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Source Font Size"
+          }
+        }
+      }
+    },
+    "原轮次已自行结束，未确认本次停止": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The original turn already ended. This stop request was not confirmed."
+          }
+        }
+      }
+    },
+    "原输入框已有草稿，请先处理后再发送": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The original composer already contains a draft. Handle it before sending another message."
+          }
+        }
+      }
+    },
+    "原进程桥接已连接；命令等待执行回执": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected to the original process. Commands wait for an execution receipt."
           }
         }
       }
@@ -2097,6 +2598,16 @@
         }
       }
     },
+    "发现": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discover"
+          }
+        }
+      }
+    },
     "发现 Passport": {
       "localizations": {
         "en": {
@@ -2107,12 +2618,42 @@
         }
       }
     },
+    "发送": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send"
+          }
+        }
+      }
+    },
+    "发送到": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send to"
+          }
+        }
+      }
+    },
     "发送到 Codex（安全）": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Send to Codex (Verified)"
+          }
+        }
+      }
+    },
+    "发送到所选会话": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send to selected session"
           }
         }
       }
@@ -2137,12 +2678,32 @@
         }
       }
     },
+    "取消同步": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel sync"
+          }
+        }
+      }
+    },
     "取消固定": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Unpin"
+          }
+        }
+      }
+    },
+    "只写入原应用草稿": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Insert draft in original app"
           }
         }
       }
@@ -2203,6 +2764,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Right-click a downloaded model to delete it. The first time Whisper loads, macOS optimizes it for this Mac, which can take a minute or two."
+          }
+        }
+      }
+    },
+    "同步云配置": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sync cloud configuration"
+          }
+        }
+      }
+    },
+    "同步到 Passport": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sync to Passport"
+          }
+        }
+      }
+    },
+    "同步宠物设置": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sync pet settings"
           }
         }
       }
@@ -2357,6 +2948,56 @@
         }
       }
     },
+    "回复": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replying"
+          }
+        }
+      }
+    },
+    "回复 Token 上限：%lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reply token limit: %lld"
+          }
+        }
+      }
+    },
+    "回复流意外中断，本轮不会自动重发。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The reply stream ended unexpectedly. This turn will not be resent automatically."
+          }
+        }
+      }
+    },
+    "回复超过安全长度限制，请缩短问题后重试。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The reply exceeded the safe length limit. Shorten your question and try again."
+          }
+        }
+      }
+    },
+    "回复达到长度上限，可继续追问。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The reply reached its length limit. You can ask a follow-up question."
+          }
+        }
+      }
+    },
     "回车（发送）": {
       "localizations": {
         "en": {
@@ -2413,6 +3054,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pin to the right edge (always on top, translucent)"
+          }
+        }
+      }
+    },
+    "固定版本 0.2.0 · 独立离线运行": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pinned version 0.2.0 · Runs offline"
           }
         }
       }
@@ -2487,6 +3138,16 @@
         }
       }
     },
+    "在上方选择原应用会话，或长按 Passport 下键选择云对话 / 应用会话": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select a session above, or hold Down on Passport to choose cloud chat or an app session."
+          }
+        }
+      }
+    },
     "在任何输入框里说话打字": {
       "localizations": {
         "en": {
@@ -2527,6 +3188,16 @@
         }
       }
     },
+    "在设备配置同步后生效。离线页始终显示当前宠物。按住设备 OK 说话，松开结束。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Takes effect after syncing the device configuration. The offline screen always shows the selected pet. Hold OK to talk and release to finish."
+          }
+        }
+      }
+    },
     "填充": {
       "localizations": {
         "en": {
@@ -2543,6 +3214,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Add your own API key to use these for dictation and captions, billed at the provider's rates. Your audio is sent to the provider's servers while in use."
+          }
+        }
+      }
+    },
+    "填写原 Kimi Code server 的本机访问令牌": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter the local access token for the original Kimi Code server."
           }
         }
       }
@@ -2573,6 +3254,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Appearance & Feedback"
+          }
+        }
+      }
+    },
+    "外观与表情": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appearance and expression"
           }
         }
       }
@@ -2623,6 +3314,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "e.g. eastasia; leave empty for global resources"
+          }
+        }
+      }
+    },
+    "始终置顶": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always on top"
           }
         }
       }
@@ -2717,6 +3418,46 @@
         }
       }
     },
+    "安装 Claude Code Hook": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install Claude Code hooks"
+          }
+        }
+      }
+    },
+    "安装 Hook 后在原 Claude Code 会话重新加载配置": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install the hooks, then reload configuration in the original Claude Code session."
+          }
+        }
+      }
+    },
+    "安装 OMP 扩展": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install OMP extension"
+          }
+        }
+      }
+    },
+    "安装包缺少应用桥接资源，请重新构建应用": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The application bundle is missing bridge resources. Rebuild the application."
+          }
+        }
+      }
+    },
     "安装没有完成：%@": {
       "localizations": {
         "en": {
@@ -2767,12 +3508,12 @@
         }
       }
     },
-    "官网": {
+    "官方本机会话 API 已连接；直接提交，无原应用草稿接口": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Website"
+            "value": "Connected to the official local session API. Direct submission is available; the original app exposes no draft API."
           }
         }
       }
@@ -2907,12 +3648,82 @@
         }
       }
     },
+    "宠物": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pet"
+          }
+        }
+      }
+    },
+    "宠物外观": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appearance"
+          }
+        }
+      }
+    },
+    "宠物实时预览": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live pet preview"
+          }
+        }
+      }
+    },
+    "宠物离线资源尚未准备好": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The offline pet resources are not ready."
+          }
+        }
+      }
+    },
+    "宠物资产导出失败，设备配置未改变": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The pet asset could not be exported. The device configuration has not changed."
+          }
+        }
+      }
+    },
+    "宠物资源加载超时，请重试": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading the pet resources timed out. Please try again."
+          }
+        }
+      }
+    },
     "密钥": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Key"
+          }
+        }
+      }
+    },
+    "密钥仅保存一份。语音测试会产生 MiniMax API 用量；使用系统音色，不调用音色克隆或设计接口。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A single copy of the key is stored. Voice tests incur MiniMax API usage. They use a stock voice without calling voice cloning or design APIs."
           }
         }
       }
@@ -2943,6 +3754,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "Speak into the device"
+          }
+        }
+      }
+    },
+    "对话偏好": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conversation preferences"
+          }
+        }
+      }
+    },
+    "对话模型": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conversation model"
+          }
+        }
+      }
+    },
+    "导出 DSH 原生插件": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export native DSH plugin"
+          }
+        }
+      }
+    },
+    "尚未取得当前运行轮次，请等待状态同步后再停止": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The current running turn has not been received yet. Wait for status synchronization before stopping."
           }
         }
       }
@@ -3027,6 +3878,26 @@
         }
       }
     },
+    "已停止": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stopped"
+          }
+        }
+      }
+    },
+    "已停止。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stopped."
+          }
+        }
+      }
+    },
     "已写入 Codex，按上键发送": {
       "localizations": {
         "en": {
@@ -3043,6 +3914,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Downloaded in your browser. When it finishes, open the installer, drag FoloVibe Key to Applications to replace the old version, and reopen it."
+          }
+        }
+      }
+    },
+    "已完成": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Completed"
           }
         }
       }
@@ -3083,6 +3964,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "You're Up to Date"
+          }
+        }
+      }
+    },
+    "已绑定原 Terminal tty；发送需正式 Hook 回执；停止能力仍需原应用确认": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bound to the original Terminal tty. Sending requires a formal hook receipt; verified stopping is still unavailable."
           }
         }
       }
@@ -3143,6 +4034,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Apply to Passport"
+          }
+        }
+      }
+    },
+    "应用接入与会话": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Applications and sessions"
+          }
+        }
+      }
+    },
+    "应用未执行命令": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The application did not execute the command."
+          }
+        }
+      }
+    },
+    "应用桥接返回无效数据": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The application bridge returned invalid data."
           }
         }
       }
@@ -3217,6 +4138,16 @@
         }
       }
     },
+    "当前会话的状态联动宠物；最终回复按语音设置自动朗读": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The pet follows the current session. Final replies are read aloud according to your voice settings."
+          }
+        }
+      }
+    },
     "当前固件 %@ 不支持自定义背景，请先更新到 0.1.4 或更高版本。": {
       "localizations": {
         "en": {
@@ -3233,6 +4164,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Use the protected project script to install firmware in this development build."
+          }
+        }
+      }
+    },
+    "当前模式": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current Mode"
           }
         }
       }
@@ -3273,6 +4214,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld lines pending"
+          }
+        }
+      }
+    },
+    "待机": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Idle"
           }
         }
       }
@@ -3367,6 +4318,16 @@
         }
       }
     },
+    "恢复挂件位置": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset pet position"
+          }
+        }
+      }
+    },
     "恢复默认": {
       "localizations": {
         "en": {
@@ -3383,6 +4344,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "All recognition runs on this Mac, so your voice never leaves it. You can switch models anytime in Settings."
+          }
+        }
+      }
+    },
+    "所选会话没有由助手写入的待发送草稿": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The selected session has no pending draft written by the assistant."
           }
         }
       }
@@ -3437,6 +4408,16 @@
         }
       }
     },
+    "扩展已安装；在原 OMP 会话输入 /reload 后检测": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Extension installed. Enter /reload in the original OMP session, then check again."
+          }
+        }
+      }
+    },
     "找不到可写入的 Codex 空输入框": {
       "localizations": {
         "en": {
@@ -3467,6 +4448,16 @@
         }
       }
     },
+    "投递结果未知；请先检查原应用，避免重复发送": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delivery is uncertain. Check the original app before sending again."
+          }
+        }
+      }
+    },
     "拷贝": {
       "localizations": {
         "en": {
@@ -3487,12 +4478,12 @@
         }
       }
     },
-    "按 ▲ 安全发送到当前 Codex；任务跑偏时按 ▼ 停止": {
+    "挂件大小": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Press ▲ to safely send to the current Codex chat. If the task goes off track, press ▼ to stop."
+            "value": "Pet size"
           }
         }
       }
@@ -3527,22 +4518,32 @@
         }
       }
     },
+    "按住 OK 说话，松开发送；上键提交助手草稿，下键停止，长按下键选择云对话或应用会话。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hold OK to talk and release to send. Press Up to submit an assistant draft, Down to stop, or hold Down to choose cloud chat or an app session."
+          }
+        }
+      }
+    },
+    "按住 OK 说话；上键只提交所选会话的助手草稿，下键停止所选任务": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hold OK to speak. Up submits only the assistant draft in the selected session; Down stops the selected task."
+          }
+        }
+      }
+    },
     "按住 OK 键说话，松开转写；上键发送当前 Codex 输入框，下键停止任务，长按上键切换模式；录音时长按下键取消。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Hold OK to talk and release to transcribe. Up sends the current Codex input, Down stops the task, and holding Up switches modes. Hold Down while recording to cancel."
-          }
-        }
-      }
-    },
-    "按住 Passport 的 OK 键（或快捷键）对 Claude Code / Codex 说出需求": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hold OK on Passport (or your shortcut) and tell Claude Code or Codex what you need"
           }
         }
       }
@@ -3637,6 +4638,16 @@
         }
       }
     },
+    "接入未完成": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Integration incomplete"
+          }
+        }
+      }
+    },
     "接口在 AI 服务 里配置；实时字幕 / 听写各自在「翻译方式」菜单里选模型": {
       "localizations": {
         "en": {
@@ -3653,6 +4664,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Base URL"
+          }
+        }
+      }
+    },
+    "接口地址必须是有效的 HTTPS 地址，且不能包含凭据或查询参数。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The endpoint must be a valid HTTPS URL without credentials or query parameters."
           }
         }
       }
@@ -3713,6 +4734,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sound Effects"
+          }
+        }
+      }
+    },
+    "插件目录已打开；通过 DSH 插件管理加载到原 Desktop runtime 后检测": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plugin folder opened. Load it into the original Desktop runtime using DSH plugin management, then check again."
+          }
+        }
+      }
+    },
+    "搜索外观名称或主题": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search appearances or themes"
           }
         }
       }
@@ -3827,6 +4868,16 @@
         }
       }
     },
+    "新对话": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New conversation"
+          }
+        }
+      }
+    },
     "新版本已经发布，建议更新以获得最新功能和修复。": {
       "localizations": {
         "en": {
@@ -3867,12 +4918,42 @@
         }
       }
     },
+    "无法前置原应用窗口": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to bring the original application window forward."
+          }
+        }
+      }
+    },
+    "无法向已选 Terminal 会话输入": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to enter text into the selected Terminal session."
+          }
+        }
+      }
+    },
     "无法打开 %@：%@": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Couldn't open %@: %@"
+          }
+        }
+      }
+    },
+    "无法核对原会话草稿和发送控件": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to verify the original session draft and send control."
           }
         }
       }
@@ -3903,6 +4984,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Can't translate: %@. Hover over the caption bar and use the translation method menu to set it up or switch."
+          }
+        }
+      }
+    },
+    "无法聚焦原会话输入框": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to focus the original session composer."
           }
         }
       }
@@ -3997,6 +5088,36 @@
         }
       }
     },
+    "显示桌面宠物": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show desktop pet"
+          }
+        }
+      }
+    },
+    "显示桌面球球": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show desktop Dot"
+          }
+        }
+      }
+    },
+    "显示设备宠物": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show pet on the device"
+          }
+        }
+      }
+    },
     "显示译文": {
       "localizations": {
         "en": {
@@ -4023,6 +5144,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Agent"
+          }
+        }
+      }
+    },
+    "智能体…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agents…"
           }
         }
       }
@@ -4177,6 +5308,16 @@
         }
       }
     },
+    "服务没有返回可用的回复。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The service did not return a usable reply."
+          }
+        }
+      }
+    },
     "服务繁忙": {
       "localizations": {
         "en": {
@@ -4193,6 +5334,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Couldn't parse the service's response"
+          }
+        }
+      }
+    },
+    "朗读模型": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read-Aloud Model"
           }
         }
       }
@@ -4247,6 +5398,26 @@
         }
       }
     },
+    "未找到本会话的停止生成按钮": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No stop-generation button was found for this session."
+          }
+        }
+      }
+    },
+    "未找到空闲的聊天输入框": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No idle chat composer was found."
+          }
+        }
+      }
+    },
     "未检测到 Codex CLI。安装并登录 Codex 后，这里会显示真实用量。": {
       "localizations": {
         "en": {
@@ -4283,6 +5454,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Unknown error"
+          }
+        }
+      }
+    },
+    "未能发送提交按键": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to send the submit key."
+          }
+        }
+      }
+    },
+    "未能向原输入框粘贴草稿": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to paste the draft into the original composer."
+          }
+        }
+      }
+    },
+    "未能定位原 Terminal 标签页；请检查自动化权限和原会话是否仍打开": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to locate the original Terminal tab. Check Automation permission and whether the original session is still open."
           }
         }
       }
@@ -4343,6 +5544,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Not running; open it to run a check"
+          }
+        }
+      }
+    },
+    "未运行；打开应用后检测": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not running. Open the app and check again."
           }
         }
       }
@@ -4427,12 +5638,32 @@
         }
       }
     },
+    "本机服务地址": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local server address"
+          }
+        }
+      }
+    },
     "权限": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Permissions"
+          }
+        }
+      }
+    },
+    "松开结束录音": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Release to finish recording"
           }
         }
       }
@@ -4473,6 +5704,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Invalid checksum: %@"
+          }
+        }
+      }
+    },
+    "桌面宠物": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desktop pet"
+          }
+        }
+      }
+    },
+    "桥接目录不能是符号链接": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The bridge directory must not be a symbolic link."
           }
         }
       }
@@ -4577,12 +5828,12 @@
         }
       }
     },
-    "欢迎使用 FoloVibe Key": {
+    "欢迎使用 AI 助理": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Welcome to FoloVibe Key"
+            "value": "Welcome to AI Assistant"
           }
         }
       }
@@ -4677,6 +5928,16 @@
         }
       }
     },
+    "正在回复": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replying"
+          }
+        }
+      }
+    },
     "正在备份原固件": {
       "localizations": {
         "en": {
@@ -4717,6 +5978,16 @@
         }
       }
     },
+    "正在思考": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thinking"
+          }
+        }
+      }
+    },
     "正在总结…": {
       "localizations": {
         "en": {
@@ -4743,6 +6014,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Processing part %lld of %lld…"
+          }
+        }
+      }
+    },
+    "正在朗读": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speaking"
           }
         }
       }
@@ -4807,6 +6088,16 @@
         }
       }
     },
+    "正在生成设备宠物…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing device pet…"
+          }
+        }
+      }
+    },
     "正在翻译成 %@，点一下关闭翻译": {
       "localizations": {
         "en": {
@@ -4817,12 +6108,32 @@
         }
       }
     },
+    "正在聆听": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listening"
+          }
+        }
+      }
+    },
     "正在获取模型列表…": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Fetching Model List…"
+          }
+        }
+      }
+    },
+    "正在识别": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcribing"
           }
         }
       }
@@ -4903,6 +6214,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Restarting device…"
+          }
+        }
+      }
+    },
+    "此 Claude Code Terminal 接入尚无可验证的停止回执，请在原终端停止": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Claude Code Terminal integration has no verifiable stop receipt yet. Stop it in the original terminal."
+          }
+        }
+      }
+    },
+    "此 Kimi Code 版本缺少所需 Server API": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Kimi Code version does not expose the required Server API."
           }
         }
       }
@@ -5037,6 +6368,16 @@
         }
       }
     },
+    "没有可验证的原 Terminal tty": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No verifiable original Terminal tty was found."
+          }
+        }
+      }
+    },
     "没有听到声音": {
       "localizations": {
         "en": {
@@ -5087,6 +6428,16 @@
         }
       }
     },
+    "没有检测到有效语音，请按住说话后重试。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No speech was detected. Hold to talk and try again."
+          }
+        }
+      }
+    },
     "没有正在运行的应用": {
       "localizations": {
         "en": {
@@ -5097,12 +6448,42 @@
         }
       }
     },
+    "没有由助理写入的原终端草稿": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "There is no assistant-inserted draft in the original terminal."
+          }
+        }
+      }
+    },
     "没有这两项权限，听写无法工作": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Dictation can't work without both permissions"
+          }
+        }
+      }
+    },
+    "测试 DeepSeek": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test DeepSeek"
+          }
+        }
+      }
+    },
+    "测试语音识别…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test transcription…"
           }
         }
       }
@@ -5133,6 +6514,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Test Microphone"
+          }
+        }
+      }
+    },
+    "消息为空或过长": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The message is empty or too long."
           }
         }
       }
@@ -5207,6 +6598,16 @@
         }
       }
     },
+    "清除设备云凭据": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear device cloud credentials"
+          }
+        }
+      }
+    },
     "火山": {
       "localizations": {
         "en": {
@@ -5277,6 +6678,16 @@
         }
       }
     },
+    "点阵亮度：%lld%%": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dot brightness: %lld%%"
+          }
+        }
+      }
+    },
     "热点信号较弱：靠近手机，iPhone 请打开「最大兼容性」以使用 2.4 GHz。": {
       "localizations": {
         "en": {
@@ -5293,6 +6704,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Version %@"
+          }
+        }
+      }
+    },
+    "状态": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Status"
           }
         }
       }
@@ -5317,6 +6738,26 @@
         }
       }
     },
+    "独立云对话": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standalone cloud conversation"
+          }
+        }
+      }
+    },
+    "独立云对话模式由设备执行按键；模式与配置同步在 AI 助理页管理。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In standalone mode, the device handles the buttons. Manage modes and configuration sync in AI Assistant."
+          }
+        }
+      }
+    },
     "用 AI 总结这场字幕的全部内容": {
       "localizations": {
         "en": {
@@ -5337,6 +6778,26 @@
         }
       }
     },
+    "用于控制你选中的桌面应用会话。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Controls the desktop app session you select."
+          }
+        }
+      }
+    },
+    "用于电脑端语音对话。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Used for voice conversations on this Mac."
+          }
+        }
+      }
+    },
     "用支持数据传输的 USB-C 线连接这台 Mac": {
       "localizations": {
         "en": {
@@ -5353,6 +6814,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Usage"
+          }
+        }
+      }
+    },
+    "电脑助手": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Computer assistant"
+          }
+        }
+      }
+    },
+    "电脑助手模式需先在“智能体”中选择目标会话。此处的云对话使用 DeepSeek；设备独立对话不依赖电脑运行。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "For app conversations, first select a target session in Agents. Cloud conversations here use DeepSeek. Standalone conversations on the device work without the Mac."
+          }
+        }
+      }
+    },
+    "电脑显示高清矢量动画，设备显示点阵动画。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Mac uses high-resolution vector animation; the device uses an LED dot matrix."
           }
         }
       }
@@ -5463,6 +6954,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Approve First Option (1 + Return)"
+          }
+        }
+      }
+    },
+    "离线显示": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offline display"
+          }
+        }
+      }
+    },
+    "离线页使用所选宠物": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use the selected pet on the offline screen"
           }
         }
       }
@@ -5587,6 +7098,16 @@
         }
       }
     },
+    "管理助手与同步…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manage assistant and sync…"
+          }
+        }
+      }
+    },
     "粘贴 %@": {
       "localizations": {
         "en": {
@@ -5607,6 +7128,16 @@
         }
       }
     },
+    "粘贴 MiniMax API Key": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste MiniMax API key"
+          }
+        }
+      }
+    },
     "粤语": {
       "localizations": {
         "en": {
@@ -5623,6 +7154,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Built into macOS. Streams in real time with the smallest footprint. Uses the selected recognition language."
+          }
+        }
+      }
+    },
+    "系统提示词": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System prompt"
           }
         }
       }
@@ -5723,6 +7264,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "System Settings › General › Language & Region › Translation Languages"
+          }
+        }
+      }
+    },
+    "系统音色": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System voice"
           }
         }
       }
@@ -5927,6 +7478,16 @@
         }
       }
     },
+    "缺少能力的应用保持未完成；实际发送、停止、运行状态和回复朗读都需要在专用测试会话逐项验收。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apps with missing capabilities remain incomplete. Verify sending, stopping, live status and reply playback separately in a dedicated test session."
+          }
+        }
+      }
+    },
     "翻译": {
       "localizations": {
         "en": {
@@ -6117,6 +7678,26 @@
         }
       }
     },
+    "能力已探测": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Capabilities detected"
+          }
+        }
+      }
+    },
+    "脸型": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Face style"
+          }
+        }
+      }
+    },
     "腾讯": {
       "localizations": {
         "en": {
@@ -6187,6 +7768,16 @@
         }
       }
     },
+    "自动朗读当前会话回复": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read replies from the selected session aloud"
+          }
+        }
+      }
+    },
     "自动检查更新": {
       "localizations": {
         "en": {
@@ -6223,6 +7814,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "chip is not %@"
+          }
+        }
+      }
+    },
+    "草稿": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Draft"
+          }
+        }
+      }
+    },
+    "草稿为空或过长": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The draft is empty or too long."
           }
         }
       }
@@ -6297,6 +7908,16 @@
         }
       }
     },
+    "表情": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expression"
+          }
+        }
+      }
+    },
     "裁切铺满": {
       "localizations": {
         "en": {
@@ -6343,6 +7964,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "The device shows OFFLINE after 15 seconds without a Mac command. If USB is plugged in but the device is OFFLINE, click Reconnect to reopen the serial port — no need to unplug."
+          }
+        }
+      }
+    },
+    "设备回执超时，结果未知；请重新查询状态，避免重复操作。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The device acknowledgement timed out. The result is unknown; query its status before repeating the operation."
+          }
+        }
+      }
+    },
+    "设备宠物版本": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Device pet version"
           }
         }
       }
@@ -6397,6 +8038,26 @@
         }
       }
     },
+    "设备拒绝操作：%@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The device rejected the operation: %@"
+          }
+        }
+      }
+    },
+    "设备断开电脑后直接显示当前宠物的点阵画，不再使用独立背景图片。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When disconnected from the Mac, the device displays the selected pet as a dot matrix, without a separate background image."
+          }
+        }
+      }
+    },
     "设备无响应，正在重新连接": {
       "localizations": {
         "en": {
@@ -6417,12 +8078,52 @@
         }
       }
     },
+    "设备未提供助手能力，请升级到本项目固件。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This device does not provide assistant capabilities. Install this project’s firmware."
+          }
+        }
+      }
+    },
+    "设备正在重启，等待重新连接并确认模式…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The device is restarting. Waiting to reconnect and confirm its mode…"
+          }
+        }
+      }
+    },
+    "设备点阵宠物": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Device dot-matrix pet"
+          }
+        }
+      }
+    },
     "设备端：长按 ▲ 约 1 秒切换听写、翻译和字幕，继续到约 2.5 秒打开网络列表；蓝牙模式或离线时长按 ▼ 也可打开。短按上下选择，短按 OK 切换；最后一项 USE BLUETOOTH 可直接切蓝牙。长按 OK 返回。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "On the device: long-press ▲ for about 1 second to switch between dictation, translation and subtitles; keep holding until about 2.5 seconds to open the network list. In Bluetooth mode or offline, long-press ▼ to open it too. Use ▲/▼ to select and tap OK to switch; the last item, USE BLUETOOTH, switches directly to Bluetooth. Long-press OK to go back."
+          }
+        }
+      }
+    },
+    "设备配置版本": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Device configuration version"
           }
         }
       }
@@ -6597,6 +8298,26 @@
         }
       }
     },
+    "试听语音": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preview voice"
+          }
+        }
+      }
+    },
+    "试用 AI 助理": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try AI Assistant"
+          }
+        }
+      }
+    },
     "该引擎不支持%@": {
       "localizations": {
         "en": {
@@ -6627,12 +8348,32 @@
         }
       }
     },
+    "语音播放完成": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice playback finished"
+          }
+        }
+      }
+    },
     "语音输入目标": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Voice input target"
+          }
+        }
+      }
+    },
+    "语音返回格式无效，已停止播放。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The returned audio format is invalid. Playback has stopped."
           }
         }
       }
@@ -6707,12 +8448,42 @@
         }
       }
     },
+    "请先选择原应用会话": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select an original application session first."
+          }
+        }
+      }
+    },
     "请先选择模型": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Choose a model first"
+          }
+        }
+      }
+    },
+    "请先通过 USB 或已配对的 Wi-Fi 连接 Passport。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect Passport through USB or paired Wi-Fi first."
+          }
+        }
+      }
+    },
+    "请在本机填写有效的 MiniMax 和 DeepSeek API Key。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter valid MiniMax and DeepSeek API keys on this Mac."
           }
         }
       }
@@ -6757,6 +8528,26 @@
         }
       }
     },
+    "请选择会话": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select a session"
+          }
+        }
+      }
+    },
+    "请配置 Kimi Code 本机服务和访问令牌": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure the local Kimi Code server and its access token."
+          }
+        }
+      }
+    },
     "读取 Codex 账户的真实用量与会话元数据，不读取聊天正文。其他 Agent 暂无公开的用量接口时显示暂无数据。": {
       "localizations": {
         "en": {
@@ -6783,6 +8574,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Read failed: %@"
+          }
+        }
+      }
+    },
+    "读取设备状态": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read device status"
           }
         }
       }
@@ -6833,6 +8634,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Doubao Streaming ASR 2.0 · Per hour"
+          }
+        }
+      }
+    },
+    "跟随会话状态": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Follow conversation state"
           }
         }
       }
@@ -6923,6 +8734,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Input"
+          }
+        }
+      }
+    },
+    "输入框拒绝写入草稿": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The composer rejected the draft."
+          }
+        }
+      }
+    },
+    "输入问题，或按住下方按钮说话": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Type a question or hold the button below to talk"
           }
         }
       }
@@ -7087,6 +8918,16 @@
         }
       }
     },
+    "退出 AI 助理": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quit AI Assistant"
+          }
+        }
+      }
+    },
     "退出 FoloVibe Key": {
       "localizations": {
         "en": {
@@ -7127,12 +8968,62 @@
         }
       }
     },
+    "选中的应用会话": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selected app session"
+          }
+        }
+      }
+    },
+    "选择": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select"
+          }
+        }
+      }
+    },
+    "选择原应用会话；只有当前所选会话的最终回复会进入自动朗读。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select a session in the original app. Only final replies from the selected session are read aloud automatically."
+          }
+        }
+      }
+    },
     "选择图片…": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Choose Image…"
+          }
+        }
+      }
+    },
+    "选择宠物…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a pet…"
+          }
+        }
+      }
+    },
+    "选择智能体会话…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose an agent session…"
           }
         }
       }
@@ -7153,6 +9044,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Choose the translation language"
+          }
+        }
+      }
+    },
+    "选择表情后固定显示；打开跟随会话状态可恢复自动联动。外观、脸型、配色与表情会一同同步到设备。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selecting an expression keeps it on screen. Turn on Follow conversation state to resume automatic animation. Appearance, face style, color, and expression sync to the device together."
           }
         }
       }
@@ -7247,6 +9148,16 @@
         }
       }
     },
+    "配置 WorkBuddy Hook": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure WorkBuddy hooks"
+          }
+        }
+      }
+    },
     "配置…": {
       "localizations": {
         "en": {
@@ -7277,6 +9188,16 @@
         }
       }
     },
+    "配色": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Color palette"
+          }
+        }
+      }
+    },
     "重新下载": {
       "localizations": {
         "en": {
@@ -7293,6 +9214,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Reinstall"
+          }
+        }
+      }
+    },
+    "重新加载目录": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reload catalog"
+          }
+        }
+      }
+    },
+    "重新检测": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check again"
           }
         }
       }
@@ -7507,6 +9448,16 @@
         }
       }
     },
+    "需要辅助功能权限": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accessibility permission is required."
+          }
+        }
+      }
+    },
     "需要辅助功能权限才能控制 Codex，请在 设置 › 通用 中开启": {
       "localizations": {
         "en": {
@@ -7557,6 +9508,16 @@
         }
       }
     },
+    "首次同步凭据请使用 USB；后续可用已配对的加密 Wi-Fi。独立模式在 Mac 关闭后仍可进行云端语音对话。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use USB for the first credential sync. Later updates can use paired encrypted Wi-Fi. Standalone cloud conversations continue when the Mac is off."
+          }
+        }
+      }
+    },
     "麦克风": {
       "localizations": {
         "en": {
@@ -7583,6 +9544,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "The microphone hears what you say. Accessibility lets VibeKey type into the current window."
+          }
+        }
+      }
+    },
+    "默认关闭思考模式；识别和朗读统一在“识别模型”中配置。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thinking mode is off by default. Configure speech recognition and read aloud together in Recognition Models."
           }
         }
       }
@@ -7647,6 +9618,16 @@
         }
       }
     },
+    "鼠标穿透": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Click through"
+          }
+        }
+      }
+    },
     "（以服务商官网为准）": {
       "localizations": {
         "en": {
@@ -7673,6 +9654,26 @@
           "stringUnit": {
             "state": "translated",
             "value": " (Not Set Up)"
+          }
+        }
+      }
+    },
+    "；当前会话 Hook 已绑定": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "; hook bound to the current session"
+          }
+        }
+      }
+    },
+    "；未发现与当前会话身份匹配的 Hook": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "; no hook matches the current session identity"
           }
         }
       }

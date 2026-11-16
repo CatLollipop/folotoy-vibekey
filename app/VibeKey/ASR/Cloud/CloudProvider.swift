@@ -8,7 +8,7 @@ import Foundation
 /// - OpenAI 兼容转写接口:按句上传,兼容 OpenAI、Groq 等任何 `/audio/transcriptions` 服务。
 /// 都采用"用户自带密钥"模式,密钥只存在本机(CredentialStore)。
 nonisolated enum CloudProvider: String, CaseIterable, Identifiable, Sendable {
-    case volcengine, bailian, elevenlabs, soniox, openAICompatible
+    case minimax, volcengine, bailian, elevenlabs, soniox, openAICompatible
 
     var id: String { rawValue }
 
@@ -17,6 +17,7 @@ nonisolated enum CloudProvider: String, CaseIterable, Identifiable, Sendable {
 
     var displayName: String {
         switch self {
+        case .minimax: String(localized: "MiniMax · 语音识别与朗读", bundle: .l10n)
         case .volcengine: String(localized: "火山引擎 · 豆包流式识别", bundle: .l10n)
         case .bailian: String(localized: "阿里云百炼 · Fun-ASR 实时识别", bundle: .l10n)
         case .elevenlabs: "ElevenLabs · Scribe v2 Realtime"
@@ -27,6 +28,7 @@ nonisolated enum CloudProvider: String, CaseIterable, Identifiable, Sendable {
 
     var detail: String {
         switch self {
+        case .minimax: String(localized: "ASR 与 TTS 共用一个密钥；用于听写、字幕和 AI 助理语音对话。", bundle: .l10n)
         case .volcengine: String(localized: "普通话准确率很高，支持中英混说和多种方言；适合中国大陆。", bundle: .l10n)
         case .bailian: String(localized: "方言覆盖最广（粤语、吴语、闽南语等），中英文都好；有中国大陆和国际两个区域。", bundle: .l10n)
         case .elevenlabs: String(localized: "国际服务，中文、粤语、英文准确率高，延迟低。", bundle: .l10n)
@@ -38,6 +40,7 @@ nonisolated enum CloudProvider: String, CaseIterable, Identifiable, Sendable {
     /// 发给 Passport 屏幕的短名(ASCII)。
     var shortName: String {
         switch self {
+        case .minimax: "MiniMax ASR"
         case .volcengine: "Doubao ASR"
         case .bailian: "Fun-ASR"
         case .elevenlabs: "Scribe"
@@ -47,11 +50,12 @@ nonisolated enum CloudProvider: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// 是否原生流式(否则走本地 VAD 分段 + 逐句上传)。
-    var isStreaming: Bool { self != .openAICompatible }
+    var isStreaming: Bool { self != .openAICompatible && self != .minimax }
 
     /// 获取 API Key 的控制台地址。
     var consoleURL: URL {
         switch self {
+        case .minimax: URL(string: "https://platform.minimax.cn/console/keys")!
         case .volcengine: URL(string: "https://console.volcengine.com/speech/app")!
         case .bailian: URL(string: "https://bailian.console.aliyun.com/?tab=model#/api-key")!
         case .elevenlabs: URL(string: "https://elevenlabs.io/app/settings/api-keys")!
@@ -68,6 +72,7 @@ nonisolated enum CloudProvider: String, CaseIterable, Identifiable, Sendable {
     /// 默认模型(可在配置里修改)。
     var defaultModel: String {
         switch self {
+        case .minimax: "asr-1.0"
         case .volcengine: "volc.seedasr.sauc.duration"
         case .bailian: "fun-asr-realtime"
         case .elevenlabs: "scribe_v2_realtime"
@@ -80,6 +85,7 @@ nonisolated enum CloudProvider: String, CaseIterable, Identifiable, Sendable {
     /// 这里是拉取之前(或拉取失败时)的常用选项;其他三家没有公开的列表接口,这里是各家文档列出的实时识别模型 / 资源 ID。
     var knownModels: [ModelOption] {
         switch self {
+        case .minimax: ModelOption.ids(["asr-1.0"])
         case .volcengine: [
             ModelOption(id: "volc.seedasr.sauc.duration", title: String(localized: "豆包流式识别 2.0 · 按时长计费", bundle: .l10n)),
             ModelOption(id: "volc.seedasr.sauc.concurrent", title: String(localized: "豆包流式识别 2.0 · 按并发计费", bundle: .l10n)),
@@ -104,7 +110,8 @@ nonisolated enum CloudProvider: String, CaseIterable, Identifiable, Sendable {
     var canFetchModels: Bool { self == .openAICompatible || self == .soniox }
 
     /// 是否需要填写接口地址(OpenAI 兼容服务)。
-    var needsBaseURL: Bool { self == .openAICompatible }
+    var needsBaseURL: Bool { self == .openAICompatible || self == .minimax }
+    var defaultBaseURL: String { self == .minimax ? "https://api.minimax.cn" : "https://api.openai.com/v1" }
 }
 
 nonisolated enum CloudRegion: String, CaseIterable, Identifiable, Sendable {
@@ -130,6 +137,12 @@ nonisolated struct CloudConfig: Equatable, Sendable {
     /// 必填项是否齐全(决定该模型是否"可用")。
     func isComplete(for provider: CloudProvider) -> Bool {
         guard !apiKey.trimmingCharacters(in: .whitespaces).isEmpty, !model.isEmpty else { return false }
+        if provider == .minimax {
+            guard model == "asr-1.0", apiKey.utf8.count <= 511, !apiKey.contains(where: \.isNewline),
+                  let url = URL(string: baseURL), url.scheme == "https", url.host != nil,
+                  url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else { return false }
+            return true
+        }
         if provider.needsBaseURL { return URL(string: baseURL)?.scheme?.hasPrefix("http") == true }
         return true
     }

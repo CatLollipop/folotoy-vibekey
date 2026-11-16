@@ -18,6 +18,8 @@ import Security
     enum Connection: Equatable { case disconnected, usb, ble, wifi }
 
     private(set) var connection: Connection = .disconnected
+    /// 模式切换要在新的设备启动完成握手后确认，不能把重启前的状态当作已应用。
+    var deviceBootID: String? { lastDeviceBoot }
     /// 0...100;未知时为 nil。
     private(set) var batteryPercent: Int?
     /// 毫伏;未知时为 nil。
@@ -52,6 +54,8 @@ import Security
     @ObservationIgnored var onKey: ((DeviceKey, DeviceKeyEvent, Bool) -> Void)?
     /// 连接状态变化,主线程调用。连上时 config / state 已经重发过。
     @ObservationIgnored var onConnectionChange: ((Connection) -> Void)?
+    @ObservationIgnored var onAssistantMessage: ((DeviceAssistantMessage) -> Void)?
+    private var assistantPending: AssistantPending?
     /// 16 kHz 单声道 float 样本,在后台串行队列上调用。
     @ObservationIgnored var onMicSamples: (@Sendable ([Float]) -> Void)? {
         didSet { mic.setHandler(onMicSamples) }
@@ -579,6 +583,7 @@ import Security
 
     /// 切换当前连接链路,同步 `connection` 与麦克风过滤;连接状态真正变化时才回调 `onConnectionChange`。
     private func setActive(_ link: DeviceLinkKind?) {
+        if active != link { failAssistantRequest() }
         active = link
         mic.setActive(link)
         let newConnection: Connection = switch link {
@@ -703,6 +708,26 @@ import Security
         lastMessageDate = Date()
 
         switch message {
+        case .assistant(let reply):
+            guard isHandshaken(link), link == active else { return }
+            if DeviceAssistantProtocol.acceptsUnsolicited(reply) {
+                onAssistantMessage?(reply)
+                return
+            }
+            if let pending = assistantPending, pending.link == link, pending.op == reply.op {
+                guard reply.requestID != nil else {
+                    assistantPending = nil; pending.timeout.cancel()
+                    pending.continuation.resume(throwing: AssistantError.upgradeRequired)
+                    return
+                }
+                guard DeviceAssistantProtocol.matches(reply, requestID: pending.requestID, op: pending.op,
+                                                      revision: pending.revision, offset: pending.offset) else { return }
+                assistantPending = nil
+                pending.timeout.cancel()
+                onAssistantMessage?(reply)
+                if reply.ok { pending.continuation.resume(returning: reply) }
+                else { pending.continuation.resume(throwing: AssistantError.device(reply.error)) }
+            }
         case .hello(let hello):
             handleHello(hello, via: link)
         case .key(let report):
@@ -1053,6 +1078,66 @@ import Security
     }
 
     private static var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
+
+    /// 助手扩展按应答逐块推进，不复用无确认的普通状态发送入口。
+    func assistantRequest(_ fields: [(String, FlatJSON.Value)], op: String,
+                          revision: UInt32? = nil, offset: Int? = nil) async throws -> DeviceAssistantMessage {
+        guard let link = active, link == .usb || link == .wifi else { throw AssistantError.deviceUnavailable }
+        guard assistantPending == nil else { throw AssistantError.device("busy") }
+        let requestID = UInt32.random(in: 1...UInt32.max)
+        let data = try DeviceAssistantProtocol.encode(fields, op: op, requestID: requestID)
+        let id = UUID()
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await withCheckedThrowingContinuation { continuation in
+                let timeout = Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(20))
+                    guard !Task.isCancelled, let self, self.assistantPending?.id == id else { return }
+                    self.failAssistantRequest()
+                }
+                assistantPending = .init(id: id, requestID: requestID, link: link, op: op, revision: revision,
+                    offset: offset, continuation: continuation, timeout: timeout)
+                sendRaw(data, via: link)
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                guard self?.assistantPending?.id == id else { return }
+                self?.failAssistantRequest()
+            }
+        }
+    }
+
+    func assistantAbort() {
+        failAssistantRequest()
+        guard let active, active == .usb || active == .wifi else { return }
+        sendRaw(Data("{\"cmd\":\"assistant\",\"op\":\"abort\"}\n".utf8), via: active)
+    }
+
+    /// 宠物语义事件不携带正文和密钥，不参与有回执的配置事务。
+    func sendPetState(_ state: String) {
+        guard let active else { return }
+        let line = FlatJSON.encode([("cmd", .string("assistant")), ("op", .string("pet_state")),
+                                    ("value", .string(String(state.prefix(32))))])
+        sendRaw(Data((line + "\n").utf8), via: active)
+    }
+
+    private func failAssistantRequest() {
+        guard let pending = assistantPending else { return }
+        assistantPending = nil
+        pending.timeout.cancel()
+        pending.continuation.resume(throwing: AssistantError.deliveryUnknown)
+    }
+
+    private struct AssistantPending {
+        var id: UUID
+        var requestID: UInt32
+        var link: DeviceLinkKind
+        var op: String
+        var revision: UInt32?
+        var offset: Int?
+        var continuation: CheckedContinuation<DeviceAssistantMessage, Error>
+        var timeout: Task<Void, Never>
+    }
 }
 
 // MARK: - 辅助类型

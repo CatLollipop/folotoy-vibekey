@@ -105,7 +105,7 @@ uint32_t preview_mem_max_used(void)
     return (uint32_t)mon.max_used;
 }
 
-// 预览不读写真实 wallpaper 分区；OFFLINE 页会回退到内置猫咪图。
+// 历史接口兼容，当前OFFLINE页只绘制所选宠物，不读取照片。
 const uint8_t *ib_wallpaper_pixels(void)
 {
     return NULL;

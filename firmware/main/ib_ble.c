@@ -314,3 +314,5 @@ uint16_t ib_ble_mtu(void)
     uint16_t conn = s_conn;
     return (s_started && conn != BLE_HS_CONN_HANDLE_NONE) ? ble_att_mtu(conn) : 0;
 }
+
+bool ib_ble_is_started(void){return s_started;}

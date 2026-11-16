@@ -24,6 +24,11 @@
 #include "bsp_battery.h"
 #include "bsp_display.h"
 #include "ib_audio.h"
+#include "ib_assistant.h"
+#include "ib_assistant_store.h"
+#include "ib_pet_bundle.h"
+#include "ib_cloud_stream.h"
+#include "cJSON.h"
 #include "ib_ble.h"
 #include "ib_charge.h"
 #include "ib_clock.h"
@@ -39,11 +44,13 @@
 #include "esp_bt.h"
 #include "esp_check.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "esp_random.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
 
@@ -85,10 +92,21 @@ typedef struct {
     ib_key_t key;           // EV_KEY
     ib_key_ev_t key_ev;     // EV_KEY
     bool subscribed;        // EV_LINK
-    ib_cmd_t cmd;           // EV_COMMAND
+    uint16_t command_size;
+    char *command_line;
 } app_event_t;
 
+static portMUX_TYPE s_assist_lock = portMUX_INITIALIZER_UNLOCKED;
+static struct { ib_assistant_state_t state; char text[192]; uint32_t revision; } s_assist_view;
+static uint32_t s_assist_seen, s_pet_config_seen;
+static SemaphoreHandle_t s_pet_apply_lock;
+static esp_partition_mmap_handle_t s_pet_mapping;
+static bool s_pet_mapping_live;
+static bool s_solo_exit_press;
 static QueueHandle_t s_queue;
+static TaskHandle_t s_app_task;
+static volatile bool s_app_ready,s_buttons_ready;
+static bool s_ble_budget;
 static bool s_ui_ok;
 static bool s_battery_ok;
 static bool s_audio_ok;
@@ -205,28 +223,23 @@ void ib_app_on_button(bsp_btn_t btn, bsp_btn_ev_t ev, void *user)
 
 static void post_command(ib_link_t link, const char *line, size_t len)
 {
-    // 壁纸命令带 384 字符 base64，ib_cmd_t 约 1.1 KB。接收任务(USB / BLE / Wi-Fi)的栈
-    // 不够放大对象，改在堆上解析；xQueueSend 会复制进队列，随后即可释放。
-    app_event_t *event = calloc(1, sizeof(*event));
-    if (!event) return;
-    event->type = EV_COMMAND;
-    event->link = link;
-    if (!ib_parse_command(line, len, &event->cmd) || !s_queue) {
-        free(event);
-        return;     // 非法或未知命令整条丢弃
-    }
-    xQueueSend(s_queue, event, 0);
-    free(event);
+    // 队列只持有小事件；实际长度的JSON归消费者所有，入队失败立即释放。
+    // 避免16项常驻1744B解析结构，同时保留突发命令/按键的队列容量。
+    if(!s_queue||len>=IB_LINE_MAX)return;
+    app_event_t event={.type=EV_COMMAND,.link=link,.command_size=len,.command_line=malloc(len+1)};
+    if(!event.command_line)return;
+    memcpy(event.command_line,line,len);event.command_line[len]=0;
+    if(xQueueSend(s_queue,&event,0)!=pdTRUE)free(event.command_line);
 }
 
 static void on_usb_line(const char *line, size_t len)
 {
-    if (!ib_wifi_handle_usb_line(line, len)) post_command(IB_LINK_USB, line, len);
+    if (!ib_assistant_handle_line(IB_LINK_USB,line,len) && !ib_wifi_handle_usb_line(line, len)) post_command(IB_LINK_USB, line, len);
 }
 
 static void on_ble_line(const char *line, size_t len)
 {
-    if (!ib_wifi_handle_control_line(line, len, false)) post_command(IB_LINK_BLE, line, len);
+    if (!ib_assistant_handle_line(IB_LINK_BLE,line,len) && !ib_wifi_handle_control_line(line, len, false)) post_command(IB_LINK_BLE, line, len);
 }
 
 static void on_ble_link(bool subscribed)
@@ -237,7 +250,7 @@ static void on_ble_link(bool subscribed)
 
 static void on_wifi_line(const char *line, size_t len)
 {
-    if (!ib_wifi_handle_control_line(line, len, false)) post_command(IB_LINK_WIFI, line, len);
+    if (!ib_assistant_handle_line(IB_LINK_WIFI,line,len) && !ib_wifi_handle_control_line(line, len, false)) post_command(IB_LINK_WIFI, line, len);
 }
 static void on_wifi_link(bool connected)
 {
@@ -507,6 +520,7 @@ static void refresh_battery(int64_t now, bool force)
 // Wi-Fi 已配置但始终拿不到 IP 时，重启到 BLE 单栈；C3 内存不足以让两套无线协议栈常驻。
 static void refresh_ble_fallback(int64_t now)
 {
+    if (ib_assistant_standalone()||!s_ble_budget) return;
     if (s_ble_only) {
         // 自动回退时，插回 USB 说明用户回到电脑旁；手动选蓝牙则尊重用户选择。
         if (!s_ble_manual && s_usb_present && !s_restart_at) {
@@ -678,6 +692,11 @@ static void refresh_links(int64_t now)
         }
     }
 
+    if (ib_assistant_standalone()) {
+        s_online=false;
+        if(s_ui_ok)ib_ui_set_link(ib_wifi_is_ready()?IB_UI_LINK_WIFI:IB_UI_LINK_NONE,ib_wifi_is_ready());
+        return;
+    }
     bool online = ib_links_any(&s_links, now);
     if (online != s_online) {
         s_online = online;
@@ -721,6 +740,18 @@ static void refresh_links(int64_t now)
 
 static void handle_key(ib_key_t key, ib_key_ev_t ev, int64_t now)
 {
+    if(s_solo_exit_press&&key==IB_KEY_DOWN){if(ev==IB_KEY_EV_UP)s_solo_exit_press=false;return;}
+    if(ib_assistant_standalone()){
+        if(ev==IB_KEY_EV_DOWN)wake(now);
+        if(!s_wifi_menu&&key==IB_KEY_DOWN&&ev==IB_KEY_EV_LONG&&!ib_assistant_busy()){
+            s_solo_exit_press=true;ib_assistant_leave_standalone();return;
+        }
+        if((s_wifi_menu||!ib_assistant_busy())&&wifi_menu_key(key,ev,now))return;
+        if(key==IB_KEY_OK){if(ev==IB_KEY_EV_DOWN)ib_assistant_press();else if(ev==IB_KEY_EV_UP)ib_assistant_release();}
+        if(key==IB_KEY_DOWN&&ev==IB_KEY_EV_UP)ib_assistant_cancel();
+        if(key==IB_KEY_UP&&ev==IB_KEY_EV_UP&&!ib_assistant_busy())ib_assistant_clear_history();
+        return;
+    }
     bool dark = !s_backlight_on;
     bool defer_wake = dark && s_online && key == IB_KEY_OK && s_cfg_mic && s_audio_ok
         && (s_screen == IB_UI_IDLE || s_screen == IB_UI_USAGE) && s_mode != IB_MODE_SUB && !agent_capturing();
@@ -780,6 +811,7 @@ static void handle_key(ib_key_t key, ib_key_ev_t ev, int64_t now)
 static void handle_command(ib_link_t link, const ib_cmd_t *cmd, int64_t now)
 {
     char msg[IB_MSG_MAX];
+    if(ib_assistant_standalone()&&cmd->type!=IB_CMD_HELLO&&cmd->type!=IB_CMD_PING&&cmd->type!=IB_CMD_CONFIG&&cmd->type!=IB_CMD_BYE)return;
     if (cmd->type == IB_CMD_BYE) {
         ib_links_drop(&s_links, link);
         refresh_links(now);
@@ -812,6 +844,7 @@ static void handle_command(ib_link_t link, const ib_cmd_t *cmd, int64_t now)
         // 不 wake:config 是设置同步 / 定期校时,不是用户活动。screen_off 变化由 refresh_backlight 按新值立即生效。
         break;
     case IB_CMD_STATE:
+        ib_assistant_companion_state(cmd->state==IB_ST_REC?"listening":cmd->state==IB_ST_PROC?"thinking":cmd->state==IB_ST_DONE?"celebrate":cmd->state==IB_ST_ERR?"alerting":"idle");
         apply_state(cmd, now);
         break;
     case IB_CMD_LEVEL:
@@ -830,6 +863,7 @@ static void handle_command(ib_link_t link, const ib_cmd_t *cmd, int64_t now)
         }
         break;
     case IB_CMD_AGENT:
+        ib_assistant_companion_state(cmd->agent_ev==IB_AGENT_DONE?"celebrate":cmd->agent_ev==IB_AGENT_INPUT?"waiting":"idle");
         if (cmd->agent_ev == IB_AGENT_CLEAR) {
             agent_clear();
         } else {
@@ -962,15 +996,64 @@ static void refresh_timers(int64_t now)
 static void refresh_backlight(int64_t now)
 {
     // 录音、处理中、字幕运行中保持常亮;其余时间按 config.screen_off 熄屏(0 为永不)。
-    bool busy = s_online && (s_st == IB_ST_REC || s_st == IB_ST_PROC || s_st == IB_ST_SUB);
+    bool busy = ib_assistant_busy() || (s_online && (s_st == IB_ST_REC || s_st == IB_ST_PROC || s_st == IB_ST_SUB));
     if (busy) s_last_activity_ms = now;
     bool on = s_screen_off_ms == 0 || now - s_last_activity_ms < s_screen_off_ms;
     set_backlight(on);
 }
 
+// Commit在ACK前同步切换mmap，UI锁保证旧几何不再被逐帧任务读取后才unmap。
+static bool apply_pet_configuration(void *context)
+{
+    (void)context;
+    if(!s_ui_ok)return true;
+    if(!s_pet_apply_lock||xSemaphoreTake(s_pet_apply_lock,pdMS_TO_TICKS(1000))!=pdTRUE)return false;
+    uint32_t generation=ib_assistant_store_generation();
+    if(generation==s_pet_config_seen){xSemaphoreGive(s_pet_apply_lock);return true;}
+    const void *data=NULL;size_t size=0;esp_partition_mmap_handle_t mapping=0;
+    if(ib_assistant_pet_map(&data,&size,&mapping)!=ESP_OK){xSemaphoreGive(s_pet_apply_lock);return false;}
+    bool binary=size>=8&&!memcmp(data,"AORAPET2",8);
+    bool ok=ib_ui_pet_load(binary?data:NULL,binary?size:0);
+    if(ok&&!binary&&data){
+        cJSON *p=cJSON_ParseWithLength(data,size),*enabled=p?cJSON_GetObjectItemCaseSensitive(p,"enabled"):NULL,*fps=p?cJSON_GetObjectItemCaseSensitive(p,"fps"):NULL,*brightness=p?cJSON_GetObjectItemCaseSensitive(p,"brightness"):NULL,*color=p?cJSON_GetObjectItemCaseSensitive(p,"color"):NULL;
+        unsigned rgb=0xEADBB9;if(cJSON_IsString(color)&&color->valuestring[0]=='#')sscanf(color->valuestring+1,"%x",&rgb);
+        ib_ui_pet_config(!cJSON_IsFalse(enabled),cJSON_IsNumber(fps)?fps->valueint:12,cJSON_IsNumber(brightness)?brightness->valueint:80,rgb);cJSON_Delete(p);
+    }
+    if(ok){
+        if(s_pet_mapping_live)esp_partition_munmap(s_pet_mapping);
+        s_pet_mapping=mapping;s_pet_mapping_live=binary;s_pet_config_seen=generation;
+    }
+    if(data&&(!ok||!binary))esp_partition_munmap(mapping);
+    xSemaphoreGive(s_pet_apply_lock);return ok;
+}
+
+// Worker只发布快照；LVGL与电源意图由app任务消费，最后一条状态不会因事件队列满而丢失。
+static void assistant_status(ib_assistant_state_t state,const char *text,void *context)
+{
+    (void)context;size_t n=ib_utf8_prefix(text,strlen(text),sizeof(s_assist_view.text)-1);
+    portENTER_CRITICAL(&s_assist_lock);s_assist_view.state=state;memcpy(s_assist_view.text,text,n);s_assist_view.text[n]=0;s_assist_view.revision++;portEXIT_CRITICAL(&s_assist_lock);
+}
+static void refresh_assistant(int64_t now)
+{
+    ib_assistant_store_apply();
+    typeof(s_assist_view) view;
+    portENTER_CRITICAL(&s_assist_lock);view=s_assist_view;portEXIT_CRITICAL(&s_assist_lock);
+    if(view.revision==s_assist_seen)return;
+    s_assist_seen=view.revision;
+    bool solo=ib_assistant_standalone();
+    static const char *names[]={"idle","loading","listening","uploading","thinking","composing","celebrate","alerting","powering-down"};
+    if(s_ui_ok){
+        if(solo){s_revert_at=0;show_screen(IB_UI_IDLE);ib_ui_pet_state(names[view.state],view.text,true);}
+        else if(!ib_ui_pet_state(view.text[0]?view.text:names[view.state],view.text,false))ib_ui_pet_state(names[view.state],view.text,false);
+    }
+    if(solo)wake(now);
+}
+
 static void app_task(void *arg)
 {
     (void)arg;
+    // 栈在RF之前预留；只有main完成按键初始化后才开放普通协议与按键消费。
+    ulTaskNotifyTake(pdTRUE,portMAX_DELAY);s_app_ready=true;
     app_event_t ev;
     refresh_battery(now_ms(), true);
     refresh_clock(now_ms(), true);
@@ -981,9 +1064,13 @@ static void app_task(void *arg)
             case EV_KEY:
                 handle_key(ev.key, ev.key_ev, now);
                 break;
-            case EV_COMMAND:
-                handle_command(ev.link, &ev.cmd, now);
+            case EV_COMMAND:{
+                ib_cmd_t command;
+                bool valid=ib_parse_command(ev.command_line,ev.command_size,&command);
+                free(ev.command_line);
+                if(valid)handle_command(ev.link,&command,now);
                 break;
+            }
             case EV_LINK:
                 if (ev.link == IB_LINK_BLE) s_ble_subscribed = ev.subscribed;
                 if (!ev.subscribed) ib_links_drop(&s_links, ev.link);
@@ -992,7 +1079,9 @@ static void app_task(void *arg)
             }
         }
         int64_t now = now_ms();
+        if(ib_assistant_take_restart_request()&&!s_restart_at)s_restart_at=now+500;
         refresh_links(now);
+        refresh_assistant(now);
         refresh_ble_fallback(now);
         refresh_timers(now);
         refresh_battery(now, false);
@@ -1014,6 +1103,9 @@ esp_err_t ib_app_start(bool ui_ok, bool battery_ok)
     s_queue = xQueueCreate(EVENT_QUEUE_LEN, sizeof(app_event_t));
     ESP_RETURN_ON_FALSE(s_queue, ESP_ERR_NO_MEM, TAG, "event queue alloc failed");
 
+    BaseType_t core=xTaskCreate(app_task,"ib_app",APP_TASK_STACK,NULL,APP_TASK_PRIO,&s_app_task);
+    ESP_RETURN_ON_FALSE(core==pdPASS,ESP_ERR_NO_MEM,TAG,"core app task alloc failed");
+
     ib_wallpaper_init();
     if (s_ui_ok && ib_ui_init() != ESP_OK) {
         ESP_LOGE(TAG, "UI init failed, continue without screen");
@@ -1027,36 +1119,33 @@ esp_err_t ib_app_start(bool ui_ok, bool battery_ok)
     // PHY 退回每次上电完整校准,BLE 照常启动。
     esp_err_t err = nvs_flash_init();
     if (err != ESP_OK) ESP_LOGW(TAG, "nvs init failed: %s", esp_err_to_name(err));
-    bool wifi_configured = ib_wifi_is_configured();
-    s_ble_only = wifi_configured && ib_wifi_ble_fallback_requested();
-    s_ble_manual = s_ble_only && ib_wifi_ble_manual_requested();
-    if (!wifi_configured) ib_wifi_clear_ble_fallback();
-    if (s_ble_only) {
-        // Wi-Fi 连续拿不到 IP 后切到 BLE 单栈；Wi-Fi 配网记录仍保留在 NVS。
-        if (ib_ble_start(on_ble_line, on_ble_link) != ESP_OK) {
-            ESP_LOGE(TAG, "BLE fallback unavailable, retrying Wi-Fi");
-            ib_wifi_clear_ble_fallback();
-            s_ble_only = false;
-            s_ble_manual = false;
-        }
-    }
-    if (!s_ble_only && wifi_configured) {
-        // 官方 API 释放本轮不使用的 BLE 控制器内存；清除 Wi-Fi 后重启即可恢复 BLE。
-        esp_bt_mem_release(ESP_BT_MODE_BLE);
-    } else if (!s_ble_only && ib_ble_start(on_ble_line, on_ble_link) != ESP_OK) {
-        ESP_LOGE(TAG, "BLE link unavailable");
-    }
-    if (!s_ble_only && ib_wifi_start(on_wifi_line, on_wifi_link) != ESP_OK) {
-        ESP_LOGE(TAG, "Wi-Fi link unavailable");
-    }
+    // mode变化经ACK后重启，启动前选单栈，避免先分配worker才释放BLE/LAN的峰值。
+    bool wifi_configured=ib_wifi_is_configured();
+    bool solo_boot=ib_assistant_mode_load()&&wifi_configured;
+    if(!wifi_configured&&ib_assistant_mode_load())ib_assistant_mode_save(false);
+    ib_wifi_set_companion_enabled(!solo_boot);
+    s_ble_budget=!solo_boot&&heap_caps_get_free_size(MALLOC_CAP_8BIT)>=98304&&heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)>=32768;
+    s_ble_only=wifi_configured&&!solo_boot&&s_ble_budget&&ib_wifi_ble_fallback_requested();
+    s_ble_manual=s_ble_only&&ib_wifi_ble_manual_requested();
+    bool use_ble=s_ble_budget&&(!wifi_configured||s_ble_only);
+    if(use_ble&&ib_ble_start(on_ble_line,on_ble_link)!=ESP_OK){ESP_LOGW(TAG,"BLE unavailable; keeping core USB/Wi-Fi");use_ble=false;s_ble_only=false;}
+    if(!use_ble){esp_bt_mem_release(ESP_BT_MODE_BLE);ib_wifi_clear_ble_fallback();}
+    if(!s_ble_only&&ib_wifi_start(on_wifi_line,on_wifi_link)!=ESP_OK)ESP_LOGE(TAG,"Wi-Fi link unavailable");
 
     // boot id 在 RF 启用之后生成:此时 esp_random() 由射频噪声提供真随机数。
     s_boot_id = esp_random();
 
-    s_audio_ok = ib_audio_init(audio_tx) == ESP_OK;
+    s_audio_ok = ib_audio_init_mode(audio_tx,!solo_boot) == ESP_OK;
     if (!s_audio_ok) ESP_LOGE(TAG, "audio unavailable");
+    if(ib_assistant_init(assistant_status,NULL)!=ESP_OK)ESP_LOGE(TAG,"assistant unavailable");
+    s_pet_apply_lock=xSemaphoreCreateMutex();
+    ib_assistant_store_set_apply(apply_pet_configuration,NULL);
+    ib_assistant_store_apply();
+    assistant_status(IB_ASSIST_IDLE,"",NULL);
 
-    BaseType_t ok = xTaskCreate(app_task, "ib_app", APP_TASK_STACK, NULL, APP_TASK_PRIO, NULL);
-    ESP_RETURN_ON_FALSE(ok == pdPASS, ESP_ERR_NO_MEM, TAG, "app task create failed");
     return ESP_OK;
 }
+
+void ib_app_finish_start(bool buttons_ready){s_buttons_ready=buttons_ready;if(s_app_task)xTaskNotifyGive(s_app_task);}
+bool ib_app_ready(void){return s_app_ready;}
+bool ib_app_buttons_ready(void){return s_buttons_ready;}

@@ -40,6 +40,9 @@ target_compile_options(lvgl_host PRIVATE -w -O2)   # 第三方代码:不在这�
 
 # ---- 固件界面代码 + 预览驱动 ----
 set(UI_SOURCES
+    "${UI_DIR}/ib_pet.c"
+    "${UI_DIR}/ib_pet_motion.c"
+    "${UI_DIR}/ib_pet_bundle.c"
     "${UI_DIR}/ib_ui.c"
     "${UI_DIR}/ib_ui_gfx.c"
     "${UI_DIR}/ib_ui_wave.c"
@@ -71,13 +74,13 @@ add_executable(ib_ui_preview
     preview_scenarios.c
     preview_main.c
     ${UI_SOURCES})
-include("${UI_DIR}/assets/offline-art.cmake")
 target_include_directories(ib_ui_preview PRIVATE
     "${UI_DIR}"
     "${CMAKE_CURRENT_BINARY_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
 target_link_libraries(ib_ui_preview PRIVATE lvgl_host m)
+target_compile_definitions(ib_ui_preview PRIVATE PREVIEW_PET_ASSETS="${FW_DIR}/build/host-pet/catalog")
 target_compile_options(ib_ui_preview PRIVATE -Wall -Wextra -O1)
 # 固件代码按 gcc 编写;clang 额外的这两类提示不影响行为,单独关掉,其余告警照常显示。
 target_compile_options(ib_ui_preview PRIVATE -Wno-missing-field-initializers -Wno-unused-parameter)

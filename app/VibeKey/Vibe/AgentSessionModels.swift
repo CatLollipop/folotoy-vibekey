@@ -35,6 +35,7 @@ nonisolated enum AgentAppDisplayName {
     private static let known: [String: (short: String, target: String)] = [
         "com.openai.codex": ("CODEX", "Codex"),
         "ai.deepseek.dsh.desktop.next": ("DSH", "DeepSeek"),
+        "com.deepseek.dsh": ("DSH", "DeepSeek Harness"),
         "com.tencent.workbuddy.mac": ("WORKBUDDY", "WorkBuddy"),
         "dev.zcode.app": ("ZCODE", "ZCode"),
         "com.anthropic.claudefordesktop": ("CLAUDE", "Claude"),

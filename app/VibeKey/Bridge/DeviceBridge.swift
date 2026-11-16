@@ -12,6 +12,8 @@ import AppKit
 /// - 列表页(切换应用 / 选择字幕应用)打开时,按键只用于列表。
 @MainActor
 final class DeviceBridge {
+    /// 助手运行时暂时拥有设备页面；其余时候完全保留原听写/字幕/导航状态机。
+    var assistantDisplay: (() -> (DeviceUIState, String)?)?
     /// 需要 AppState 提供的动作。
     struct Hooks {
         /// 收起 / 展开 Mac 上的字幕条。
@@ -857,6 +859,15 @@ final class DeviceBridge {
         if config != lastConfig {
             lastConfig = config
             link.sendConfig(config)
+        }
+
+        if let override = assistantDisplay?() {
+            let state = DeviceStateMapper.State(ui: override.0, mode: .dict, msg: override.1)
+            if lastState != state {
+                lastState = state
+                link.sendState(state.ui, mode: state.mode, msg: state.msg)
+            }
+            return
         }
 
         // 列表打开时开始了听写(Mac 上触发):设备已切到录音页,关闭列表,按键不再归列表。

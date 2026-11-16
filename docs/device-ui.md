@@ -1,5 +1,9 @@
 # Passport 设备界面设计
 
+本分支 AI 助理接管优先于下文旧 Codex 操作：伴随模式按住 OK 说话；短按上键仅提交所选 Hub 会话中由助手写入且未被修改的草稿，下键停止所选任务；长按下键打开云对话 / 原会话 / BACK 列表，上下移动、OK确认，30秒无操作关闭。菜单显示 `.list` 优先，按键不会落回原 Codex。关闭设置中的「Passport 按住说话用于 AI 助理」后恢复旧流程。设备独立模式的本地按键规则见 [assistant-device-protocol.md](assistant-device-protocol.md)。
+
+当前C3启动先保留核心任务/按键/USB资源；BLE仅在free heap≥96KiB且largest≥32KiB门限下可选启动，低预算使用USB/Wi-Fi，下面BLE回退交互仅在预算允许时可用。独立模式切换会安全重启到单Wi-Fi，离线页面始终显示当前宠物。
+
 本地分支无线交互：首次在 Mac 设置 › Passport 配置 2.4 GHz Wi-Fi；设备和 Mac 处于同一局域网后，状态栏显示 `WIFI`，USB 在位时仍优先显示 `USB`。Mac 显示“Wi-Fi 已就绪，拔线后自动切换”才表示完成无线应用层握手。设备最多保存 4 个网络，换网不需要 Mac。离线继续显示原 OFFLINE/WAITING FOR MAC 页面。配网后本轮启动使用 Wi-Fi，未配网使用 BLE；Wi-Fi 已配置但 25 秒拿不到 IP 时自动重启到 BLE 单栈并显示 `BLUETOOTH MODE / HOLD DOWN`。长按 ▲ 约 1 秒切换听写、翻译、字幕模式，继续按住到约 2.5 秒打开网络菜单；蓝牙模式或完全离线时也可长按 ▼ 直接打开。最后一项 `USE BLUETOOTH` 会保留配网记录并立即切到蓝牙。Wi-Fi 正常在线时长按 ▼ 仍用于 Agent 应用 / 项目 / 会话导航。蓝牙在线时选择已保存的 Wi-Fi（包括当前标记项）会清除蓝牙模式并重启尝试 Wi-Fi，Wi-Fi 离线时选择当前网络也会重试。手动蓝牙在插回 USB 后不会被强制切回；自动回退到蓝牙时，插回 USB 会自动恢复 Wi-Fi。
 
 长按下键打开「应用 / 项目 / 会话」导航：普通应用直接显示应用列表；当前是 Codex 或 DeepSeek Honeycomb 时，先显示项目和最近会话，选中项目后再选会话。选中会话会打开它并把光标放回输入框。目标应用由这个列表记住（默认 Codex）。按住 OK 立即采音，同时前置并聚焦所选应用；松开后识别/翻译并输入。Mac 正常采音为绿色，启动为黄色，错误为红色；硬件原有 Matrix 视觉不变。
@@ -52,9 +56,9 @@
 
 ### OFFLINE(Mac 未连接)
 
-- 默认是橙帽绿外套的像素猫咪坐在绿色窗景和终端面板前，占据屏幕上部；底部约 110 px 暗区留给时钟。左上角使用 14 px 终端字体把 `> OFFLINE_` 直接叠在窗景上，顶部状态栏也叠在图上。背景为 240 × 320 的 RGB565 图，真机与主机预览共用 `firmware/main/assets/offline-cat.rgb565`。
-- 自定义壁纸：设置 › Passport › 离线页背景选一张照片即可。Mac 端裁成 3:4、降到 60×80 后按 4×4 放大、Bayer 抖动成 24 级绿色，再把顶部 40 px 和底部从 y=200 起压暗；用户不需要预先做像素风。有效自定义图从 `wallpaper` 分区 mmap 读取，CRC 不符或没上传过时自动回退内置猫图。
-- 底部桌面上显示绿色 5×7 点阵时钟，数字以 6 px 为点距。冒号每秒渐变，每帧只重绘冒号区域。日期在 y=301，底部提示在 y=313：有 USB、BLE 或已配网 Wi-Fi 时显示 `PRESS OK TO RECONNECT`，完全没有链路时显示 `CHECK USB CABLE`。
+- 直接显示当前所选Aora角色/面部样式的点阵动画，与Mac的高清vector/solid共享配置。没有Mac或Wi-Fi时本地idle，45秒后sleep；用户固定表情优先。离线页不受在线宠物隐藏开关影响。
+- 不再提供照片/壁纸背景入口，不加载旧RGB565照片。旧wallpaper分区保留已有数据，不自动擦除、不映射、不显示。
+- 底部显示绿色 5×7 点阵时钟，数字以 6 px 为点距。冒号每秒渐变，每帧只重绘冒号区域。日期在 y=301，底部提示在 y=313：有 USB、BLE 或已配网 Wi-Fi 时显示 `PRESS OK TO RECONNECT`，完全没有链路时显示 `CHECK USB CABLE`。
 - 离线时按 OK 会通过当前 USB（或 BLE）发送 `wake`，让 Mac 重新握手；提示先变 `CONNECTING...`，3 秒无响应变 `NO RESPONSE - TRY AGAIN`，2 秒后恢复 `PRESS OK TO RECONNECT`。不需要拔插数据线。
 - 离线时长按 ▼ 打开设备本地 `WIFI NETWORK` 列表：短按 ▲ / ▼ 选择，短按 OK 切换当前网络并重启 Wi-Fi，长按 OK 返回；30 秒无操作自动返回。列表只显示 SSID 和 `*` 当前标记，不显示密码或 PSK。没有已保存网络时长按 ▼ 显示 `USB TO ADD WIFI`。
 - 进入条件:全部链路都离线(15 s 没收到命令、`bye`、USB 连续 1 s 不在位、BLE 断开)。Mac 空闲被 App Nap 挂起也会触发 15 秒超时;Codex 的消息 hook 会唤醒 VibeKey，所以有时“发一条 Codex 消息就自己连上”。离线不清除 Mac 下发的状态,恢复在线后回到离线前的页面(例如字幕运行中直接回到 SUB 页)。
@@ -171,3 +175,11 @@ Mac 下发 `agent` 时,在任何页面上方弹出全屏通知层(录音中不�
 ## 上键发送回执（2026-11-07）
 
 发送前读取当前目标应用；Codex 验证同一输入框全文、发送控件和无审批后，只提交一次 Cmd-Enter。只有同一聊天输入框已清空才显示 SENT；超时为 UNSURE，不补发或假报成功。应用允许时可以发送运行中的后续消息；无可用发送控件为 BUSY。下一段录音从空输入框开始会清理旧内存状态；仍有未确认原文时保留重试锁。
+
+## 独立 AI 助手与 Aora Dot
+
+独立模式下，屏幕以Aora Dot宠物显示录音、上传、思考、朗读、完成与错误，配两行中文/ASCII状态或短文本；设备为内置像素点阵，Mac为高清vector/solid。宠物支持44个canonical状态，名单/来源/许可见 [pet-runtime.md](pet-runtime.md)。LIST/USAGE/SUB始终优先于宠物显示，导航信息不被覆盖。
+
+独立按键：按住OK录音、松开发送（最长30秒）；处理中/朗读中再次按住OK会打断旧轮并在仍按住时自动开录；▼短按取消，空闲长按▼退出独立模式；空闲短按▲清历史。Flash预擦除显示preparing，准备完成才显示可录音。纯静音、短录音、网络/云端错误均显示错误并保留恢复路径。退出独立后恢复原有Mac相伴交互。完整状态机与真实硬件验收项见 [assistant-device-protocol.md](assistant-device-protocol.md)。
+
+完整刷新结束后才安排下一帧，耗时较大时自然降低实际帧率；fps设置是目标上限。点阵自绘先按DMA clip裁可见行/列，每次callback复用descriptor，避免小DMA缓冲重复扫描整屏。frame timer在REFR_READY后恢复，保证LVGL handler可返回并由port实际delay，让核心任务/IDLE调度；看门狗保持启用。

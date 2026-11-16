@@ -6,6 +6,7 @@ import SwiftUI
 struct CloudConfigSheet: View {
     let provider: CloudProvider
     let store: CloudASRStore
+    let assistant: AssistantStore
     var onSaved: () -> Void = {}
 
     @Environment(\.dismiss) private var dismiss
@@ -20,7 +21,12 @@ struct CloudConfigSheet: View {
         case idle, testing, ok, failed(String)
     }
 
-    var body: some View {
+    @ViewBuilder var body: some View {
+        if provider == .minimax {
+            MiniMaxVoiceConfigSheet(assistant: assistant, cloud: store, onSaved: onSaved)
+        } else { ordinaryForm }
+    }
+    private var ordinaryForm: some View {
         VStack(alignment: .leading, spacing: DS.Space.m) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(verbatim: provider.displayName).font(.system(size: 16, weight: .semibold))

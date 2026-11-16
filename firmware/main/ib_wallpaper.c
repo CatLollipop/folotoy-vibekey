@@ -18,7 +18,6 @@ static const char *TAG = "ib_wallpaper";
 #define MAGIC       "VKW1"
 
 static const esp_partition_t *s_part;
-static const uint8_t *s_map;
 static bool s_available;
 
 static bool s_active;
@@ -26,11 +25,6 @@ static uint32_t s_expected_size;
 static uint32_t s_expected_crc;
 static uint32_t s_received;
 static uint32_t s_crc;
-
-static uint32_t read_u32(const uint8_t *p)
-{
-    return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
-}
 
 static void write_u32(uint8_t *p, uint32_t value)
 {
@@ -43,7 +37,6 @@ static void write_u32(uint8_t *p, uint32_t value)
 esp_err_t ib_wallpaper_init(void)
 {
     s_available = false;
-    s_map = NULL;
     s_part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, 0x40, "wallpaper");
     if (!s_part) {
         ESP_LOGW(TAG, "wallpaper partition not found");
@@ -54,24 +47,7 @@ esp_err_t ib_wallpaper_init(void)
         return ESP_ERR_INVALID_SIZE;
     }
 
-    esp_partition_mmap_handle_t handle;
-    const void *map = NULL;
-    esp_err_t err = esp_partition_mmap(s_part, 0, MAP_SIZE, ESP_PARTITION_MMAP_DATA, &map, &handle);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "mmap failed: %s", esp_err_to_name(err));
-        return err;
-    }
-    const uint8_t *p = map;
-    if (memcmp(p, MAGIC, 4) != 0 || read_u32(p + 4) != IMAGE_SIZE || read_u32(p + 12) != 0) {
-        // 没有自定义背景,或上次写入被中断;不保留映射。
-        return ESP_ERR_NOT_FOUND;
-    }
-    if (ib_crc32(p + HEADER_SIZE, IMAGE_SIZE) != read_u32(p + 8)) {
-        ESP_LOGW(TAG, "wallpaper CRC mismatch");
-        return ESP_ERR_INVALID_CRC;
-    }
-    s_map = p;
-    s_available = true;
+    // 旧照片协议仅保留读写兼容；不再映射或渲染，也不自动擦除历史照片。
     return ESP_OK;
 }
 
@@ -82,7 +58,7 @@ bool ib_wallpaper_available(void)
 
 const uint8_t *ib_wallpaper_pixels(void)
 {
-    return s_available ? s_map + HEADER_SIZE : NULL;
+    return NULL;
 }
 
 esp_err_t ib_wallpaper_begin(uint32_t size, uint32_t crc)

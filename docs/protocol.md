@@ -59,7 +59,7 @@ JSON Lines:每条消息是一行扁平 UTF-8 JSON 对象,以 `\n` 结尾,单行�
 | bat | `{"t":"bat","soc":87,"mv":4012,"chg":0}` | `hello` 之后及每 60 秒;读不到为 `-1`;`chg` 是否在充电(读不到为 0);判定为已充满时 `soc` 报 100、`chg` 为 0,`mv` 始终是实测电压 |
 | pong | `{"t":"pong"}` | 回复 `ping` |
 | wake | `{"t":"wake"}` | OFFLINE 页按 OK 时发送，请求 Mac 重新握手。USB/BLE 都可用时各发一次；Mac 收到后重置该链路握手状态并重发 `hello`，设备回 `hello` 后补发 `config` / `state` / `keys` |
-| wallpaper | `{"t":"wallpaper","ok":1,"p":"start"}` | 离线页背景上传的阶段回执。`p`:`start`(分区擦除完成)/ `done`(整图校验并写入成功)/ `clear`(恢复默认成功);`ok=0` 表示该阶段失败。只有 `start` / `done` / `clear` 会回,分块不回执 |
+| wallpaper | `{"t":"wallpaper","ok":1,"p":"start"}` | 历史照片协议的阶段回执（当前离线页不显示照片）。`p`:`start`(分区擦除完成)/ `done`(整图校验并写入成功)/ `clear`(恢复默认成功);`ok=0` 表示该阶段失败。只有 `start` / `done` / `clear` 会回,分块不回执 |
 
 - `seq` 本次上电后单调递增;`boot` 是每次上电随机生成的 8 位十六进制。Mac 用 `(boot, seq)` 去重。
 - `fw` 新固件为 `vibekey`;0.1.7 及更早固件仍是上游的 `inputbetter`,Mac 两种都接受,不需要先刷机才能升级 app。
@@ -87,9 +87,9 @@ JSON Lines:每条消息是一行扁平 UTF-8 JSON 对象,以 `\n` 结尾,单行�
 | list | `{"cmd":"list","title":"SWITCH APP","sel":2,"n":7,"top":0,"i0":"Ghostty","i1":"Chrome","i2":"Xcode","i3":"Finder","i4":"Mail","i5":"Notes"}` | 列表页内容(如应用切换器),选中项由 Mac 维护,设备只显示。`n`(总项数)与 `sel`(选中项绝对序号)必填,均为 0..65535,`n>0` 时要求 `sel<n`、`top<n`,否则整条丢弃;`top` 为 `i0` 在完整列表里的序号(缺省 0,用于滚动条);`title` 可选;`i0`..`i5` 为最多 6 个可见行(UTF-8,每项 ≤47 字节,可缺行),`i6` 及以后忽略。固件用 12 px SemiBold 中文字库显示中文项目 / 会话名,超出宽度时末尾显示 `..`。每次选中或滚动变化都重发整条 |
 | usage | `{"cmd":"usage","uapp":"CODEX","utoday":"43,051,522","uweek":"43,051,522","utotal":"4,938,713,816","utab":0,"uquota":1,"uleft":7,"ureset":"4D 1H","u5quota":1,"u5left":63,"u5reset":"2H 10M","uplan":"PLUS","ucredit":0,"u1l":"5H LEFT","u1v":"63%","u1p":63,"u1d":"5H RESET 2H 10M","u2l":"WEEK LEFT","u2v":"7%","u2p":7,"u2d":"WEEK RESET 4D 1H","ufl":"PLAN PLUS","ufr":"CREDITS 0","uready":1}` | Agent 用量首页。`uapp` / `utoday` / `uweek` / `utotal` 为 ASCII(数字由 Mac 格式化);`utab` 0/1/2 = 今日/本周/累计;`uquota` / `u5quota` 省略表示对应额度接口不可用;`uleft` / `u5left` 为剩余百分比;`u1l/u1v/u1p/u1d`、`u2l/u2v/u2p/u2d` 是两行通用信息(标签/值/可选百分比进度/可选行说明),`udetail` 是无分项说明时的通用中间行,`ufl/ufr` 是底部两段;旧固件可继续使用 `ureset/uplan/ucredit`。`uready=0` 显示 `READING USAGE...`。字段均可选,但至少要带 `uapp` / `uready` / 一个 token 字段 |
 | caption | `{"cmd":"caption","app":"ego lite","src":"今天讲一下 Passport 的字幕","dst":"Today we'll talk about Passport subtitles","live":0}` | SUB 页的 UTF-8 字幕。`app` 为应用名(优先于 `state.msg`);`src` / `dst` 为原文 / 译文,各最多 180 字节,Mac 只发最新内容的末尾;`live=1` 表示末句还在变化,译文用略暗颜色。字段可选,空字符串清空对应内容。旧固件忽略该命令 |
-| wallpaper | `{"cmd":"wallpaper","size":153600,"crc":3735928559}`<br>`{"cmd":"wallpaper","off":288,"d":"..."}`<br>`{"cmd":"wallpaper","fin":1}`<br>`{"cmd":"wallpaper","clear":1}` | 离线页背景。`start` 必须同时有 `size` / `crc`,设备先擦除独立分区再回 `p:"start"`;随后按 `off` 递增发送每块 288 字节的 Base64(`d`,编码后 384 字符);`fin=1` 时校验总长度与 CRC32,写入头后回 `p:"done"` 并重启。`clear=1` 只擦除头部并重启回内置猫图。只建议经 USB / Wi-Fi 上传；BLE 太慢 |
+| wallpaper | `{"cmd":"wallpaper","size":153600,"crc":3735928559}`<br>`{"cmd":"wallpaper","off":288,"d":"..."}`<br>`{"cmd":"wallpaper","fin":1}`<br>`{"cmd":"wallpaper","clear":1}` | 历史照片协议，当前不显示。`start` 必须同时有 `size` / `crc`,设备先擦除独立分区再回 `p:"start"`;随后按 `off` 递增发送每块 288 字节的 Base64(`d`,编码后 384 字符);`fin=1` 时校验总长度与 CRC32,写入头后回 `p:"done"` 并重启。`clear=1` 处理历史分区头并重启，不改变当前宠物离线画面。只建议经 USB / Wi-Fi 上传；BLE 太慢 |
 
-壁纸分区为 `wallpaper,data,0x40,0x310000,0x30000`,不碰 `cardid`。内容为 16 字节头(`VKW1` + 小端 size + CRC32 + 保留)+ 240×320 RGB565 小端、行优先像素(153600 字节)。头最后写入；启动时 magic / 大小 / CRC 任一不符就回退固件内置猫图。CRC 是标准 IEEE 802.3(reflected `0xEDB88320`,init/xorout `0xFFFFFFFF`),与 Mac 端 `CRC32.checksum` 一致。
+壁纸分区为 `wallpaper,data,0x40,0x310000,0x30000`,不碰 `cardid`。内容为 16 字节头(`VKW1` + 小端 size + CRC32 + 保留)+ 240×320 RGB565 小端、行优先像素(153600 字节)。头最后写入；当前启动不映射或渲染照片，也不自动擦除旧数据；这些字段仅供历史协议兼容。CRC 是标准 IEEE 802.3(reflected `0xEDB88320`,init/xorout `0xFFFFFFFF`),与 Mac 端 `CRC32.checksum` 一致。
 
 `st` 取值:
 
@@ -136,3 +136,7 @@ JSON Lines:每条消息是一行扁平 UTF-8 JSON 对象,以 `\n` 结尾,单行�
 | `0x02` | 设备 → Mac | 1~2 块 IMA ADPCM。每块 164 字节 = 4 字节头(int16 LE 预测值、uint8 步长索引、uint8 保留)+ 160 字节(320 个 4 bit 样本,低半字节在前)= 20 ms,16 kHz 单声道,块自包含。USB/Wi-Fi 共用字节流解帧,每帧 2 块;BLE 上由 Audio In 通知,每帧 1 块 |
 
 开发分支不再提供或执行旧版 `approve`("1 + Enter")映射,旧设置会退回无动作;这不代表设备审批已经实现。
+
+## assistant 扩展（schema 1）
+
+新增`cmd=assistant`，支持capabilities/status、带CRC的profile/pet分块事务、mode、clear及44态pet_state。每个请求携带uint32 rid，回执原样回显，异步state无rid；客户端同时匹配链路/op/rid。单行仍≤511字节，每chunk解码≤288字节，profile≤16384字节、pet≤131072字节（AORAPET2二进制；旧4KiB设置JSON兼容）。首次USB同步后才能通过已配对TLS Wi-Fi更新，BLE不传云凭据。成功commit才表示新配置已原子生效。模式/错误/诊断字段和完整示例以 [assistant-device-protocol.md](assistant-device-protocol.md) 为准。

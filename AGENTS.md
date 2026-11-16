@@ -14,6 +14,8 @@
 
 ## 常用命令
 
+AI助理新增：`app/scripts/build-clt.sh`（CLT/SwiftPM构建）、`app/scripts/test-assistant-core.sh`、`app/scripts/test-agent-bridges.sh`；工具链用 `scripts/setup-dev.sh` 安装、`source scripts/dev-env.sh` 激活。运行链路见 `docs/assistant-desktop.md` / `docs/assistant-device-protocol.md`。
+
 ```bash
 cd app && ./scripts/build.sh                 # 编译 app → app/build/VibeKey.app(会顺带打包固件与 esptool)
 cd app && ./scripts/test.sh                  # 单元测试

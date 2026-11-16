@@ -13,3 +13,7 @@ esp_err_t ib_app_start(bool ui_ok, bool battery_ok);
 
 // 传给 bsp_button_init() 的回调。运行在 button 组件的定时器任务中,只向队列投递事件,不阻塞。
 void ib_app_on_button(bsp_btn_t btn, bsp_btn_ev_t ev, void *user);
+
+void ib_app_finish_start(bool buttons_ready);
+bool ib_app_ready(void);
+bool ib_app_buttons_ready(void);

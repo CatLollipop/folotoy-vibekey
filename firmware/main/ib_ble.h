@@ -29,3 +29,5 @@ void ib_ble_boost_advertising(void);
 
 // 当前协商的 ATT MTU;未连接返回 0。
 uint16_t ib_ble_mtu(void);
+
+bool ib_ble_is_started(void);

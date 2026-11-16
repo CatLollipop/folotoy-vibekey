@@ -1,15 +1,16 @@
 # VibeKey Passport 固件
 
-FoloToy AI Passport(ESP32-C3、8 MB Flash、ST7789 240×320、三键单 ADC、ES8311 麦克风/扬声器、CW2017 电量计)上的 VibeKey 配套固件。设备是"瘦终端":上报按键原始事件、渲染 Mac 下发的状态、推送麦克风音频。
+FoloToy AI Passport(ESP32-C3、8 MB Flash、ST7789 240×320、三键单 ADC、ES8311 麦克风/扬声器、CW2017 电量计)上的 VibeKey 配套固件。设备支持相伴和独立两种模式：相伴模式上报按键、状态与麦克风音频；独立模式在 Mac 关闭后直接完成 MiniMax ASR → DeepSeek → MiniMax TTS。默认相伴，独立模式须先经USB同步云端凭据并保存Wi-Fi。模式切换回执restarting=1后安全重启，独立启动在RF初始化前只启Wi-Fi、不启LAN TLS；未配网返回wifi_required。
 
-当前分支正在实现 Matrix 视觉:待机、录音、识别、完成、错误和离线页已使用终端标题与绿色点阵,交互页有时钟页脚;Codex 专用交互仍在开发中,尚未真机验证。
+当前分支使用 Aora Bot v0.2.0 的 Dot preset，在设备播放24×24核心点阵及装饰动画；宠物通过44个官方状态联动会话。设备使用通用C运动/栅格器，通过≤128KiB的已验证AORAPET2资产支持所选角色/面部/44态表情，Flash mmap零拷贝读取，不加载SVG、旧emotion-ball JSON或远程脚本。列表/字幕/用量页保留专用界面。几何来源、许可和数值比对见 `../docs/pet-runtime.md`。
 
 - 协议:`../docs/protocol.md`(v1)
 - 界面:`../docs/device-ui.md`
+- 独立助手、原子同步、按键与验收：`../docs/assistant-device-protocol.md`
 
 ## Wi-Fi 无线连接
 
-USB 初次配网后，设备加入 2.4 GHz Wi-Fi 并提供 TLS-PSK TCP 8765 服务，通过 mDNS 寻址。Mac 与设备在同一局域网可跨房间使用（取决于信号覆盖），设备可拔线用电池供电。USB 优先；配网后启用 Wi-Fi，无配网时启用 BLE，避免两套无线栈同时占用录音/TLS 内存；音频与按键沿用 v1 协议。网络凭据仅经 USB 写入普通 NVS，不写出厂 cardid；配网和状态说明见 `docs/protocol.md`。需要同时安装本分支新版 Mac app，原版 InputBetter 不支持此新增链路。C3 无 PSRAM，sdkconfig.defaults 已按低带宽语音调整 Wi-Fi/NimBLE 缓冲和动态 TLS 分配；不要直接恢复 Wi-Fi 默认缓冲数量。
+USB 初次配网后，设备加入 2.4 GHz Wi-Fi 并提供 TLS-PSK TCP 8765 服务，通过 mDNS 寻址。Mac 与设备在同一局域网可跨房间使用（取决于信号覆盖），设备可拔线用电池供电。USB 优先；配网后启用Wi-Fi；无配网时BLE仍须通过内存预算门禁，低预算保留USB，避免两套无线栈同时占用录音/TLS内存；音频与按键沿用 v1 协议。BLE仅在启动时free heap≥96KiB且largest≥32KiB的预算门限下可选启用，否则保留USB/Wi-Fi并释放蓝牙控制器内存，不以自动BLE回退造成反复重启。网络凭据仅经 USB 写入普通 NVS，不写出厂 cardid；配网和状态说明见 `docs/protocol.md`。需要同时安装本分支新版 Mac app，原版 InputBetter 不支持此新增链路。C3 无 PSRAM，sdkconfig.defaults 已按低带宽语音调整 Wi-Fi/NimBLE 缓冲和动态 TLS 分配；不要直接恢复 Wi-Fi 默认缓冲数量。
 
 新网络须用 USB 在 Mac 的「设置 › Passport › Wi-Fi 无线连接」添加；长按 ▲ 约 1 秒切换听写 / 翻译 / 字幕，继续按住到约 2.5 秒打开已保存网络列表。蓝牙模式或完全离线时也可长按 ▼ 直接打开列表，选择后短按 OK 切换；Wi-Fi 正常在线时长按 ▼ 仍用于 Agent 导航。蓝牙在线时选择当前标记的 Wi-Fi 会退出蓝牙并尝试连接；Wi-Fi 离线时选择当前网络会重试。Wi-Fi 录音期间临时关闭无线省电，并分开排队发送控制消息和录音帧；录音结束恢复省电。串口日志记录路由器断开原因码和 TLS 收发错误，用来区分无线掉线和加密链路中断。
 
@@ -29,6 +30,8 @@ idf.py build
 ```bash
 tools/validate.sh          # 全部
 tools/validate.sh --host   # 只跑主机测试(不需要 ESP-IDF)
+tools/test-pet.sh          # Aora几何/运动golden与内存检查
+tools/test-assistant-store.sh # 双bank NOR事务；需要已激活IDF的cJSON源码
 ```
 
 ## 烧录
@@ -41,7 +44,7 @@ tools/validate.sh --host   # 只跑主机测试(不需要 ESP-IDF)
 
 本开发版已禁用 App 内官网固件刷写入口;请使用上面的受保护脚本刷入本地镜像。上游官网与浏览器刷写入口提供的是原版固件,不能用于安装本分支。
 
-分区:`nvs 0x9000`、`phy_init 0xf000`、`factory 0x10000 (3 MB)`、`wallpaper 0x310000 (192 KB,离线页自定义背景)`、`cardid 0x356000 (16 KB,出厂身份数据,只保留不写)`。
+分区:`nvs 0x9000`、`phy_init 0xf000`、`factory 0x10000 (3 MB)`、`wallpaper 0x310000 (192 KB,历史照片数据保留但不显示)`、`cardid 0x356000 (16 KB,出厂身份数据,只保留不写)`、`assistant 0x360000 (512 KiB,双256 KiB配置bank)`、`audio_scratch 0x400000 (2 MiB,双1 MiB录音槽)`。
 
 ## 目录结构
 
@@ -58,6 +61,11 @@ firmware/
 │   ├── ib_usb.*           USB Serial/JTAG 链路(与日志共用)
 │   ├── ib_ble.*           NimBLE GATT 外设,广播名 VibeKey
 │   ├── ib_audio.*         麦克风上行(IMA ADPCM)+ 本地合成提示音
+│   ├── ib_assistant.*     独立模式、PTT/取消、双槽采音、同步协议
+│   ├── ib_assistant_store.* profile/pet双bank、CRC/字段验证、原子提交
+│   ├── ib_assistant_cloud.* MiniMax ASR、DeepSeek SSE、MiniMax TTS，单公网TLS
+│   ├── ib_cloud_stream.*  流式hex PCM、WAV头、UTF-8边界、静音门限
+│   ├── ib_pet*            Aora资产校验/读取、44态motion与24×24栅格器
 │   ├── ib_adpcm.*         IMA ADPCM 编解码(纯逻辑)
 │   ├── ib_clock.*         离线时钟格式化(纯逻辑)
 │   ├── ib_ui.*            UI 核心:页面调度、切换动画、逐帧定时器(约 30 fps)、对外接口加锁
@@ -84,7 +92,7 @@ firmware/
 
 ## 界面预览(不用烧录)
 
-OFFLINE 背景以 `main/assets/offline-cat.png`(240×320)为母版，同目录的 `offline-cat.rgb565` 是小端 RGB565 像素数据；`assets/offline-art.cmake` 在构建时把它展开为只读数组，真机与主机预览共用。
+OFFLINE页显示当前所选宠物点阵动画，保留时钟/日期/连接提示；45秒后sleep（用户固定表情优先）。照片入口与offline-art编译/渲染依赖已移除，旧wallpaper分区不自动擦除，也不再映射。预览共用同一C运动/栅格器。
 
 ```bash
 tools/ui-preview/run.sh          # 全部场景 → tools/ui-preview/out/NN_<名称>.png(480x640)
@@ -92,7 +100,7 @@ tools/ui-preview/run.sh list     # 只保存文件名含 list 的截图
 SCALE=3 tools/ui-preview/run.sh  # 放大 3 倍
 ```
 
-在 macOS 上用 cmake + clang 编译固件同一份 LVGL 9.5.0(配置直接取固件的 `build/config/sdkconfig.h`)和 `main/ib_ui*.c` 原样代码,虚拟 240×320 RGB565 显示、20 行双缓冲,时间按 5 ms 节拍推进,所以动画第 N 毫秒的画面与真机一致。场景在 `tools/ui-preview/preview_scenarios.c`,只调用 `ib_ui.h` 的公开接口(与 `ib_app` 相同)。第一次使用前需要先执行过一次 `idf.py build`。
+在 macOS 上用 cmake + clang 编译固件同一份 LVGL 9.5.0(配置直接取固件的 `build/config/sdkconfig.h`)和 `main/ib_ui*.c` 原样代码,虚拟 240×320 RGB565 显示、4行双缓冲,时间按 5 ms 节拍推进,所以动画第 N 毫秒的画面与真机一致。场景在 `tools/ui-preview/preview_scenarios.c`,只调用 `ib_ui.h` 的公开接口(与 `ib_app` 相同)。第一次使用前需要先执行过一次 `idf.py build`。
 
 ## 实现要点
 
@@ -104,3 +112,15 @@ SCALE=3 tools/ui-preview/run.sh  # 放大 3 倍
 - **屏幕点亮**:按键、`state`、Agent 通知、链路恢复在线才点亮;`config`(Mac 每 5 分钟校时重发)不点亮。离线不清除 Mac 下发的状态,恢复在线回到原页面。
 
 Matrix 终端字体由 `tools/gen-terminal-font.sh` 从固定提交的 Roboto Mono 生成 ASCII 子集;SUB 页中文字体由 `tools/gen-cjk-font.sh` 从固定提交的 Noto Sans SC 生成 GB2312 子集。许可证分别位于 `main/fonts/LICENSE-roboto-mono` 与 `main/fonts/LICENSE-noto-sans-sc`。
+
+## 独立模式的内存与验证
+
+C3无PSRAM。16 KiB采音环只在录音时分配，转写/回复缓冲分阶段释放；历史最大8 KiB，退出独立模式释放，云worker也只在独立模式存在。TLS接收记录上限16 KiB、动态缓冲、CA bundle与SNTP校时均随工程配置启用。独立模式暂停Mac局域网TLS任务和队列，三个公网阶段顺序执行。
+
+按住OK说话、松开发送；处理/朗读中再次按住OK，旧轮取消后在仍按住时自动开录。▼短按取消、空闲长按退出独立模式，▲空闲短按清历史。`assistant/status`提供heap/min_free/largest及录音写入/溢出/能量统计。30秒持续采音Flash实时性、真实账号的三阶段链路及连续多轮堆余量是硬件验收项；没有配置不会自动调用云服务。协议和完整验收边界见独立助手文档。
+
+核心启动先分配16项小事件队列与8KiB app任务，再初始化可选无线/音频；app任务等待按键初始化后的boot barrier。原ib_cmd_t为1744字节；现在命令JSON按实际len短期分配，唯一消费者解析后立即释放，队列闲时省约27KiB且保留16项深度。status的app_ready/buttons用于确认普通hello/pong和按键链已运行；assistant capabilities由USB直接处理，单独成功不能证明核心启动完成。profile直接从Flash mmap解析并一次性更新，减少低内存提交峰值。
+
+独立模式进一步不启mDNS和闲置的ADPCM/提示音两个任务；LCD双DMA缓冲各4行，显示颜色/分辨率不变。宠物缓存直接存RGB565，body mask与float coverage错峰复用，几何仍按原精度计算。公网握手完成并验证后释放peer证书链；LLM/TTS请求使用同一JSON序列化器先计Content-Length再以256B输出，不构建完整请求树/副本。历史在成功轮次后按实际需要增长，TLS cleanup后才扩容。LVGL池仍40KiB，依据真机lvgl_peak再决定是否缩小。
+
+点阵draw按当前DMA clip先裁可见行/列；frame timer在完整REFR_READY后再恢复，避免追帧饥饿，ESP-IDF port解锁后会实际delay。fps为目标上限；保留watchdog并通过真实C3启动/长时间交互验收，不能仅凭host预览判断CPU调度。
