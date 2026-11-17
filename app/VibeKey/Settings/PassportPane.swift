@@ -8,7 +8,8 @@ struct PassportPane: View {
         @Bindable var settings = app.settings
         VStack(alignment: .leading, spacing: 0) {
             SettingsSection(title: "设备") {
-                PassportSetupView(model: app.passportSetup)
+                PassportSetupView(model: app.passportSetup, assistantControls: app.assistantStore.usePassportForAssistant,
+                                  standalone: app.assistantSync.mode == "standalone")
             }
 
             PassportConnectionSection(link: app.deviceLink)
@@ -26,10 +27,10 @@ struct PassportPane: View {
             }
 
             if app.assistantStore.usePassportForAssistant {
-                SettingsSection(title: "AI 助理按键", footer: "独立云对话模式由设备执行按键；模式与配置同步在 AI 助理页管理。") {
+                SettingsSection(title: "AI 助理按键", footer: "电脑模式请先在“智能体”中选择已有会话；没有官方发送通道时仅提醒。模式与配置同步在 AI 助理页管理。") {
                     Card {
                         VStack(alignment: .leading, spacing: DS.Space.s) {
-                            Text("按住 OK 说话，松开发送；上键提交助手草稿，下键停止，长按下键选择云对话或应用会话。")
+                            Text("连接电脑：按住 OK 录音，松开保存草稿；聊天流中草稿尾部可见后，再单独短按 OK 确认发送。上下键按屏阅读，长按下键打开会话与任务菜单。AI 助理：按住 OK 说话，松开提交云对话。长按上键切换运行模式。")
                                 .font(.system(size: 12.5))
                             HStack {
                                 Button("选择智能体会话…") { app.windows.showSettings(.vibe) }
@@ -41,11 +42,11 @@ struct PassportPane: View {
             } else {
                 AgentHealthSection()
 
-            SettingsSection(title: "语音输入目标", footer: "长按设备下键选择应用；Agent 应用还可以继续选项目和会话。按住 OK 时会自动切换到所选应用和输入框，同时开始收音。") {
+            SettingsSection(title: "语音输入目标", footer: "此处保留通用语音输入目标配置。AI 助理已有会话接入请到“智能体”选择；此设置不授予原应用会话的官方发送能力。") {
                 Card { HStack { Text(settings.deviceTargetName); Spacer(); Image(systemName: "scope").foregroundStyle(.secondary) } }
             }
 
-            SettingsSection(title: "按键", footer: "按住 OK 键说话，松开转写；上键发送当前 Codex 输入框，下键停止任务，长按上键切换模式；录音时长按下键取消。") {
+            SettingsSection(title: "按键", footer: "以下映射用于通用听写。原应用会话请在 AI 助理中启用 Passport 接管；连接电脑时松开录音只保存草稿，单独短按 OK 确认发送。") {
                 Card {
                     VStack(spacing: DS.Space.m) {
                         keyRow("▲ 上键", $settings.deviceUpAction)

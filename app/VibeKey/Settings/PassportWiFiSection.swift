@@ -8,7 +8,7 @@ struct PassportWiFiSection: View {
     @State private var error: String?
 
     var body: some View {
-        SettingsSection(title: "Wi-Fi 无线连接", footer: "最多保存 4 个网络。首次添加请保留 USB；长按 ▲ 约 1 秒切换听写、翻译和字幕，继续按住到约 2.5 秒切换网络或蓝牙。蓝牙模式或离线时长按 ▼ 也可打开网络列表。密码只经 USB 发给设备。") {
+        SettingsSection(title: "Wi-Fi 无线连接", footer: "最多保存 4 个网络。首次添加请保留 USB，密码只经 USB 发给设备。在设备上长按上键切到 AI 助理模式，再长按下键打开网络菜单；离线或蓝牙连接时也可长按下键打开。") {
             Card {
                 VStack(alignment: .leading, spacing: DS.Space.m) {
                     HStack {
@@ -33,7 +33,7 @@ struct PassportWiFiSection: View {
                         ForEach(link.wifiNetworks) { network in
                             networkRow(network)
                         }
-                        Text("设备端：长按 ▲ 约 1 秒切换听写、翻译和字幕，继续到约 2.5 秒打开网络列表；蓝牙模式或离线时长按 ▼ 也可打开。短按上下选择，短按 OK 切换；最后一项 USE BLUETOOTH 可直接切蓝牙。长按 OK 返回。")
+                        Text("设备网络菜单：短按上下键选择，短按 OK 应用，长按 OK 返回。选择 USE BLUETOOTH 可改用蓝牙。连接电脑时长按下键打开会话菜单，管理网络请先切到 AI 助理模式。")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Divider()
@@ -60,7 +60,7 @@ struct PassportWiFiSection: View {
                         if link.usbPortPath == nil { Text("重新配网时需要 USB 连接").font(.caption).foregroundStyle(.secondary) }
                     }
                     if link.wifiConfigured {
-                        Text("改用蓝牙不会删除已存网络；之后在设备上长按 ▲ 约 1 秒切换模式，继续按住到约 2.5 秒选择 Wi‑Fi 即可切回。")
+                        Text("改用蓝牙会保留已存网络；在设备网络菜单选择已保存的 Wi-Fi 即可切回。")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     if let error { Text(error).font(.caption).foregroundStyle(DS.danger) }

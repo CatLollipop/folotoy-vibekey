@@ -469,16 +469,6 @@
         }
       }
     },
-    "Agent 导航": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Agent navigation"
-          }
-        }
-      }
-    },
     "Apple Speech 不支持%@": {
       "localizations": {
         "en": {
@@ -692,12 +682,12 @@
         }
       }
     },
-    "FoloToy AI Passport 是 FoloVibe Key 的硬件搭档：按住说话、一键发送，Agent 完成时提醒你。": {
+    "FoloToy AI Passport 是 AI 助理的硬件搭档：按住说话、确认草稿，Agent 完成时提醒你。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "FoloToy AI Passport is FoloVibe Key's hardware companion: hold to talk, send with one key, and get notified when an agent finishes."
+            "value": "FoloToy AI Passport is AI Assistant’s hardware companion: hold to speak, confirm drafts, and receive alerts when an agent finishes."
           }
         }
       }
@@ -1895,6 +1885,16 @@
         }
       }
     },
+    "以下映射用于通用听写。原应用会话请在 AI 助理中启用 Passport 接管；连接电脑时松开录音只保存草稿，单独短按 OK 确认发送。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These mappings apply to general dictation. Enable Passport control in AI Assistant for app conversations. In computer mode, releasing recording only saves a draft; press OK separately to confirm sending."
+          }
+        }
+      }
+    },
     "企业版": {
       "localizations": {
         "en": {
@@ -2791,16 +2791,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Manages Codex compatibility notifications. Configure full session access in the list above. Uninstalling preserves other hooks and account settings."
-          }
-        }
-      }
-    },
-    "只读侧栏标题、窗口标题和控件角色，不读取聊天正文。检测会把目标 App 前置并读取一次侧栏；失败时仍可在设备上当普通应用切换。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reads only sidebar titles, window titles, and control roles — never chat content. A check brings the app forward and reads its sidebar once; if it fails, the app still works as a normal app switch."
           }
         }
       }
@@ -4125,12 +4115,12 @@
         }
       }
     },
-    "已连接 Passport：按住中间的 OK 键说话，上键发送到 Codex、下键停止。": {
+    "已连接 Passport。连接电脑会话时，按住 OK 录音，松开保存草稿，再单独短按 OK 确认发送；上下键按屏阅读。通用听写按键可在 Passport 设置中查看。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Passport connected: hold OK to talk, press Up to send to Codex, and press Down to stop."
+            "value": "Passport connected. In a computer conversation, hold OK to record, release to save a draft, then press OK separately to confirm. Use Up and Down to scroll by screen. See Passport settings for general dictation keys."
           }
         }
       }
@@ -4525,16 +4515,6 @@
         }
       }
     },
-    "所有识别都在本机完成，声音不会离开你的 Mac。可以随时在设置里切换。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "All recognition runs on this Mac, so your voice never leaves it. You can switch models anytime in Settings."
-          }
-        }
-      }
-    },
     "所选会话没有由助手写入的待发送草稿": {
       "localizations": {
         "en": {
@@ -4735,26 +4715,6 @@
         }
       }
     },
-    "按住 OK 说话，松开发送；上键提交助手草稿，下键停止，长按下键选择云对话或应用会话。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hold OK to talk and release to send. Press Up to submit an assistant draft, Down to stop, or hold Down to choose cloud chat or an app session."
-          }
-        }
-      }
-    },
-    "按住 OK 键说话，松开转写；上键发送当前 Codex 输入框，下键停止任务，长按上键切换模式；录音时长按下键取消。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hold OK to talk and release to transcribe. Up sends the current Codex input, Down stops the task, and holding Up switches modes. Hold Down while recording to cancel."
-          }
-        }
-      }
-    },
     "按住「听写」快捷键说话，松开后先润色再输入。AI 会参考[词汇表](vibekey-settings://vocabulary)纠正专有名词。": {
       "localizations": {
         "en": {
@@ -4775,12 +4735,32 @@
         }
       }
     },
+    "按住录音，松开保存草稿": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hold to record; release to save a draft"
+          }
+        }
+      }
+    },
     "按住说话": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Hold to Talk"
+          }
+        }
+      }
+    },
+    "按住说话，松开提交云对话": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hold to speak; release to submit to cloud chat"
           }
         }
       }
@@ -4815,12 +4795,42 @@
         }
       }
     },
+    "按屏向上阅读": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scroll up by screen"
+          }
+        }
+      }
+    },
+    "按屏向下阅读": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scroll down by screen"
+          }
+        }
+      }
+    },
     "按键": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Keys"
+          }
+        }
+      }
+    },
+    "按键功能随当前页面变化，以设备屏幕边缘图标为准。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Button actions follow the current screen. Refer to the icons along the device screen edges."
           }
         }
       }
@@ -5075,12 +5085,12 @@
         }
       }
     },
-    "改用蓝牙不会删除已存网络；之后在设备上长按 ▲ 约 1 秒切换模式，继续按住到约 2.5 秒选择 Wi‑Fi 即可切回。": {
+    "改用蓝牙会保留已存网络；在设备网络菜单选择已保存的 Wi-Fi 即可切回。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Using Bluetooth keeps saved networks. To return, long-press ▲ for about 1 second to switch modes, then keep holding until about 2.5 seconds and select a Wi-Fi network."
+            "value": "Switching to Bluetooth keeps saved networks. Select a saved Wi-Fi network in the device network menu to switch back."
           }
         }
       }
@@ -5335,6 +5345,16 @@
         }
       }
     },
+    "旧版导航诊断": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Legacy navigation diagnostics"
+          }
+        }
+      }
+    },
     "显示": {
       "localizations": {
         "en": {
@@ -5535,12 +5555,12 @@
         }
       }
     },
-    "最多保存 4 个网络。首次添加请保留 USB；长按 ▲ 约 1 秒切换听写、翻译和字幕，继续按住到约 2.5 秒切换网络或蓝牙。蓝牙模式或离线时长按 ▼ 也可打开网络列表。密码只经 USB 发给设备。": {
+    "最多保存 4 个网络。首次添加请保留 USB，密码只经 USB 发给设备。在设备上长按上键切到 AI 助理模式，再长按下键打开网络菜单；离线或蓝牙连接时也可长按下键打开。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Up to 4 networks can be saved. Keep USB connected for the first setup. Long-press ▲ for about 1 second to switch between dictation, translation and subtitles; keep holding until about 2.5 seconds to switch networks or Bluetooth. In Bluetooth mode or offline, long-press ▼ to open the network list. Passwords are sent to the device over USB only."
+            "value": "Save up to four networks. Keep USB connected when adding one; passwords reach the device only over USB. Hold Up on the device to switch to standalone AI assistant mode, then hold Down for networks. Holding Down also opens networks when offline or using Bluetooth."
           }
         }
       }
@@ -6545,6 +6565,36 @@
         }
       }
     },
+    "此处仅检查旧版导航能力，不代表官方发送通道已连接。当前已有会话接入请到“智能体”检测；此诊断会前置目标应用并读取一次侧栏。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This checks legacy navigation, not an official sending channel. Check existing conversation integration in Agents. This diagnostic brings the target app forward and reads its sidebar once."
+          }
+        }
+      }
+    },
+    "此处保留通用语音输入目标配置。AI 助理已有会话接入请到“智能体”选择；此设置不授予原应用会话的官方发送能力。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This preserves the general dictation target setting. Select existing AI assistant conversations in Agents. This setting does not grant official sending access to an app conversation."
+          }
+        }
+      }
+    },
+    "此开关只影响通用听写；AI 助理会话固定使用设备麦克风。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This switch only affects general dictation. AI assistant conversations use the device microphone."
+          }
+        }
+      }
+    },
     "每 %lld 分钟": {
       "localizations": {
         "en": {
@@ -7035,32 +7085,12 @@
         }
       }
     },
-    "独立云对话模式由设备执行按键；模式与配置同步在 AI 助理页管理。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "In standalone mode, the device handles the buttons. Manage modes and configuration sync in AI Assistant."
-          }
-        }
-      }
-    },
     "用 AI 总结这场字幕的全部内容": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Use AI to summarize this whole caption session"
-          }
-        }
-      }
-    },
-    "用 Passport 麦克风收音": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Use Passport Microphone"
           }
         }
       }
@@ -7101,6 +7131,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "For app conversations, first select a target session in Agents. Cloud conversations here use DeepSeek. Standalone conversations on the device work without the Mac."
+          }
+        }
+      }
+    },
+    "电脑模式请先在“智能体”中选择已有会话；没有官方发送通道时仅提醒。模式与配置同步在 AI 助理页管理。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In computer mode, select an existing conversation in Agents. Without an official sending channel, only notifications are available. Manage modes and configuration sync in AI Assistant."
           }
         }
       }
@@ -8435,12 +8475,12 @@
         }
       }
     },
-    "设备端：长按 ▲ 约 1 秒切换听写、翻译和字幕，继续到约 2.5 秒打开网络列表；蓝牙模式或离线时长按 ▼ 也可打开。短按上下选择，短按 OK 切换；最后一项 USE BLUETOOTH 可直接切蓝牙。长按 OK 返回。": {
+    "设备网络菜单：短按上下键选择，短按 OK 应用，长按 OK 返回。选择 USE BLUETOOTH 可改用蓝牙。连接电脑时长按下键打开会话菜单，管理网络请先切到 AI 助理模式。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "On the device: long-press ▲ for about 1 second to switch between dictation, translation and subtitles; keep holding until about 2.5 seconds to open the network list. In Bluetooth mode or offline, long-press ▼ to open it too. Use ▲/▼ to select and tap OK to switch; the last item, USE BLUETOOTH, switches directly to Bluetooth. Long-press OK to go back."
+            "value": "Device network menu: press Up or Down to choose, press OK to apply, and hold OK to return. Choose USE BLUETOOTH for Bluetooth. In computer mode, holding Down opens conversations; switch to standalone AI assistant mode to manage networks."
           }
         }
       }
@@ -8491,6 +8531,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Transcribing"
+          }
+        }
+      }
+    },
+    "识别可使用本地模型或云服务。云端识别会将音频发送到配置的供应商，可在设置中选择。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recognition can use a local model or a cloud service. Cloud recognition sends audio to your configured provider. Choose a service in Settings."
           }
         }
       }
@@ -9305,6 +9355,16 @@
         }
       }
     },
+    "连接电脑：按住 OK 录音，松开保存草稿；聊天流中草稿尾部可见后，再单独短按 OK 确认发送。上下键按屏阅读，长按下键打开会话与任务菜单。AI 助理：按住 OK 说话，松开提交云对话。长按上键切换运行模式。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Computer mode: hold OK to record and release to save a draft. With the draft tail visible in chat, press OK separately to confirm. Use Up and Down to scroll by screen; hold Down for conversations and task actions. Standalone AI assistant: hold OK to speak and release to submit to cloud chat. Hold Up to switch operating modes."
+          }
+        }
+      }
+    },
     "退出": {
       "localizations": {
         "en": {
@@ -9501,6 +9561,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "General"
+          }
+        }
+      }
+    },
+    "通用听写使用 Passport 麦克风": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use Passport microphone for general dictation"
+          }
+        }
+      }
+    },
+    "通用听写按键按下方映射执行；电脑会话的录音与确认请在 AI 助理中启用 Passport 接管。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "General dictation follows the mappings below. Enable Passport control in AI Assistant for recording and confirmation in app conversations."
           }
         }
       }
@@ -9775,12 +9855,12 @@
         }
       }
     },
-    "长按上键切换 听写 / 翻译 / 字幕；长按下键：%@；录音时长按下键取消。": {
+    "长按上键打开运行模式菜单；连接电脑时长按下键选择会话，AI 助理模式长按下键打开网络菜单。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hold Up to switch between Dictate, Translate and Captions. Hold Down: %@. While recording, hold Down to cancel."
+            "value": "Hold Up for operating modes. Hold Down to select a conversation in computer mode, or open networks in standalone AI assistant mode."
           }
         }
       }
@@ -9791,16 +9871,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Hold the power button for half a second to turn it on"
-          }
-        }
-      }
-    },
-    "长按设备下键选择应用；Agent 应用还可以继续选项目和会话。按住 OK 时会自动切换到所选应用和输入框，同时开始收音。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hold Down on the device to choose an app; for agents you can then pick a project and session. Holding OK starts capturing audio while bringing the selected app and its input into focus."
           }
         }
       }

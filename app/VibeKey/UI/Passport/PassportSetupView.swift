@@ -4,12 +4,15 @@ import SwiftUI
 /// 「查找设备 → 刷入固件 → 按键测试 / 麦克风 / 蓝牙」。引导页和设置页共用。
 struct PassportSetupView: View {
     let model: PassportSetupModel
+    /// 助手接管时使用会话规则，通用听写映射不能冒充设备当前动作。
+    var assistantControls = false
+    var standalone = false
 
     var body: some View {
         HStack(alignment: .top, spacing: DS.Space.l) {
             PassportIllustration(screen: illustrationScreen, connection: model.link.connection,
                                  foreignOnUSB: model.link.foreignDevice != nil, lastKey: model.link.lastKey,
-                                 hints: model.deviceHints)
+                                 hints: assistantControls ? .init(ok: nil, up: nil, down: nil) : model.deviceHints)
                 .frame(width: 150)
                 .padding(.top, 4)
             VStack(alignment: .leading, spacing: DS.Space.m) {
@@ -240,23 +243,41 @@ struct PassportSetupView: View {
                     Divider().padding(.vertical, 2)
                     firmwareRow
                     Divider().padding(.vertical, 2)
-                    Text("按一下设备右侧的键试试，左边的示意图会跟着亮").font(.system(size: 12)).foregroundStyle(.secondary)
-                    // 按实体键从上到下排列:上键、下键、OK 键。
-                    VStack(alignment: .leading, spacing: 6) {
-                        legend("chevron.up", "上键", model.upActionTitle)
-                        legend("chevron.down", "下键", model.downActionTitle)
-                        legend("circle.fill", "OK 键", String(localized: "按住说话，轻按免提", bundle: .l10n))
+                    if assistantControls {
+                        Hint("按键功能随当前页面变化，以设备屏幕边缘图标为准。")
+                        VStack(alignment: .leading, spacing: 6) {
+                            legend("chevron.up", "上键", String(localized: "按屏向上阅读", bundle: .l10n))
+                            legend("chevron.down", "下键", String(localized: "按屏向下阅读", bundle: .l10n))
+                            legend("circle.fill", "OK 键", standalone
+                                ? String(localized: "按住说话，松开提交云对话", bundle: .l10n)
+                                : String(localized: "按住录音，松开保存草稿", bundle: .l10n))
+                        }
+                        Hint("长按上键打开运行模式菜单；连接电脑时长按下键选择会话，AI 助理模式长按下键打开网络菜单。")
+                    } else {
+                        Text("按一下设备右侧的键试试，左边的示意图会跟着亮").font(.system(size: 12)).foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 6) {
+                            legend("chevron.up", "上键", model.upActionTitle)
+                            legend("chevron.down", "下键", model.downActionTitle)
+                            legend("circle.fill", "OK 键", String(localized: "按住说话，轻按免提", bundle: .l10n))
+                        }
+                        Hint("通用听写按键按下方映射执行；电脑会话的录音与确认请在 AI 助理中启用 Passport 接管。")
                     }
-                    Hint("长按上键切换 听写 / 翻译 / 字幕；长按下键：\(model.downLongActionTitle)；录音时长按下键取消。")
                 }
             }
             Card {
                 VStack(alignment: .leading, spacing: DS.Space.m) {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("用 Passport 麦克风收音").font(.system(size: 13))
-                            Text("关闭时按 OK 键用 Mac 的麦克风听写；开启后改用设备上的麦克风，适合离电脑稍远时使用").font(.system(size: 11.5)).foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
+                            Text("通用听写使用 Passport 麦克风").font(.system(size: 13))
+                            if assistantControls {
+                                Text("此开关只影响通用听写；AI 助理会话固定使用设备麦克风。")
+                                    .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            } else {
+                                Text("关闭时按 OK 键用 Mac 的麦克风听写；开启后改用设备上的麦克风，适合离电脑稍远时使用")
+                                    .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                         Spacer()
                         Toggle("", isOn: Binding(get: { model.usesPassportMic }, set: { model.usesPassportMic = $0 }))

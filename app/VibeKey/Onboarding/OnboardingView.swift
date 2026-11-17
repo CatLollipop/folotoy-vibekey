@@ -26,10 +26,10 @@ struct OnboardingView: View {
             switch self {
             case .welcome: ""
             case .permissions: String(localized: "麦克风用来听你说话，辅助功能用来把文字输入到当前窗口。", bundle: .l10n)
-            case .model: String(localized: "所有识别都在本机完成，声音不会离开你的 Mac。可以随时在设置里切换。", bundle: .l10n)
+            case .model: String(localized: "识别可使用本地模型或云服务。云端识别会将音频发送到配置的供应商，可在设置中选择。", bundle: .l10n)
             case .hotkey: String(localized: "默认是 ⌥ 空格，点录制框可以改成你顺手的组合键。", bundle: .l10n)
             case .ai: String(localized: "下载系统翻译语言即可离线翻译字幕和听写；再连接 AI，还能润色口语、让译文更准确。", bundle: .l10n)
-            case .passport: String(localized: "FoloToy AI Passport 是 FoloVibe Key 的硬件搭档：按住说话、一键发送，Agent 完成时提醒你。", bundle: .l10n)
+            case .passport: String(localized: "FoloToy AI Passport 是 AI 助理的硬件搭档：按住说话、确认草稿，Agent 完成时提醒你。", bundle: .l10n)
             case .tryIt: String(localized: "把光标放进下面的输入框，按住快捷键说一句话。", bundle: .l10n)
             }
         }
@@ -125,7 +125,8 @@ struct OnboardingView: View {
             }
         case .passport:
             ScrollView {
-                PassportSetupView(model: app.passportSetup)
+                PassportSetupView(model: app.passportSetup, assistantControls: app.assistantStore.usePassportForAssistant,
+                                  standalone: app.assistantSync.mode == "standalone")
                     .padding(.horizontal, DS.Space.xl)
                     .padding(.bottom, DS.Space.m)
             }
@@ -330,7 +331,7 @@ private struct TryItStep: View {
             if app.deviceLink.connection != .disconnected {
                 HStack(spacing: DS.Space.s) {
                     Image(systemName: "dot.radiowaves.left.and.right").foregroundStyle(DS.success)
-                    Hint("已连接 Passport：按住中间的 OK 键说话，上键发送到 Codex、下键停止。")
+                    Hint("已连接 Passport。连接电脑会话时，按住 OK 录音，松开保存草稿，再单独短按 OK 确认发送；上下键按屏阅读。通用听写按键可在 Passport 设置中查看。")
                 }
             }
         }

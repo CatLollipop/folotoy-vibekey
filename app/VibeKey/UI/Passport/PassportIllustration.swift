@@ -116,7 +116,7 @@ struct PassportIllustration: View {
                             Circle().strokeBorder(.white.opacity(0.25), lineWidth: 1.5).frame(width: 44, height: 44)
                             Image(systemName: "mic.fill").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white)
                         }
-                        Text(verbatim: "DICTATE").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundStyle(.white.opacity(0.85))
+                        Text(verbatim: "PASSPORT").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundStyle(.white.opacity(0.85))
                     }
                     .frame(width: geo.size.width - 30, height: geo.size.height)
                     // 右侧提示列,纵向位置对应实体侧键(屏幕在机身里有 13pt 的上边距)。

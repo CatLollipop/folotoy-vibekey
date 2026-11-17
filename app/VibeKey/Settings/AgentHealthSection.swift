@@ -33,7 +33,7 @@ struct AgentHealthSection: View {
     ]
 
     var body: some View {
-        SettingsSection(title: "Agent 导航", footer: "只读侧栏标题、窗口标题和控件角色，不读取聊天正文。检测会把目标 App 前置并读取一次侧栏；失败时仍可在设备上当普通应用切换。") {
+        SettingsSection(title: "旧版导航诊断", footer: "此处仅检查旧版导航能力，不代表官方发送通道已连接。当前已有会话接入请到“智能体”检测；此诊断会前置目标应用并读取一次侧栏。") {
             Card {
                 VStack(spacing: DS.Space.m) {
                     HStack {
